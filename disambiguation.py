@@ -21,7 +21,11 @@ import warnings
 class linkEntity():
 
     DEBUG = False
+
+    # Todo: remove this functionality
     FAST = False # Quick decision or full evaluation
+
+    FULL = False # All features of all candidates
 
     SOLR_SERVER = 'http://linksolr.kbresearch.nl/dbpedia/'
     SOLR_ROWS = 20
@@ -38,11 +42,13 @@ class linkEntity():
     flow = []
 
 
-    def __init__(self, ne, ne_type='', url='', debug=False):
+    def __init__(self, ne, ne_type='', url='', debug=False, full=False):
             
         if debug:
             self.DEBUG = debug
-
+        if full:
+            self.FULL = full
+            
         # Normalize entity and get initial candidate set
         self.entity = Entity(ne, ne_type, url)
         ne = self.entity.ne
@@ -57,41 +63,44 @@ class linkEntity():
         if not self.result:
             for i in range(self.solr_result_count):
                 description = Description(self.solr_response.results[i])
-                match = Match(self.entity, description)
+                match = Match(self.entity, description, i)
                 self.matches.append(match)
                 self.active_match_ids.append(i)
             self.inlinks_nl, self.inlinks_en = self.get_total_inlinks()
-            
+
             # Evaluate string similarity
             self.match_id()
             self.match_titles()
             self.match_last_part()
 
-            if self.FAST: 
-                if not self.result:
-                    reason = 'Name conflict'
-                    self.result = False, 0, False, reason
-
-            else:
-                # Eliminate name and date conflicts
+            remove_ids = []
+            for i in self.active_match_ids:                  
+                if self.matches[i].has_name_conflict():
+                    remove_ids.append(i)
+ 
+            # Eliminate name conflicts
+            if not self.FULL:
+                for r in remove_ids:
+                    self.active_match_ids.remove(r)
+            
+            # If at least one candidate remains
+            if len(self.active_match_ids) > 0:
+                # Evaluate available date info
                 remove_ids = []
-                for i in self.active_match_ids:                  
-                    if self.matches[i].has_name_conflict():
-                        remove_ids.append(i)
-                    
-                # If date info is available
                 if self.entity.url:
                     self.entity.get_metadata()
                     for i in self.active_match_ids:
                         self.matches[i].match_date()
                         if self.matches[i].date_match < 0:
                             remove_ids.append(i)
+                
+                # Eliminate date conflicts
+                if not self.FULL:
+                    for r in remove_ids:
+                        self.active_match_ids.remove(r)
 
-                #for r in remove_ids:
-                    #self.active_match_ids.remove(r)
-
-            # If multiple candidates remain, other contextual features
-            if len(self.active_match_ids) > 1:
+            # If multiple candidates remain, or in full mode, evaluate other contextual features
+            if len(self.active_match_ids) > 1 or self.FULL:
                 # Match ne type
                 if self.entity.ne_type:
                     for i in self.active_match_ids:
@@ -117,6 +126,11 @@ class linkEntity():
                 print self.active_match_ids
                 print len(self.active_match_ids)
             
+            if self.FAST: 
+                if not self.result:
+                    reason = 'Name conflict'
+                    self.result = False, 0, False, reason
+
 
     def query_solr(self, ne):
         if self.DEBUG:
@@ -273,6 +287,8 @@ class Match():
 
     entity = None
     description = None
+    
+    solr_ranking = 0
 
     main_title_match = 0
     main_title_start_match = 0
@@ -293,7 +309,7 @@ class Match():
     cos_sim = 0
 
 
-    def __init__(self, entity, description):
+    def __init__(self, entity, description, solr_ranking):
         self.entity = entity
         self.description = description
 
@@ -467,7 +483,7 @@ class Description():
     document = None
     norm_title_str = []
     label = ''
-    no_parts = 0
+
 
     def __init__(self, doc):
         self.document = doc
