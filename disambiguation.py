@@ -22,7 +22,7 @@ class linkEntity():
 
     DEBUG = False
 
-    # Todo: remove this functionality
+    # Todo: remove this option
     FAST = False # Quick decision or full evaluation
 
     FULL = False # All features of all candidates
@@ -61,11 +61,15 @@ class linkEntity():
 
         # If any candidate descriptions were found
         if not self.result:
+            matches = []
+            active_match_ids = []
             for i in range(self.solr_result_count):
                 description = Description(self.solr_response.results[i])
                 match = Match(self.entity, description, i)
-                self.matches.append(match)
-                self.active_match_ids.append(i)
+                matches.append(match)
+                active_match_ids.append(i)
+            self.matches = matches
+            self.active_match_ids = active_match_ids
             self.inlinks_nl, self.inlinks_en = self.get_total_inlinks()
 
             # Evaluate string similarity
@@ -341,7 +345,7 @@ class Match():
 
         for l in match_label:
             if l.find(ne) > -1:
-                title_match += 0
+                title_match += 1
             if l.startswith(ne):
                 title_start_match +=1
             if l.endswith(ne):
@@ -649,7 +653,7 @@ if __name__ == '__main__':
     if not len(sys.argv) > 1:
         print("Usage: ./disambiguation.py [Named Entity (string)]")
     elif len(sys.argv) > 3:
-        print(linkEntity(sys.argv[1], sys.argv[2], sys.argv[3], debug=True))
+        print(linkEntity(sys.argv[1], sys.argv[2], sys.argv[3], debug=True, full=False))
     else:
         print(linkEntity(sys.argv[1], debug=True))
 
