@@ -42,8 +42,8 @@ class linkEntity():
     flow = []
 
 
-    def __init__(self, ne, ne_type='', url='', debug=False, full=False):
-            
+    def __init__(self, ne, ne_type='', url='', debug=False, full=True):
+
         if debug:
             self.DEBUG = debug
         if full:
@@ -115,9 +115,43 @@ class linkEntity():
                     for i in self.active_match_ids:
                         self.matches[i].match_abstract()
 
+            # Make prediction
+            best_match_id = -1
+            best_pred = -100
+
+            for i in self.active_match_ids:
+                match = self.matches[i]
+                pred = (-1.407
+                        + 0.149 * match.main_title_exact_match
+                        + 0.137 * match.main_title_start_match
+                        + 0.116 * match.main_title_end_match
+                        - 0.966 * match.main_title_match
+                        + 0.814 * match.title_exact_match
+                        - 0.716 * match.title_start_match
+                        + 0.887 * match.title_end_match
+                        + 0.361 * match.title_match
+                        + 0.315 * match.last_part_match
+                        + 0.269 * match.name_conflict
+                        + 0.757 * match.date_match
+                        + 0.714 * match.type_match
+                        - 0.194 * match.cos_sim)
+                match.pred = pred
+                if pred > best_pred:
+                    best_pred = pred
+                    best_match_id = i
+
+            reason = "Linear SVM classifier"
+            match = self.matches[best_match_id].description.document.get('id')
+            label = self.matches[best_match_id].description.label
+            prob = self.matches[best_match_id].pred
+            self.result = match, prob, label, reason
+            
             if self.DEBUG:
                 for m in self.matches:
                     print m.description.document.get('id')
+                    print m.pred
+
+                    '''
                     print ('main_title_exact_match', m.main_title_exact_match)
                     print ('title_start_match', m.title_start_match)
                     print ('title_end_match', m.title_end_match)
@@ -126,7 +160,9 @@ class linkEntity():
                     print ('date_match', m.date_match)
                     print ('type_match', m.type_match)
                     print ('cos_sim', m.cos_sim)
-
+                    '''
+                print best_match_id
+                print best_pred
                 print self.active_match_ids
                 print len(self.active_match_ids)
             
@@ -653,7 +689,7 @@ if __name__ == '__main__':
     if not len(sys.argv) > 1:
         print("Usage: ./disambiguation.py [Named Entity (string)]")
     elif len(sys.argv) > 3:
-        print(linkEntity(sys.argv[1], sys.argv[2], sys.argv[3], debug=True, full=False))
+        print(linkEntity(sys.argv[1], sys.argv[2], sys.argv[3], debug=True, full=True))
     else:
         print(linkEntity(sys.argv[1], debug=True))
 

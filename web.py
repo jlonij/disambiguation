@@ -17,9 +17,13 @@ def link():
 	url = request.params.get('url')
 	
 	if url and ne_type:
-	    link, p, mainLabel, reason = disambiguation.linkEntity(ne, ne_type, url)
+	    # link, p, mainLabel, reason = disambiguation.linkEntity(ne, ne_type, url)
+            linker = disambiguation.linkEntity(ne, ne_type, url)
+            link, p, mainLabel, reason = linker.result
 	else:
-	    link, p, mainLabel, reason = disambiguation.linkEntity(ne)
+	    # link, p, mainLabel, reason = disambiguation.linkEntity(ne)
+            linker = disambiguation.linkEntity(ne)
+            link, p, mainLabel, reason = linker.result
 
 	result = dict()
 
