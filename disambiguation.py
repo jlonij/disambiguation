@@ -577,7 +577,7 @@ class Entity():
         self.ne_type = ne_type
         self.url = url
 
-        self.clean_ne = self.clean(ne)
+        self.clean_ne = self.clean(ne.decode('utf-8'))
         self.norm_ne = self.normalize(self.clean_ne)
         self.ne, self.titles = self.strip_titles(self.norm_ne)
         
