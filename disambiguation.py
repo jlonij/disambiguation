@@ -9,6 +9,7 @@
 import inspect
 import Levenshtein
 from lxml import etree
+import math
 import numpy as np
 import re
 from scipy import spatial
@@ -24,7 +25,6 @@ class linkEntity():
 
     # Todo: remove this option
     FAST = False # Quick decision or full evaluation
-
     FULL = False # All features of all candidates
 
     SOLR_SERVER = 'http://linksolr.kbresearch.nl/dbpedia/'
@@ -41,6 +41,71 @@ class linkEntity():
     result = None
     flow = []
 
+    features = [
+            'main_title_exact_match',
+            'main_title_start_match',
+            'main_title_end_match',
+            'main_title_match',
+            'title_exact_match',
+            'title_start_match',
+            'title_end_match',
+            'title_match',
+            'last_part_match',
+            'name_conflict',
+            'date_match',
+            'type_match',
+            'cos_sim'
+            ]
+
+    weights = [
+            0.1487593872800257,
+            0.13678282646369272,
+            0.11636411923890391,
+            -0.966440513241986,
+            0.8137087548911804,
+            -0.7159666452623034,
+            0.8869852160033139,
+            0.3606624046577357,
+            0.3148134944056568,
+            0.26862793705631166,
+            0.7568306670272671,
+            0.7140937509970398,
+            -0.1939577714186576
+            ]
+
+    means = [
+            0.06723053567555845,
+            0.1676425937974409,
+            0.3142485361093038,
+            0.500542181739319,
+            0.15744957709824334,
+            1.0707004988072002,
+            1.1229668184775536,
+            2.6389069616135328,
+            0.08761656907395358,
+            0.803079592279332,
+            0.006289308176100629,
+            0.23096942094990242,
+            0.4273316096314469
+            ]
+
+    variances = [
+            0.06271059074833592,
+            0.13953855454230712,
+            0.21549639366246337,
+            0.24999970603896154,
+            0.35690557515217425,
+            6.315105538362362,
+            4.719426981982917,
+            14.068484079611046,
+            0.0799399058976627,
+            0.15814276074379385,
+            0.017960878348057492,
+            0.17762254753596918,
+            0.03662715134103564
+            ]
+
+    bias = -1.4071898873590305
 
     def __init__(self, ne, ne_type='', url='', debug=False, full=True):
 
@@ -115,61 +180,55 @@ class linkEntity():
                     for i in self.active_match_ids:
                         self.matches[i].match_abstract()
 
-            # Make prediction
-            best_match_id = -1
-            best_pred = -100
-
+            # Calculate prediction and confidence for all candidates
             for i in self.active_match_ids:
-                match = self.matches[i]
-                pred = (-1.407
-                        + 0.149 * match.main_title_exact_match
-                        + 0.137 * match.main_title_start_match
-                        + 0.116 * match.main_title_end_match
-                        - 0.966 * match.main_title_match
-                        + 0.814 * match.title_exact_match
-                        - 0.716 * match.title_start_match
-                        + 0.887 * match.title_end_match
-                        + 0.361 * match.title_match
-                        + 0.315 * match.last_part_match
-                        + 0.269 * match.name_conflict
-                        + 0.757 * match.date_match
-                        + 0.714 * match.type_match
-                        - 0.194 * match.cos_sim)
-                match.pred = pred
-                if pred > best_pred:
-                    best_pred = pred
+                pred = self.bias
+                for j in range(len(self.features)):
+                    feature = float(getattr(self.matches[i], self.features[j]))
+                    value = (feature - float(self.means[j])) / math.sqrt(float(self.variances[j]))
+                    pred += float(self.weights[j]) * value
+
+                self.matches[i].pred = pred
+                self.matches[i].conf = 1 / (1 + math.exp(pred * -1))
+            
+            # Select best candidate, if any
+            best_conf = 0
+            best_match_id = -1
+            for i in self.active_match_ids:
+                if self.matches[i].conf > best_conf:
+                    best_conf = self.matches[i].conf
                     best_match_id = i
 
-            reason = "Linear SVM classifier"
-            match = self.matches[best_match_id].description.document.get('id')
-            label = self.matches[best_match_id].description.label
-            prob = self.matches[best_match_id].pred
-            self.result = match, prob, label, reason
-            
+            if best_conf > 0.8:
+                reason = "Linear SVM classifier best confidence"
+                match = self.matches[best_match_id].description.document.get('id')
+                label = self.matches[best_match_id].description.label
+                prob = self.matches[best_match_id].conf
+                self.result = match, prob, label, reason
+            else:
+                if not self.result:
+                    reason = "Linear SVM classifier confidence too low"
+                    self.result = False, 0, False, reason
+
             if self.DEBUG:
                 for m in self.matches:
                     print m.description.document.get('id')
                     print m.pred
+                    print m.conf
 
-                    '''
-                    print ('main_title_exact_match', m.main_title_exact_match)
-                    print ('title_start_match', m.title_start_match)
-                    print ('title_end_match', m.title_end_match)
-                    print ('last_part_match', m.last_part_match)
-                    print ('name_conflict', m.name_conflict)
-                    print ('date_match', m.date_match)
-                    print ('type_match', m.type_match)
-                    print ('cos_sim', m.cos_sim)
-                    '''
-                print best_match_id
-                print best_pred
-                print self.active_match_ids
-                print len(self.active_match_ids)
-            
-            if self.FAST: 
-                if not self.result:
-                    reason = 'Name conflict'
-                    self.result = False, 0, False, reason
+                    #print ('main_title_exact_match', m.main_title_exact_match)
+                    #print ('title_start_match', m.title_start_match)
+                    #print ('title_end_match', m.title_end_match)
+                    #print ('last_part_match', m.last_part_match)
+                    #print ('name_conflict', m.name_conflict)
+                    #print ('date_match', m.date_match)
+                    #print ('type_match', m.type_match)
+                    #print ('cos_sim', m.cos_sim)
+                    
+                #print best_match_id
+                #print best_pred
+                #print self.active_match_ids
+                #print len(self.active_match_ids)
 
 
     def query_solr(self, ne):
