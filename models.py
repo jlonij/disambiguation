@@ -13,7 +13,7 @@ class LinearSVM:
     def __init__(self):
 
         # Load model parameters: weights, means, variances and bias
-        model_file = "linear_svm.xml"
+        model_file = "models/linear_svm.xml"
         tree = etree.parse(model_file)
         root = tree.getroot()
 
