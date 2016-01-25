@@ -10,7 +10,7 @@ import inspect
 import Levenshtein
 from lxml import etree
 import math
-from models import LinearSVM
+from models import LinearSVM, RadialSVM
 import numpy as np
 import re
 from scipy import spatial
@@ -42,21 +42,6 @@ class linkEntity():
     result = None
     flow = []
 
-    features = [
-            'main_title_exact_match',
-            'main_title_start_match',
-            'main_title_end_match',
-            'main_title_match',
-            'title_exact_match',
-            'title_start_match',
-            'title_end_match',
-            'title_match',
-            'last_part_match',
-            'name_conflict',
-            'date_match',
-            'type_match',
-            'cos_sim'
-            ]
 
     def __init__(self, ne, ne_type='', url='', debug=False, full=True):
 
@@ -132,11 +117,11 @@ class linkEntity():
                         self.matches[i].match_abstract()
 
             # Calculate probability for all candidates
-            model = LinearSVM()
+            model = RadialSVM()
             for i in self.active_match_ids:
                 example = []
-                for j in range(len(self.features)):
-                    example.append(float(getattr(self.matches[i], self.features[j])))
+                for j in range(len(model.features)):
+                    example.append(float(getattr(self.matches[i], model.features[j])))
                 self.matches[i].prob = model.predict(example)
 
             # Select best candidate, if any
@@ -148,14 +133,14 @@ class linkEntity():
                     best_match_id = i
 
             if best_prob > 0.5:
-                reason = "Linear SVM classifier best probability"
+                reason = "SVM classifier best probability"
                 match = self.matches[best_match_id].description.document.get('id')
                 label = self.matches[best_match_id].description.label
                 prob = self.matches[best_match_id].prob
                 self.result = match, prob, label, reason
             else:
                 if not self.result:
-                    reason = "Linear SVM classifier probability too low"
+                    reason = "SVM classifier probability too low"
                     self.result = False, 0, False, reason
 
             if self.DEBUG:
