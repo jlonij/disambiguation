@@ -1,11 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# This code is work in progress,
-# if you change anything, please re-run ./test_disambiguation.py
-# And check the output.
-
-
 import inspect
 import Levenshtein
 from lxml import etree
@@ -20,13 +15,9 @@ import urllib
 import warnings
 
 
-class linkEntity():
+class Linker():
 
     DEBUG = False
-
-    # Todo: remove this option
-    FAST = False # Quick decision or full evaluation
-    FULL = False # All features of all candidates
 
     SOLR_SERVER = 'http://linksolr.kbresearch.nl/dbpedia/'
     SOLR_ROWS = 20
@@ -37,131 +28,93 @@ class linkEntity():
 
     entity = None
     matches = []
-    active_match_ids = []
 
     result = None
     flow = []
 
 
-    def __init__(self, ne, ne_type='', url='', debug=False, full=True):
-
+    def __init__(self, debug=False):
         if debug:
             self.DEBUG = debug
-        if full:
-            self.FULL = full
 
-        # Normalize entity and get initial candidate set
+
+    def link(self, ne, ne_type=None, url=None):
+
+        # Pre-process entity
         self.entity = Entity(ne, ne_type, url)
-        ne = self.entity.ne
-        if len(ne) < 2:
+        if len(self.entity.ne) < 2:
             reason = "Entity too short"
             self.result = None, -1.0, None, reason
-        else:
-            self.SOLR_CONNECTION = solr.SolrConnection(self.SOLR_SERVER)
-            self.solr_response, self.solr_result_count = self.query_solr(ne)
+            return self.result
 
-        # If any candidate descriptions were found
-        if not self.result:
-            matches = []
-            active_match_ids = []
+        # Query Solr for DBpedia candidates
+        self.solr_response, self.solr_result_count = self.query_solr(self.entity.ne)
+        if self.result:
+            return self.result
+
+        matches = []
+        for i in range(self.solr_result_count):
+            description = Description(self.solr_response.results[i])
+            match = Match(self.entity, description)
+            matches.append(match)
+        self.matches = matches
+
+        # Calculate feature values for each candidate
+
+        for i in range(self.solr_result_count):
+            # Todo:
+            # self.inlinks_nl, self.inlinks_en = self.get_total_inlinks()
+            # Solr ranking
+            # Iets met aantal delen ne len(ne.split())) /
+            # (len(match_label[0].split()
+
+            self.matches[i].match_id()
+            self.matches[i].match_titles()
+            self.matches[i].match_last_part()
+            self.matches[i].has_name_conflict()
+
+        if self.entity.ne_type and self.entity.url:
+            self.entity.get_metadata()
+            self.entity.get_ocr()
+
             for i in range(self.solr_result_count):
-                description = Description(self.solr_response.results[i])
-                match = Match(self.entity, description, i)
-                matches.append(match)
-                active_match_ids.append(i)
-            self.matches = matches
-            self.active_match_ids = active_match_ids
-            self.inlinks_nl, self.inlinks_en = self.get_total_inlinks()
+                self.matches[i].match_date()
+                self.matches[i].match_abstract()
+                self.matches[i].match_type()
 
-            # Evaluate string similarity
-            self.match_id()
-            self.match_titles()
-            self.match_last_part()
+        # Calculate probability for all candidates
+        model = RadialSVM()
+        for i in range(self.solr_result_count):
+            example = []
+            for j in range(len(model.features)):
+                example.append(float(getattr(self.matches[i], model.features[j])))
+            self.matches[i].prob = model.predict(example)
 
-            remove_ids = []
-            for i in self.active_match_ids:
-                if self.matches[i].has_name_conflict():
-                    remove_ids.append(i)
+        # Select best candidate, if any
+        best_prob = 0
+        best_match_id = -1
+        for i in range(self.solr_result_count):
+            if self.matches[i].prob > best_prob:
+                best_prob = self.matches[i].prob
+                best_match_id = i
 
-            # Eliminate name conflicts
-            if not self.FULL:
-                for r in remove_ids:
-                    self.active_match_ids.remove(r)
+        if best_prob > 0.3:
+            reason = "SVM classifier best probability"
+            match = self.matches[best_match_id].description.document.get('id')
+            label = self.matches[best_match_id].description.label
+            prob = self.matches[best_match_id].prob
+            self.result = match, prob, label, reason
+        else:
+            reason = "SVM classifier probability too low"
+            self.result = False, 0, False, reason
 
-            # If at least one candidate remains
-            if len(self.active_match_ids) > 0:
-                # Evaluate available date info
-                remove_ids = []
-                if self.entity.url:
-                    self.entity.get_metadata()
-                    for i in self.active_match_ids:
-                        self.matches[i].match_date()
-                        if self.matches[i].date_match < 0:
-                            remove_ids.append(i)
+        # Debugging
+        if self.DEBUG:
+            for m in self.matches:
+                print m.description.document.get('id')
+                print m.prob
 
-                # Eliminate date conflicts
-                if not self.FULL:
-                    for r in remove_ids:
-                        self.active_match_ids.remove(r)
-
-            # If multiple candidates remain, or in full mode, evaluate other contextual features
-            if len(self.active_match_ids) > 1 or self.FULL:
-                # Match ne type
-                if self.entity.ne_type:
-                    for i in self.active_match_ids:
-                        self.matches[i].match_type()
-                # Match abstract
-                if self.entity.url:
-                    self.entity.get_ocr()
-                    for i in self.active_match_ids:
-                        self.matches[i].match_abstract()
-
-            # Calculate probability for all candidates
-            model = RadialSVM()
-            for i in self.active_match_ids:
-                example = []
-                for j in range(len(model.features)):
-                    example.append(float(getattr(self.matches[i], model.features[j])))
-                self.matches[i].prob = model.predict(example)
-
-            # Select best candidate, if any
-            best_prob = 0
-            best_match_id = -1
-            for i in self.active_match_ids:
-                if self.matches[i].prob > best_prob:
-                    best_prob = self.matches[i].prob
-                    best_match_id = i
-
-            if best_prob > 0.3:
-                reason = "SVM classifier best probability"
-                match = self.matches[best_match_id].description.document.get('id')
-                label = self.matches[best_match_id].description.label
-                prob = self.matches[best_match_id].prob
-                self.result = match, prob, label, reason
-            else:
-                if not self.result:
-                    reason = "SVM classifier probability too low"
-                    self.result = False, 0, False, reason
-
-            if self.DEBUG:
-                for m in self.matches:
-                    print m.description.document.get('id')
-                    #print m.pred
-                    print m.prob
-
-                    #print ('main_title_exact_match', m.main_title_exact_match)
-                    #print ('title_start_match', m.title_start_match)
-                    #print ('title_end_match', m.title_end_match)
-                    #print ('last_part_match', m.last_part_match)
-                    #print ('name_conflict', m.name_conflict)
-                    #print ('date_match', m.date_match)
-                    #print ('type_match', m.type_match)
-                    #print ('cos_sim', m.cos_sim)
-
-                #print best_match_id
-                #print best_pred
-                #print self.active_match_ids
-                #print len(self.active_match_ids)
+        return self.result
 
 
     def query_solr(self, ne):
@@ -177,6 +130,8 @@ class linkEntity():
 
         if self.DEBUG:
             self.query = query + "&sort=lang+desc,inlinks+desc"
+
+        self.SOLR_CONNECTION = solr.SolrConnection(self.SOLR_SERVER)
 
         try:
             solr_response = self.SOLR_CONNECTION.query(
@@ -206,99 +161,6 @@ class linkEntity():
             else:
                 inlinks_en += document.get('inlinks')
         return inlinks_nl, inlinks_en
-
-
-    def match_id(self):
-        if self.DEBUG:
-            self.flow.append(inspect.stack()[0][3])
-
-        for i in self.active_match_ids:
-            id_match = self.matches[i].match_id()
-
-            if self.FAST:
-                # Settle for the first exact id match
-                if id_match:
-                    reason = "Main title match"
-                    match = self.matches[i].description.document.get('id')
-                    label = self.matches[i].description.label
-                    prob = 1
-                    self.result = match, prob, label, reason
-                    return
-
-
-    def match_titles(self):
-        if self.DEBUG:
-            self.flow.append(inspect.stack()[0][3])
-
-        for i in self.active_match_ids:
-            self.matches[i].match_titles()
-
-        if self.FAST:
-            # Count the number of times the asked ne appears in the title field
-            # and settle for the first hit if it has the best count
-            first_result_count = self.matches[0].title_start_match
-            first_result_best = True
-
-            for i in self.active_match_ids:
-                if self.matches[i].title_start_match > first_result_count:
-                    first_result_best = False
-
-            if first_result_best and first_result_count > 2:
-                if self.matches[0].title_end_match > 0:
-                    reason = "First Solr hit best"
-                    match = self.matches[0].description.document.get('id')
-                    label = self.matches[i].description.label
-                    prob = 1
-                    self.result = match, prob, label, reason
-                    return
-
-            # If the first match wasn't the best and the ne has multiple parts
-            # choose the first result with at least one title_start_match
-            if len(self.entity.ne.split()) > 1:
-                for i in self.active_match_ids:
-                    if self.matches[i].title_start_match > 0:
-                        reason = "Abbreviation test" # Why this reason?
-                        match = self.matches[i].description.document.get('id')
-                        label = self.matches[i].description.label
-                        prob = 0.7
-                        self.result = match, prob, label, reason
-                        return
-
-
-    def match_last_part(self):
-        if self.DEBUG:
-            self.flow.append(inspect.stack()[0][3])
-
-        for i in self.active_match_ids:
-            last_part_match = self.matches[i].match_last_part()
-
-            if self.FAST:
-                if last_part_match:
-                    reason = "Lastpart match"
-                    match = self.matches[i].description.document.get('id')
-                    label = self.matches[i].description.label
-                    # Calculate probability
-                    match_label = self.matches[i].description.norm_title_str[0]
-                    inlinks = self.matches[i].description.document.get('inlinks')
-                    ne = self.entity.ne
-                    if lang == 'nl':
-                        p = self.calculate_propability(self.inlinks_nl, inlinks, match_label, ne)
-                    else:
-                        p = self.calculate_propability(self.inlinks_en, inlinks, match_label, ne)
-                    self.result = match, p, label, reason
-                    return
-
-
-    def calculate_propability(self, total, inlinks, match_label, ne):
-        if total > 0:
-            p = (float(inlinks) / total)
-        else:
-            p = 0.1
-        if len(match_label[0].split()) - 1 > 2:
-            c = float(len(ne.split())) / (len(match_label[0].split()) - 1)
-        if p > 1:
-            p = 1
-        return p
 
 
     def __repr__(self):
@@ -341,7 +203,7 @@ class Match():
     cos_sim = 0
 
 
-    def __init__(self, entity, description, solr_ranking):
+    def __init__(self, entity, description):
         self.entity = entity
         self.description = description
 
@@ -680,8 +542,11 @@ if __name__ == '__main__':
 
     if not len(sys.argv) > 1:
         print("Usage: ./disambiguation.py [Named Entity (string)]")
-    elif len(sys.argv) > 3:
-        print(linkEntity(sys.argv[1], sys.argv[2], sys.argv[3], debug=True, full=True))
     else:
-        print(linkEntity(sys.argv[1], debug=True))
+        linker = Linker(debug=True)
+
+    if len(sys.argv) > 3:
+        print(linker.link(sys.argv[1], sys.argv[2], sys.argv[3]))
+    else:
+        print(linker.link(sys.argv[1]))
 

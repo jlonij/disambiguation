@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 
 from bottle import abort, route, run, template, request, default_app
-import disambiguation
+from disambiguation import Linker
 import hashlib
 
 
@@ -15,15 +15,12 @@ def link():
         ne = request.params.get('ne')
         ne_type = request.params.get('ne_type')
 	url = request.params.get('url')
-	
+
+        linker = Linker()
 	if url and ne_type:
-	    # link, p, mainLabel, reason = disambiguation.linkEntity(ne, ne_type, url)
-            linker = disambiguation.linkEntity(ne, ne_type, url)
-            link, p, mainLabel, reason = linker.result
+            link, p, mainLabel, reason = linker.link(ne, ne_type, url)
 	else:
-	    # link, p, mainLabel, reason = disambiguation.linkEntity(ne)
-            linker = disambiguation.linkEntity(ne)
-            link, p, mainLabel, reason = linker.result
+            link, p, mainLabel, reason = linker.link(ne)
 
 	result = dict()
 
