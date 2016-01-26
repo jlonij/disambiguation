@@ -5,7 +5,7 @@
 # if you change anything, please re-run ./test_disambiguation.py
 # And check the output.
 
-    
+
 import inspect
 import Levenshtein
 from lxml import etree
@@ -30,7 +30,7 @@ class linkEntity():
 
     SOLR_SERVER = 'http://linksolr.kbresearch.nl/dbpedia/'
     SOLR_ROWS = 20
- 
+
     query = ""
     solr_response = None
     solr_result_count = 0
@@ -49,7 +49,7 @@ class linkEntity():
             self.DEBUG = debug
         if full:
             self.FULL = full
-            
+
         # Normalize entity and get initial candidate set
         self.entity = Entity(ne, ne_type, url)
         ne = self.entity.ne
@@ -79,15 +79,15 @@ class linkEntity():
             self.match_last_part()
 
             remove_ids = []
-            for i in self.active_match_ids:                  
+            for i in self.active_match_ids:
                 if self.matches[i].has_name_conflict():
                     remove_ids.append(i)
- 
+
             # Eliminate name conflicts
             if not self.FULL:
                 for r in remove_ids:
                     self.active_match_ids.remove(r)
-            
+
             # If at least one candidate remains
             if len(self.active_match_ids) > 0:
                 # Evaluate available date info
@@ -98,7 +98,7 @@ class linkEntity():
                         self.matches[i].match_date()
                         if self.matches[i].date_match < 0:
                             remove_ids.append(i)
-                
+
                 # Eliminate date conflicts
                 if not self.FULL:
                     for r in remove_ids:
@@ -132,7 +132,7 @@ class linkEntity():
                     best_prob = self.matches[i].prob
                     best_match_id = i
 
-            if best_prob > 0.5:
+            if best_prob > 0.3:
                 reason = "SVM classifier best probability"
                 match = self.matches[best_match_id].description.document.get('id')
                 label = self.matches[best_match_id].description.label
@@ -157,7 +157,7 @@ class linkEntity():
                     #print ('date_match', m.date_match)
                     #print ('type_match', m.type_match)
                     #print ('cos_sim', m.cos_sim)
-                    
+
                 #print best_match_id
                 #print best_pred
                 #print self.active_match_ids
@@ -167,7 +167,7 @@ class linkEntity():
     def query_solr(self, ne):
         if self.DEBUG:
             self.flow.append(inspect.stack()[0][3])
-            
+
         query = "title:\""
         query += ne + "\" OR "
         query += "title_str:\""
@@ -189,9 +189,9 @@ class linkEntity():
             self.result = None, -1.0, None, reason
         if solr_response is not None and solr_response.numFound == 0:
             self.result = False, 0, False, 'Nothing found'
-        
+
         return solr_response, solr_result_count
-        
+
 
     def get_total_inlinks(self):
         if self.DEBUG:
@@ -271,7 +271,7 @@ class linkEntity():
 
         for i in self.active_match_ids:
             last_part_match = self.matches[i].match_last_part()
-            
+
             if self.FAST:
                 if last_part_match:
                     reason = "Lastpart match"
@@ -286,7 +286,7 @@ class linkEntity():
                     else:
                         p = self.calculate_propability(self.inlinks_en, inlinks, match_label, ne)
                     self.result = match, p, label, reason
-                    return 
+                    return
 
 
     def calculate_propability(self, total, inlinks, match_label, ne):
@@ -319,7 +319,7 @@ class Match():
 
     entity = None
     description = None
-    
+
     solr_ranking = 0
 
     main_title_match = 0
@@ -351,7 +351,7 @@ class Match():
         # match_label = self.description.document.get('title_str')
         ne = self.entity.ne
         match_label = self.description.norm_title_str[0]
-        
+
         self.main_title_match = 1 if match_label.find(ne) > -1 else 0
         self.main_title_start_match = 1 if match_label.startswith(ne) else 0
         self.main_title_end_match = 1 if match_label.endswith(ne) else 0
@@ -380,7 +380,7 @@ class Match():
                 title_end_match += 1
             if l == ne:
                 title_exact_match += 1
-        
+
         self.title_match = title_match
         self.title_start_match = title_start_match
         self.title_end_match = title_end_match
@@ -390,9 +390,9 @@ class Match():
     def match_last_part(self):
         ne = self.entity.ne
         match_label = self.description.norm_title_str
-        
+
         # If the entity consists of a single word
-        if not len(ne.split()) > 1:                 
+        if not len(ne.split()) > 1:
             # And the main label is longer than ne string and contains the ne string
             # and there is at least one label in which the ne string does and a bracket does not appear
             if len(match_label[0]) >= len(ne) and (self.main_title_start_match > 0 or self.main_title_end_match > 1) and True in [j.find(ne) > -1 and not j.find('(') > -1 for j in match_label]:
@@ -406,13 +406,13 @@ class Match():
             # How many parts in the entity and the main label
             count_label_parts = len(match_label[0].split(' ')) - 1
             count_ne_parts = len(ne.split(' ')) - 1
-            
+
             # If more parts in the ne than the main label, or the first ne part has more than two letters and is not the same as the main label first part
             # No match can be made, so return zero
             if count_label_parts < count_ne_parts or len(ne.split()[0]) > 2 and not ne.split()[0] == match_label[0].split()[0]:
                 if not [i[0] for i in match_label[0].split()] == [i[0] for i in ne.split()]:
                     return self.last_part_match
-            
+
             # Else
             for label in match_label:
                 if not label.strip():
@@ -443,7 +443,7 @@ class Match():
     def match_date(self):
         if self.entity.publ_date:
             year_of_publ = int(self.entity.publ_date[:4])
-            year_of_birth = self.description.document.get('yob') 
+            year_of_birth = self.description.document.get('yob')
             if year_of_birth is not None:
                 if year_of_publ < year_of_birth:
                     self.date_match = -1
@@ -462,8 +462,8 @@ class Match():
                     if t == TPTA_SCHEMA_MAPPING[self.entity.ne_type]:
                         self.type_match = 1
                         break
-    
-    
+
+
     def match_abstract(self):
         abstract = self.description.document.get('abstract')
         if abstract:
@@ -477,7 +477,7 @@ class Match():
         warnings.filterwarnings('ignore', message='.*Unicode equal comparison.*')
         abstract = self.description.document.get('abstract')
         ocr = self.entity.ocr
-        
+
         if ocr and abstract:
             corpus = [ocr, abstract]
 
@@ -499,7 +499,7 @@ class Match():
                         voc.append(t)
 
             # Vectorize
-            vec = [] 
+            vec = []
             for b in bow:
                 v = np.zeros(len(voc))
                 for t in voc:
@@ -520,7 +520,7 @@ class Description():
     def __init__(self, doc):
         self.document = doc
         self.label = doc.get('title')[0]
-        
+
         # Normalize titles here until they become available from the index
         norm_title_str = []
         for t in doc.get('title_str'):
@@ -572,12 +572,12 @@ class Entity():
         self.clean_ne = self.clean(ne.decode('utf-8'))
         self.norm_ne = self.normalize(self.clean_ne)
         self.ne, self.titles = self.strip_titles(self.norm_ne)
-        
+
         no_parts = len(self.ne.split())
 
 
     def clean(self, ne):
-        ''' 
+        '''
         Remove unwanted characters from the named entity.
         '''
         remove_char = ["+", "&&", "||", "!", "(", ")", "{", u'„',
@@ -607,29 +607,29 @@ class Entity():
         ne = ne.strip()
         ne = ne.lower()
         return ne
-    
-    
+
+
     def strip_titles(self, ne):
 
         GENERAL_TITLES_MALE = ['de heer', 'dhr']
-        GENERAL_TITLES_FEMALE = ['mevrouw', 'mevr', 'mw', 'mejuffrouw', 'juffrouw', 
+        GENERAL_TITLES_FEMALE = ['mevrouw', 'mevr', 'mw', 'mejuffrouw', 'juffrouw',
             'mej']
-        ACADEMIC_TITLES = ['professor', 'prof', 'drs', 'mr', 'ing', 'ir', 'dr', 
+        ACADEMIC_TITLES = ['professor', 'prof', 'drs', 'mr', 'ing', 'ir', 'dr',
             'doctor', 'meester', 'doctorandus', 'ingenieur']
-        POLITICAL_TITLES = ['minister', 'minister-president', 'staatssecretaris', 
-            'ambassadeur', 'kamerlid', 'burgemeester', 'wethouder', 
-            'gemeenteraadslid', 'consul'] 
-        MILITARY_TITLES = ['generaal', 'gen', 'majoor', 'maj', 'luitenant', 
+        POLITICAL_TITLES = ['minister', 'minister-president', 'staatssecretaris',
+            'ambassadeur', 'kamerlid', 'burgemeester', 'wethouder',
+            'gemeenteraadslid', 'consul']
+        MILITARY_TITLES = ['generaal', 'gen', 'majoor', 'maj', 'luitenant',
             'kolonel', 'kol', 'kapitein']
-        RELIGIOUS_TITLES = ['dominee', 'ds', 'paus', 'kardinaal', 'aartsbisschop', 
-            'bisschop', 'monseigneur', 'mgr', 'kapelaan', 'deken', 'abt', 
-            'prior', 'pastoor', 'pater', 'predikant', 'opperrabbijn', 'rabbijn', 
+        RELIGIOUS_TITLES = ['dominee', 'ds', 'paus', 'kardinaal', 'aartsbisschop',
+            'bisschop', 'monseigneur', 'mgr', 'kapelaan', 'deken', 'abt',
+            'prior', 'pastoor', 'pater', 'predikant', 'opperrabbijn', 'rabbijn',
             'imam']
-        TITLES = (GENERAL_TITLES_MALE + GENERAL_TITLES_FEMALE + ACADEMIC_TITLES + 
+        TITLES = (GENERAL_TITLES_MALE + GENERAL_TITLES_FEMALE + ACADEMIC_TITLES +
             POLITICAL_TITLES + MILITARY_TITLES + RELIGIOUS_TITLES)
 
         titles = []
-        
+
         for t in TITLES:
             regex = '(^|\W)('+t+')(\W|$)'
             if re.search(regex, ne) is not None:
@@ -638,7 +638,7 @@ class Entity():
         while ne.find('  ') > -1:
             ne = ne.replace('  ', ' ')
         ne = ne.strip()
-        
+
         return ne, titles
 
 
@@ -662,7 +662,7 @@ class Entity():
         url = self.url
         pos = url.find('mpeg21') + 6
         url = url[:pos]
-        f = urllib.urlopen(url) 
+        f = urllib.urlopen(url)
         md_string = f.read()
         f.close()
         md_tree = etree.fromstring(md_string)
@@ -672,7 +672,7 @@ class Entity():
                 dcx = node.find('{urn:mpeg:mpeg21:2002:02-DIDL-NS}Resource/{info:srw/schema/1/dc-v1.1}dcx')
                 self.publ_date = dcx.findtext('{http://purl.org/dc/elements/1.1/}date')
                 for sp in dcx.iter('{http://purl.org/dc/terms/}spatial'):
-                    if '{http://www.w3.org/2001/XMLSchema-instance}type' in sp.attrib: 
+                    if '{http://www.w3.org/2001/XMLSchema-instance}type' in sp.attrib:
                         self.publ_place = sp.text
 
 
@@ -684,5 +684,4 @@ if __name__ == '__main__':
         print(linkEntity(sys.argv[1], sys.argv[2], sys.argv[3], debug=True, full=True))
     else:
         print(linkEntity(sys.argv[1], debug=True))
-
 
