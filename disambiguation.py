@@ -52,7 +52,7 @@ class Linker():
         if self.result:
             return self.result
         else:
-            self.inlinks_nl, self.inlinks_en = self.get_total_inlinks()
+            self.inlinks_total = self.get_total_inlinks()
 
         # Initialize list of potential matches (i.e. entity-candidate combinations)
         matches = []
@@ -68,8 +68,8 @@ class Linker():
             # "Solr" features
             match.solr_pos = self.matches.index(match)
             match.lang = 1 if match.description.document.get('lang') == 'nl' else 0
-            inlinks_total = self.inlinks_en if match.lang == 0 else self.inlinks_nl
-            match.inlinks = match.description.document.get('inlinks') / float(inlinks_total)
+            match.inlinks = match.description.document.get('inlinks') / float(self.inlinks_total)
+            match.disambig = match.description.document.get('disambig')
 
             # String matching
             # Iets met aantal delen ne: len(ne.split()) / len(match_label[0].split())
@@ -114,6 +114,8 @@ class Linker():
             for match in self.matches:
                 print match.description.document.get('id')
                 print match.prob
+                print match.inlinks
+                print match.disambig
 
         return self.result
 
@@ -169,17 +171,11 @@ class Linker():
         if self.DEBUG:
             self.flow.append(inspect.stack()[0][3])
 
-        inlinks_nl = 0
-        inlinks_en = 0
+        inlinks_total = 0
         for i in range(self.solr_result_count):
             document = self.solr_response.results[i]
-            lang = document.get('lang')
-            if lang == 'nl':
-                inlinks_nl += document.get('inlinks')
-            else:
-                inlinks_en += document.get('inlinks')
-
-        return inlinks_nl, inlinks_en
+            inlinks_total += document.get('inlinks')
+        return inlinks_total
 
 
     def __repr__(self):
