@@ -29,29 +29,32 @@ class Linker():
     entity = None
     matches = []
 
+    model = None
     result = None
     flow = []
 
 
     def __init__(self, debug=False):
+
         if debug:
             self.DEBUG = debug
 
 
     def link(self, ne, ne_type=None, url=None):
 
-        # Pre-process entity
-        self.entity = Entity(ne, ne_type, url)
-        if len(self.entity.ne) < 2:
-            reason = "Entity too short"
-            self.result = None, -1.0, None, reason
-            return self.result
-
-        # Query Solr for DBpedia candidates
-        self.solr_response, self.solr_result_count = self.query_solr(self.entity.ne)
+        # Pre-process entity and context information
+        self.entity = self.pre_process(ne, ne_type, url)
         if self.result:
             return self.result
 
+        # Query Solr for DBpedia candidates
+        self.solr_response, self.solr_result_count = self.query_solr()
+        if self.result:
+            return self.result
+        else:
+            self.inlinks_nl, self.inlinks_en = self.get_total_inlinks()
+
+        # Initialize list of potential matches (i.e. entity-candidate combinations)
         matches = []
         for i in range(self.solr_result_count):
             description = Description(self.solr_response.results[i])
@@ -59,44 +62,43 @@ class Linker():
             matches.append(match)
         self.matches = matches
 
-        # Calculate feature values for each candidate
+        # Calculate feature values for each match
+        for match in self.matches:
 
-        for i in range(self.solr_result_count):
-            # Todo:
-            # self.inlinks_nl, self.inlinks_en = self.get_total_inlinks()
-            # Solr ranking
-            # Iets met aantal delen ne len(ne.split())) /
-            # (len(match_label[0].split()
+            # "Solr" features
+            match.solr_pos = self.matches.index(match)
+            match.lang = 1 if match.description.document.get('lang') == 'nl' else 0
+            inlinks_total = self.inlinks_en if match.lang == 0 else self.inlinks_nl
+            match.inlinks = match.description.document.get('inlinks') / float(inlinks_total)
 
-            self.matches[i].match_id()
-            self.matches[i].match_titles()
-            self.matches[i].match_last_part()
-            self.matches[i].has_name_conflict()
+            # String matching
+            # Iets met aantal delen ne: len(ne.split()) / len(match_label[0].split())
+            match.match_id()
+            match.match_titles()
+            match.match_last_part()
+            match.check_name_conflict()
 
-        if self.entity.ne_type and self.entity.url:
-            self.entity.get_metadata()
-            self.entity.get_ocr()
-
-            for i in range(self.solr_result_count):
-                self.matches[i].match_date()
-                self.matches[i].match_abstract()
-                self.matches[i].match_type()
+            # Context information
+            if self.entity.ne_type and self.entity.url:
+                match.match_date()
+                match.match_abstract()
+                match.match_type()
 
         # Calculate probability for all candidates
-        model = RadialSVM()
-        for i in range(self.solr_result_count):
+        self.model = RadialSVM()
+        for match in self.matches:
             example = []
-            for j in range(len(model.features)):
-                example.append(float(getattr(self.matches[i], model.features[j])))
-            self.matches[i].prob = model.predict(example)
+            for j in range(len(self.model.features)):
+                example.append(float(getattr(match, self.model.features[j])))
+            match.prob = self.model.predict(example)
 
-        # Select best candidate, if any
+        # Select best candidate, if any, and return the result
         best_prob = 0
         best_match_id = -1
-        for i in range(self.solr_result_count):
-            if self.matches[i].prob > best_prob:
-                best_prob = self.matches[i].prob
-                best_match_id = i
+        for match in self.matches:
+            if match.prob > best_prob:
+                best_prob = match.prob
+                best_match_id = self.matches.index(match)
 
         if best_prob > 0.3:
             reason = "SVM classifier best probability"
@@ -108,21 +110,35 @@ class Linker():
             reason = "SVM classifier probability too low"
             self.result = False, 0, False, reason
 
-        # Debugging
         if self.DEBUG:
-            for m in self.matches:
-                print m.description.document.get('id')
-                print m.prob
+            for match in self.matches:
+                print match.description.document.get('id')
+                print match.prob
 
         return self.result
 
 
-    def query_solr(self, ne):
+    def pre_process(self, ne, ne_type=None, url=None):
+        if self.DEBUG:
+            self.flow.append(inspect.stack()[0][3])
+
+        entity = Entity(ne, ne_type, url)
+        if len(entity.ne) < 2:
+            reason = "Entity too short"
+            self.result = None, -1.0, None, reason
+        elif ne_type and url:
+            entity.get_metadata()
+            entity.get_ocr()
+
+        return entity
+
+
+    def query_solr(self):
         if self.DEBUG:
             self.flow.append(inspect.stack()[0][3])
 
         query = "title:\""
-        query += ne + "\" OR "
+        query += self.entity.ne + "\" OR "
         query += "title_str:\""
         query += self.entity.clean_ne + "\""
         query += " OR lastpart_str:\""
@@ -142,6 +158,7 @@ class Linker():
         except Exception as error_msg:
             reason = "Failed to query solr: " + str(error_msg)
             self.result = None, -1.0, None, reason
+
         if solr_response is not None and solr_response.numFound == 0:
             self.result = False, 0, False, 'Nothing found'
 
@@ -151,15 +168,17 @@ class Linker():
     def get_total_inlinks(self):
         if self.DEBUG:
             self.flow.append(inspect.stack()[0][3])
+
         inlinks_nl = 0
         inlinks_en = 0
         for i in range(self.solr_result_count):
-            document = self.matches[i].description.document
+            document = self.solr_response.results[i]
             lang = document.get('lang')
             if lang == 'nl':
                 inlinks_nl += document.get('inlinks')
             else:
                 inlinks_en += document.get('inlinks')
+
         return inlinks_nl, inlinks_en
 
 
@@ -182,7 +201,9 @@ class Match():
     entity = None
     description = None
 
-    solr_ranking = 0
+    solr_pos = 0
+    lang = 0
+    inlinks = 0
 
     main_title_match = 0
     main_title_start_match = 0
@@ -195,7 +216,6 @@ class Match():
     title_exact_match = 0
 
     last_part_match = 0
-
     name_conflict = 0
 
     date_match = 0
@@ -295,11 +315,10 @@ class Match():
                         return self.last_part_match
 
 
-    def has_name_conflict(self):
+    def check_name_conflict(self):
         if not self.main_title_exact_match and not self.last_part_match:
             if not (self.title_start_match > 0 and self.title_end_match > 0) and not (len(self.entity.ne.split()) > 1 and self.title_start_match > 0):
                 self.name_conflict = 1
-        return self.name_conflict
 
 
     def match_date(self):
@@ -327,15 +346,6 @@ class Match():
 
 
     def match_abstract(self):
-        abstract = self.description.document.get('abstract')
-        if abstract:
-            self.cos_sim(self.ocr, abstract)
-
-
-    def match_abstract(self):
-        '''
-        Calculate cosine similarity between entity ocr and dbpedia abstract.
-        '''
         warnings.filterwarnings('ignore', message='.*Unicode equal comparison.*')
         abstract = self.description.document.get('abstract')
         ocr = self.entity.ocr
@@ -391,9 +401,6 @@ class Description():
 
 
     def normalize(self, ne):
-        '''
-        Remove periods, hyphens, capitalization.
-        '''
         if ne.find('.') > -1:
             ne = ne.replace('.', ' ')
         if ne.find('-') > -1:
@@ -410,17 +417,15 @@ class Description():
 class Entity():
 
     orig_ne = ''
+    ne_type = ''
+    url = ''
+
     clean_ne = ''
     norm_ne = ''
     ne = ''
 
     titles = []
 
-    no_parts = 0
-
-    ne_type = ''
-
-    url = ''
     ocr = ''
     publ_date = ''
     publ_place = ''
@@ -434,8 +439,6 @@ class Entity():
         self.clean_ne = self.clean(ne.decode('utf-8'))
         self.norm_ne = self.normalize(self.clean_ne)
         self.ne, self.titles = self.strip_titles(self.norm_ne)
-
-        no_parts = len(self.ne.split())
 
 
     def clean(self, ne):
