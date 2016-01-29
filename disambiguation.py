@@ -21,6 +21,9 @@ class Linker():
 
     SOLR_SERVER = 'http://linksolr.kbresearch.nl/dbpedia/'
     SOLR_ROWS = 20
+    INLINKS_MAX = [447348, 199051]
+
+    MIN_PROB = 0.5
 
     query = ""
     solr_response = None
@@ -68,7 +71,10 @@ class Linker():
             # "Solr" features
             match.solr_pos = self.matches.index(match)
             match.lang = 1 if match.description.document.get('lang') == 'nl' else 0
-            match.inlinks = match.description.document.get('inlinks') / float(self.inlinks_total)
+            match.inlinks_local = match.description.document.get('inlinks') / float(self.inlinks_total)
+            match.inlinks_global = match.description.document.get('inlinks') / self.INLINKS_MAX[match.lang]
+            # Temp name change
+            match.inlinks = match.inlinks_local
             match.disambig = match.description.document.get('disambig')
 
             # String matching
@@ -85,7 +91,7 @@ class Linker():
                 match.match_type()
 
         # Calculate probability for all candidates
-        self.model = RadialSVM()
+        self.model = LinearSVM()
         for match in self.matches:
             example = []
             for j in range(len(self.model.features)):
@@ -100,7 +106,7 @@ class Linker():
                 best_prob = match.prob
                 best_match_id = self.matches.index(match)
 
-        if best_prob > 0.3:
+        if best_prob >= self.MIN_PROB:
             reason = "SVM classifier best probability"
             match = self.matches[best_match_id].description.document.get('id')
             label = self.matches[best_match_id].description.label
@@ -114,8 +120,8 @@ class Linker():
             for match in self.matches:
                 print match.description.document.get('id')
                 print match.prob
-                print match.inlinks
-                print match.disambig
+                #print match.inlinks
+                #print match.disambig
 
         return self.result
 
@@ -199,7 +205,9 @@ class Match():
 
     solr_pos = 0
     lang = 0
-    inlinks = 0
+    inlinks_local = 0
+    inlinks_global = 0
+    disambig = 0
 
     main_title_match = 0
     main_title_start_match = 0
@@ -349,7 +357,7 @@ class Match():
         if ocr and abstract:
             corpus = [ocr, abstract]
 
-            # Tokenize
+            # Tokenize both documents into bow's
             punctuation = [',', '.']
             bow = []
             for d in corpus:
@@ -359,14 +367,14 @@ class Match():
                 d = d.split()
                 bow.append(d)
 
-            # Build vocabulary
+            # Build vocabulary of words of at least 5 characters
             voc = []
             for b in bow:
                 for t in b:
-                    if not t in voc:
+                    if not t in voc and len(t) >= 5:
                         voc.append(t)
 
-            # Vectorize
+            # Create normalized word count vectors for both documents
             vec = []
             for b in bow:
                 v = np.zeros(len(voc))
@@ -375,6 +383,7 @@ class Match():
                 v_norm = v / np.linalg.norm(v)
                 vec.append(v_norm)
 
+            # Calculate the distance between the resulting vectors
             self.cos_sim = 1 - spatial.distance.cosine(vec[0], vec[1])
 
 
