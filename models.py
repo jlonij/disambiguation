@@ -19,7 +19,7 @@ class LinearSVM:
     def __init__(self):
 
         model_file = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-1]) + os.sep
-        model_file += "linear_svm.mod"
+        model_file += "linear_svm_1.mod"
         tree = etree.parse(model_file)
         root = tree.getroot()
 
@@ -57,8 +57,11 @@ class LinearSVM:
         pred = self.bias
 
         for i in range(len(example)):
-            # Scale example feature values
-            value = (example[i] - self.means[i]) / math.sqrt(self.variances[i])
+            # Scale example feature values if means and variances are available
+            if len(self.means) == len(self.weights) and len(self.variances) == len(self.weights):
+                value = (example[i] - self.means[i]) / math.sqrt(self.variances[i])
+            else:
+                value = example[i]
             # Add scaled value multiplied by feature weigth
             pred += self.weights[i] * value
 
@@ -79,7 +82,7 @@ class RadialSVM:
     def __init__(self):
 
         model_file = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-1]) + os.sep
-        model_file += "radial_svm.mod"
+        model_file += "radial_svm_1.mod"
         tree = etree.parse(model_file)
         root = tree.getroot()
 
