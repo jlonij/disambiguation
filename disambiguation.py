@@ -5,7 +5,7 @@ import inspect
 import Levenshtein
 from lxml import etree
 import math
-from models import LinearSVM, RadialSVM
+import models
 import numpy as np
 import re
 from scipy import spatial
@@ -71,10 +71,8 @@ class Linker():
             # "Solr" features
             match.solr_pos = self.matches.index(match)
             match.lang = 1 if match.description.document.get('lang') == 'nl' else 0
-            match.inlinks_local = match.description.document.get('inlinks') / float(self.inlinks_total)
-            match.inlinks_global = match.description.document.get('inlinks') / self.INLINKS_MAX[match.lang]
-            # Temp name change
-            match.inlinks = match.inlinks_local
+            match.inlinks_local = match.description.document.get('inlinks') / float(self.inlinks_total) if self.inlinks_total > 0 else match.description.document.get('inlinks')
+            match.inlinks_global = match.description.document.get('inlinks') / float(self.INLINKS_MAX[match.lang])
             match.disambig = match.description.document.get('disambig')
 
             # String matching
@@ -91,7 +89,7 @@ class Linker():
                 match.match_type()
 
         # Calculate probability for all candidates
-        self.model = LinearSVM()
+        self.model = models.LinearSVM()
         for match in self.matches:
             example = []
             for j in range(len(self.model.features)):
