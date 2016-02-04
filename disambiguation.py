@@ -76,7 +76,6 @@ class Linker():
             match.disambig = match.description.document.get('disambig')
 
             # String matching
-            # Iets met aantal delen ne: len(ne.split()) / len(match_label[0].split())
             match.match_id()
             match.match_titles()
             match.match_last_part()
@@ -116,10 +115,19 @@ class Linker():
 
         if self.DEBUG:
             for match in self.matches:
-                print match.description.document.get('id')
-                print match.prob
-                #print match.inlinks
-                #print match.disambig
+                print ('id', match.description.document.get('id'))
+                print ('prob', match.prob)
+
+                print ('main_title_exact_match', match.main_title_exact_match)
+                print ('main_title_end_match', match.main_title_end_match)
+                print ('main_title_start_match', match.main_title_start_match)
+                print ('main_title_match', match.main_title_match)
+
+                print ('title_exact_match', match.title_exact_match)
+                print ('title_end_match', match.title_end_match)
+                print ('title_start_match', match.title_start_match)
+                print ('title_match', match.title_match)
+                print ('title_match_fraction', match.title_match_fraction)
 
         return self.result
 
@@ -216,6 +224,7 @@ class Match():
     title_start_match = 0
     title_end_match = 0
     title_exact_match = 0
+    title_match_fraction = 0
 
     last_part_match = 0
     name_conflict = 0
@@ -235,13 +244,16 @@ class Match():
         # match_label = self.description.document.get('title_str')
         ne = self.entity.ne
         match_label = self.description.norm_title_str[0]
+        fraction = len(ne.split()) / float(len(match_label.split()))
 
-        self.main_title_match = 1 if match_label.find(ne) > -1 else 0
-        self.main_title_start_match = 1 if match_label.startswith(ne) else 0
-        self.main_title_end_match = 1 if match_label.endswith(ne) else 0
-        self.main_title_exact_match = 1 if match_label == ne else 0
-
-        return self.main_title_exact_match
+        if match_label == ne:
+            self.main_title_exact_match = fraction
+        elif match_label.endswith(ne):
+            self.main_title_end_match = fraction
+        elif match_label.startswith(ne):
+            self.main_title_start_match = fraction
+        elif match_label.find(ne) > -1:
+            self.main_title_match = fraction
 
 
     def match_titles(self):
@@ -250,25 +262,35 @@ class Match():
         title_end_match = 0
         title_exact_match = 0
 
+        non_empty = 0
+        non_matching = 0
+
         # Use normalized title string list until they are available from the index
         # match_label = self.description.document.get('title_str')
         ne = self.entity.ne
         match_label = self.description.norm_title_str
 
         for l in match_label:
-            if l.find(ne) > -1:
-                title_match += 1
-            if l.startswith(ne):
-                title_start_match +=1
-            if l.endswith(ne):
-                title_end_match += 1
-            if l == ne:
-                title_exact_match += 1
+            if len(l) > 0:
+                fraction = len(ne.split()) / float(len(l.split()))
+                non_empty += 1
+
+                if l == ne:
+                    title_exact_match += fraction
+                elif l.endswith(ne):
+                    title_end_match += fraction
+                elif l.startswith(ne):
+                    title_start_match += fraction
+                elif l.find(ne) > -1:
+                    title_match += fraction
+                else:
+                    non_matching += 1
 
         self.title_match = title_match
         self.title_start_match = title_start_match
         self.title_end_match = title_end_match
         self.title_exact_match = title_exact_match
+        self.title_match_fraction = (non_empty - non_matching) / float(non_empty)
 
 
     def match_last_part(self):
