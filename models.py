@@ -19,7 +19,7 @@ class LinearSVM:
     def __init__(self):
 
         model_file = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-1]) + os.sep
-        model_file += "linear_svm.mod"
+        model_file += "models" + os.sep + "linear_svm.mod"
         tree = etree.parse(model_file)
         root = tree.getroot()
 
@@ -82,7 +82,7 @@ class RadialSVM:
     def __init__(self):
 
         model_file = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-1]) + os.sep
-        model_file += "radial_svm.mod"
+        model_file += "models" + os.sep + "radial_svm.mod"
         tree = etree.parse(model_file)
         root = tree.getroot()
 
