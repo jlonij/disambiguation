@@ -28,6 +28,8 @@ class Linker():
     query = ""
     solr_response = None
     solr_result_count = 0
+    inlinks_total = 0
+    score_total = 0
 
     entity = None
     matches = []
@@ -56,6 +58,7 @@ class Linker():
             return self.result
         else:
             self.inlinks_total = self.get_total_inlinks()
+            self.score_total = self.get_total_score()
 
         # Initialize list of potential matches (i.e. entity-candidate combinations)
         matches = []
@@ -70,9 +73,13 @@ class Linker():
 
             # "Solr" features
             match.solr_pos = self.matches.index(match)
-            match.lang = 1 if match.description.document.get('lang') == 'nl' else 0
-            match.inlinks_local = match.description.document.get('inlinks') / float(self.inlinks_total) if self.inlinks_total > 0 else match.description.document.get('inlinks')
+            match.score_global = match.description.document.get('score')
+            if self.score_total > 0:
+                match.score_local = match.description.document.get('score') / float(self.score_total)
             match.inlinks_global = match.description.document.get('inlinks') / float(self.INLINKS_MAX[match.lang])
+            if self.inlinks_total > 0:
+                match.inlinks_local = match.description.document.get('inlinks') / float(self.inlinks_total)
+            match.lang = 1 if match.description.document.get('lang') == 'nl' else 0
             match.disambig = match.description.document.get('disambig')
 
             # String matching
@@ -88,7 +95,7 @@ class Linker():
                 match.match_type()
 
         # Calculate probability for all candidates
-        self.model = models.LinearSVM()
+        self.model = models.RadialSVM()
         for match in self.matches:
             example = []
             for j in range(len(self.model.features)):
@@ -115,19 +122,22 @@ class Linker():
 
         if self.DEBUG:
             for match in self.matches:
-                print ('id', match.description.document.get('id'))
-                print ('prob', match.prob)
+                print('id', match.description.document.get('id'))
+                print('prob', match.prob)
 
-                print ('main_title_exact_match', match.main_title_exact_match)
-                print ('main_title_end_match', match.main_title_end_match)
-                print ('main_title_start_match', match.main_title_start_match)
-                print ('main_title_match', match.main_title_match)
+                print('score_global', match.score_global)
+                print('score_local', match.score_local)
 
-                print ('title_exact_match', match.title_exact_match)
-                print ('title_end_match', match.title_end_match)
-                print ('title_start_match', match.title_start_match)
-                print ('title_match', match.title_match)
-                print ('title_match_fraction', match.title_match_fraction)
+                print('main_title_exact_match', match.main_title_exact_match)
+                print('main_title_end_match', match.main_title_end_match)
+                print('main_title_start_match', match.main_title_start_match)
+                print('main_title_match', match.main_title_match)
+
+                print('title_exact_match', match.title_exact_match)
+                print('title_end_match', match.title_end_match)
+                print('title_start_match', match.title_start_match)
+                print('title_match', match.title_match)
+                print('title_match_fraction', match.title_match_fraction)
 
         return self.result
 
@@ -190,6 +200,17 @@ class Linker():
         return inlinks_total
 
 
+    def get_total_score(self):
+        if self.DEBUG:
+            self.flow.append(inspect.stack()[0][3])
+
+        score_total = 0
+        for i in range(self.solr_result_count):
+            document = self.solr_response.results[i]
+            score_total += document.get('score')
+        return score_total
+
+
     def __repr__(self):
         response = str(self.result)
         if self.DEBUG:
@@ -210,9 +231,11 @@ class Match():
     description = None
 
     solr_pos = 0
-    lang = 0
-    inlinks_local = 0
+    score_global = 0
+    score_local = 0
     inlinks_global = 0
+    inlinks_score = 0
+    lang = 0
     disambig = 0
 
     main_title_match = 0
