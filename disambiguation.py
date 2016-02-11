@@ -60,7 +60,7 @@ class Linker():
         self.inlinks_total = self.get_total_inlinks()
         self.score_total = self.get_total_score()
         if self.entity.ne_type and self.entity.url:
-            self.entity.check_quotes()
+            self.entity.count_quotes()
 
         # Initialize list of potential matches (i.e. entity-candidate combinations)
         matches = []
@@ -489,6 +489,8 @@ class Entity():
     publ_date = ''
     publ_place = ''
 
+    quotes = 0
+
 
     def __init__(self, ne, ne_type=None, url=None):
         self.orig_ne = ne
@@ -608,15 +610,17 @@ class Entity():
                         self.publ_place = sp.text
 
 
-    def check_quotes(self):
+    def count_quotes(self):
+        '''
+        Count the number of quote characters surrounding occurences of the
+        entity in the ocr text.
+        '''
         quote_chars = ['"', "'", '„', '”', '‚', '’']
+        pos = [m.start() - 1 for m in re.finditer(self.orig_ne, self.ocr)]
+        pos.extend([m.end() for m in re.finditer(self.orig_ne, self.ocr)])
+
         quotes = 0
-        start_pos = [m.start() for m in re.finditer(self.orig_ne, self.ocr)]
-        for p in start_pos:
-            if self.ocr[p-1] in quote_chars:
-                quotes += 1
-        end_pos = [m.end() for m in re.finditer(self.orig_ne, self.ocr)]
-        for p in end_pos:
+        for p in pos:
             if self.ocr[p] in quote_chars:
                 quotes += 1
         self.quotes = quotes
