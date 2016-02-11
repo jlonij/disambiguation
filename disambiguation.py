@@ -21,7 +21,6 @@ class Linker():
 
     SOLR_SERVER = 'http://linksolr.kbresearch.nl/dbpedia/'
     SOLR_ROWS = 20
-    INLINKS_MAX = [447348, 199051]
 
     MIN_PROB = 0.5
 
@@ -73,12 +72,12 @@ class Linker():
 
             # "Solr" features
             match.solr_pos = self.matches.index(match)
-            match.score_global = match.description.document.get('score')
             if self.score_total > 0:
-                match.score_local = match.description.document.get('score') / float(self.score_total)
-            match.inlinks_global = match.description.document.get('inlinks') / float(self.INLINKS_MAX[match.lang])
+                match.solr_score = match.description.document.get('score') / float(self.score_total)
+            match.score_local = match.solr_score
             if self.inlinks_total > 0:
-                match.inlinks_local = match.description.document.get('inlinks') / float(self.inlinks_total)
+                match.inlinks = match.description.document.get('inlinks') / float(self.inlinks_total)
+            match.inlinks_local = match.inlinks
             match.lang = 1 if match.description.document.get('lang') == 'nl' else 0
             match.disambig = match.description.document.get('disambig')
 
@@ -125,8 +124,7 @@ class Linker():
                 print('id', match.description.document.get('id'))
                 print('prob', match.prob)
 
-                print('score_global', match.score_global)
-                print('score_local', match.score_local)
+                print('score', match.solr_score)
 
                 print('main_title_exact_match', match.main_title_exact_match)
                 print('main_title_end_match', match.main_title_end_match)
@@ -231,10 +229,8 @@ class Match():
     description = None
 
     solr_pos = 0
-    score_global = 0
-    score_local = 0
-    inlinks_global = 0
-    inlinks_score = 0
+    solr_score = 0
+    inlinks = 0
     lang = 0
     disambig = 0
 
@@ -324,7 +320,7 @@ class Match():
         if not len(ne.split()) > 1:
             # And the main label is longer than ne string and contains the ne string
             # and there is at least one label in which the ne string does and a bracket does not appear
-            if len(match_label[0]) >= len(ne) and (self.main_title_start_match > 0 or self.main_title_end_match > 1) and True in [j.find(ne) > -1 and not j.find('(') > -1 for j in match_label]:
+            if len(match_label[0]) >= len(ne) and (self.main_title_start_match > 0 or self.main_title_end_match > 0) and True in [j.find(ne) > -1 and not j.find('(') > -1 for j in match_label]:
                     # And the main label has only one part, or the last part is the same as the ne and it does not contain 'et'
                     if len(match_label[0].split()) == 1 or (match_label[0].split()[-1] == ne and not match_label[0].find(' et ') > -1):
                         self.last_part_match = 1
