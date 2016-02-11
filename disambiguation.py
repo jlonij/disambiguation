@@ -51,13 +51,16 @@ class Linker():
         if self.result:
             return self.result
 
-        # Query Solr for DBpedia candidates
+        # If a valid entity is found, query Solr for DBpedia candidates
         self.solr_response, self.solr_result_count = self.query_solr()
         if self.result:
             return self.result
-        else:
-            self.inlinks_total = self.get_total_inlinks()
-            self.score_total = self.get_total_score()
+
+        # If any DBpedia candidates were found, continue pre-processing for feature calculation
+        self.inlinks_total = self.get_total_inlinks()
+        self.score_total = self.get_total_score()
+        if self.entity.ne_type and self.entity.url:
+            self.entity.check_quotes()
 
         # Initialize list of potential matches (i.e. entity-candidate combinations)
         matches = []
@@ -89,9 +92,10 @@ class Linker():
 
             # Context information
             if self.entity.ne_type and self.entity.url:
+                match.quotes = self.entity.quotes
                 match.match_date()
-                match.match_abstract()
                 match.match_type()
+                match.match_abstract()
 
         # Calculate probability for all candidates
         self.model = models.RadialSVM()
@@ -121,21 +125,21 @@ class Linker():
 
         if self.DEBUG:
             for match in self.matches:
-                print('id', match.description.document.get('id'))
-                print('prob', match.prob)
+                print 'id', match.description.document.get('id')
+                print 'prob', match.prob
 
-                print('score', match.solr_score)
+                #print 'main_title_exact_match', match.main_title_exact_match
+                #print 'main_title_end_match', match.main_title_end_match
+                #print 'main_title_start_match', match.main_title_start_match
+                #print 'main_title_match', match.main_title_match
 
-                print('main_title_exact_match', match.main_title_exact_match)
-                print('main_title_end_match', match.main_title_end_match)
-                print('main_title_start_match', match.main_title_start_match)
-                print('main_title_match', match.main_title_match)
+                #print 'title_exact_match', match.title_exact_match
+                #print 'title_end_match', match.title_end_match
+                #print 'title_start_match', match.title_start_match
+                #print 'title_match', match.title_match
+                #print 'title_match_fraction', match.title_match_fraction
 
-                print('title_exact_match', match.title_exact_match)
-                print('title_end_match', match.title_end_match)
-                print('title_start_match', match.title_start_match)
-                print('title_match', match.title_match)
-                print('title_match_fraction', match.title_match_fraction)
+                print 'quotes', match.quotes
 
         return self.result
 
@@ -145,12 +149,13 @@ class Linker():
             self.flow.append(inspect.stack()[0][3])
 
         entity = Entity(ne, ne_type, url)
-        if len(entity.ne) < 2:
-            reason = "Entity too short"
-            self.result = None, -1.0, None, reason
-        elif ne_type and url:
+        if ne_type and url:
             entity.get_metadata()
             entity.get_ocr()
+
+        if len(entity.ne) < 2 or not entity.last_part:
+            reason = "Entity too short"
+            self.result = None, -1.0, None, reason
 
         return entity
 
@@ -159,12 +164,20 @@ class Linker():
         if self.DEBUG:
             self.flow.append(inspect.stack()[0][3])
 
+        # Temporary
+        ne_parts = self.entity.clean_ne.split()
+        last_part = None
+        for part in reversed(ne_parts):
+            if not part.isdigit():
+                last_part = part
+                break
+
         query = "title:\""
         query += self.entity.ne + "\" OR "
         query += "title_str:\""
         query += self.entity.clean_ne + "\""
         query += " OR lastpart_str:\""
-        query += self.entity.clean_ne.split(' ')[-1] + "\""
+        query += last_part + "\""
 
         if self.DEBUG:
             self.query = query + "&sort=lang+desc,inlinks+desc"
@@ -251,6 +264,7 @@ class Match():
     date_match = 0
     type_match = 0
     cos_sim = 0
+    quotes = 0
 
 
     def __init__(self, entity, description):
@@ -467,6 +481,7 @@ class Entity():
     clean_ne = ''
     norm_ne = ''
     ne = ''
+    last_part = ''
 
     titles = []
 
@@ -475,7 +490,7 @@ class Entity():
     publ_place = ''
 
 
-    def __init__(self, ne, ne_type='', url=''):
+    def __init__(self, ne, ne_type=None, url=None):
         self.orig_ne = ne
         self.ne_type = ne_type
         self.url = url
@@ -483,6 +498,7 @@ class Entity():
         self.clean_ne = self.clean(ne.decode('utf-8'))
         self.norm_ne = self.normalize(self.clean_ne)
         self.ne, self.titles = self.strip_titles(self.norm_ne)
+        self.last_part = self.strip_digits(self.ne)
 
 
     def clean(self, ne):
@@ -497,7 +513,6 @@ class Entity():
                 ne = ne.replace(char, u'')
 
         ne = ne.strip()
-
         return ne
 
 
@@ -547,8 +562,17 @@ class Entity():
         while ne.find('  ') > -1:
             ne = ne.replace('  ', ' ')
         ne = ne.strip()
-
         return ne, titles
+
+
+    def strip_digits(self, ne):
+        ne_parts = ne.split()
+        last_part = None
+        for part in reversed(ne_parts):
+            if not part.isdigit():
+                last_part = part
+                break
+        return last_part
 
 
     def get_ocr(self):
@@ -561,7 +585,6 @@ class Entity():
         f.close()
         ocr_tree = etree.fromstring(ocr_string)
         self.ocr = etree.tostring(ocr_tree, encoding='utf8', method='text')
-        return self.ocr
 
 
     def get_metadata(self):
@@ -583,6 +606,20 @@ class Entity():
                 for sp in dcx.iter('{http://purl.org/dc/terms/}spatial'):
                     if '{http://www.w3.org/2001/XMLSchema-instance}type' in sp.attrib:
                         self.publ_place = sp.text
+
+
+    def check_quotes(self):
+        quote_chars = ['"', "'", '„', '”', '‚', '’']
+        quotes = 0
+        start_pos = [m.start() for m in re.finditer(self.orig_ne, self.ocr)]
+        for p in start_pos:
+            if self.ocr[p-1] in quote_chars:
+                quotes += 1
+        end_pos = [m.end() for m in re.finditer(self.orig_ne, self.ocr)]
+        for p in end_pos:
+            if self.ocr[p] in quote_chars:
+                quotes += 1
+        self.quotes = quotes
 
 
 if __name__ == '__main__':
