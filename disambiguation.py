@@ -636,8 +636,8 @@ class Entity():
         entity in the ocr text.
         '''
         quote_chars = ['"', "'", '„', '”', '‚', '’']
-        pos = [m.start() - 1 for m in re.finditer(self.orig_ne, self.ocr)]
-        pos.extend([m.end() for m in re.finditer(self.orig_ne, self.ocr)])
+        pos = [m.start() - 1 for m in re.finditer(re.escape(self.orig_ne), self.ocr)]
+        pos.extend([m.end() for m in re.finditer(re.escape(self.orig_ne), self.ocr)])
 
         quotes = 0
         for p in pos:
