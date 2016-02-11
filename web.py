@@ -1,5 +1,5 @@
 import os, sys
-#os.chdir(os.path.dirname(__file__))
+os.chdir(os.path.dirname(__file__))
 sys.path.insert(0, os.path.dirname(__file__))
 
 
@@ -12,21 +12,14 @@ import hashlib
 def link():
     os.chdir(os.path.dirname(__file__))
 
-    #fh=open('/tmp/tmppploggg', 'a')
-    #fh.write(os.getcwd()  + "\n")
-    #fh.close()
-
     if request.params.get('ne') is not None:
-        debug = request.params.get('debug')
         ne = request.params.get('ne')
         ne_type = request.params.get('ne_type')
 	url = request.params.get('url')
+        debug = request.params.get('debug')
 
         linker = disambiguation.Linker()
-	if url and ne_type:
-            link, p, mainLabel, reason = linker.link(ne, ne_type, url)
-	else:
-            link, p, mainLabel, reason = linker.link(ne)
+        link, p, mainLabel, reason = linker.link(ne, ne_type, url)
 
 	result = dict()
 
@@ -45,6 +38,7 @@ def link():
             result['name'] = mainLabel
 
         return result
+
     else:
         abort(400, "No fitting argument (\"ne=...\") given.")
 
