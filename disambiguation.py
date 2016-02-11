@@ -302,14 +302,14 @@ class Match():
                     title_start_match += fraction
                 elif l.find(ne) > -1:
                     title_match += fraction
-                else:
-                    non_matching += 1
 
         self.title_match = title_match
         self.title_start_match = title_start_match
         self.title_end_match = title_end_match
         self.title_exact_match = title_exact_match
-        self.title_match_fraction = (non_empty - non_matching) / float(non_empty)
+
+        total_matching = title_exact_match + title_end_match + title_start_match + title_match
+        self.title_match_fraction = total_matching / float(non_empty)
 
 
     def match_last_part(self):
