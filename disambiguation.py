@@ -73,7 +73,11 @@ class Linker():
         # Calculate feature values for each match
         for match in self.matches:
 
-            # "Solr" features
+            # Entity features
+            match.parts = len(self.entity.ne.split())
+            match.quotes = self.entity.quotes
+
+            # Description features
             match.solr_pos = self.matches.index(match)
             if self.score_total > 0:
                 match.solr_score = match.description.document.get('score') / float(self.score_total)
@@ -90,9 +94,8 @@ class Linker():
             match.match_last_part()
             match.check_name_conflict()
 
-            # Context information
+            # Context matching
             if self.entity.ne_type and self.entity.url:
-                match.quotes = self.entity.quotes
                 match.match_date()
                 match.match_type()
                 match.match_abstract()
@@ -241,6 +244,8 @@ class Match():
     entity = None
     description = None
 
+    parts = 0
+
     solr_pos = 0
     solr_score = 0
     inlinks = 0
@@ -251,13 +256,11 @@ class Match():
     main_title_start_match = 0
     main_title_end_match = 0
     main_title_exact_match = 0
-
     title_match = 0
     title_start_match = 0
     title_end_match = 0
     title_exact_match = 0
     title_match_fraction = 0
-
     last_part_match = 0
     name_conflict = 0
 
@@ -332,50 +335,67 @@ class Match():
 
         # If the entity consists of a single word
         if not len(ne.split()) > 1:
-            # And the main label is longer than ne string and contains the ne string
-            # and there is at least one label in which the ne string does and a bracket does not appear
-            if len(match_label[0]) >= len(ne) and (self.main_title_start_match > 0 or self.main_title_end_match > 0) and True in [j.find(ne) > -1 and not j.find('(') > -1 for j in match_label]:
-                    # And the main label has only one part, or the last part is the same as the ne and it does not contain 'et'
-                    if len(match_label[0].split()) == 1 or (match_label[0].split()[-1] == ne and not match_label[0].find(' et ') > -1):
-                        self.last_part_match = 1
-                        return self.last_part_match
+            # The main title must be longer than the ne
+            if len(match_label[0]) >= len(ne):
+                # The main title must start or end with the ne
+                if (match_label[0].startswith(ne) or match_label[0].endswith(ne)):
+                    # At least one title must contain the ne and not contain an opening bracket
+                    if True in [m.find(ne) > -1 and not m.find('(') > -1 for m in match_label]:
+                        # The main title itself consists of a single word or the last word is the ne and it doesn't contain 'et'
+                        if len(match_label[0].split()) == 1 or (match_label[0].split()[-1] == ne and not match_label[0].find(' et ') > -1):
+                            self.last_part_match = 1
 
         # If the entity consists of multiple words
         else:
-            # How many parts in the entity and the main label
-            count_label_parts = len(match_label[0].split(' ')) - 1
-            count_ne_parts = len(ne.split(' ')) - 1
-
-            # If more parts in the ne than the main label, or the first ne part has more than two letters and is not the same as the main label first part
-            # No match can be made, so return zero
-            if count_label_parts < count_ne_parts or len(ne.split()[0]) > 2 and not ne.split()[0] == match_label[0].split()[0]:
+            # If the ne has more parts than the main label or the first part has more than two letters (i.e. not an initial) and differs from
+            # the first part of the main label
+            if len(match_label[0].split()) < len(ne.split()) or (len(ne.split()[0]) > 2 and not ne.split()[0] == match_label[0].split()[0]):
+                # And the initial letters of the main label and ne parts are not identical
                 if not [i[0] for i in match_label[0].split()] == [i[0] for i in ne.split()]:
-                    return self.last_part_match
+                    # No last part match can be made, so return
+                    return
 
-            # Else
+            # Else, so the main label has at least as many parts as the ne and the first part has only one or two letters
             for label in match_label:
-                if not label.strip():
-                    return self.last_part_match
-                if label.endswith(ne.split()[-1]) and label.strip():
-                    if len(ne.split()) == len(label.split()) and not [l[0] for l in ne.split()] == [l[0] for l in label.split()]:
-                        return self.last_part_match
-                    skip = False
-                    for l in ne.split():
-                        if not l[0] in [l[0] for l in label.split()]:
-                            skip = True
-                            break
-                    if skip:
-                        return self.last_part_match
 
-                    if ne.find('.') > -1 or True in [len(l) <= 2 for l in ne.split()]:
+                # Skip empty titles
+                if not label.strip():
+                    continue
+
+                # If the title ends with the last part of the ne
+                if label.endswith(ne.split()[-1]):
+                    # If the title and the ne have the same amount of parts
+                    if len(ne.split()) == len(label.split()):
+                        # And the initial letters don't match
+                        if not [i[0] for i in ne.split()] == [i[0] for i in label.split()]:
+                            # No last part match can be made, so continue to the next title
+                            continue
+
+                    # If the title has more parts than the ne
+                    else:
+                        skip = False
+                        for i in ne.split():
+                            # Each initial letter of the ne parts must appear
+                            # as initial letter of a title part
+                            if not i[0] in [i[0] for i in label.split()]:
+                                skip = True
+                                break
+                        if skip:
+                            continue
+
+                    # Now that initials match, check if the part length
+                    # indicates the use of initials
+                    if True in [len(l) <= 2 for l in ne.split()]:
                         self.last_part_match = 1
-                        return self.last_part_match
+                        break
 
 
     def check_name_conflict(self):
-        if not self.main_title_exact_match and not self.last_part_match:
-            if not (self.title_start_match > 0 and self.title_end_match > 0) and not (len(self.entity.ne.split()) > 1 and self.title_start_match > 0):
-                self.name_conflict = 1
+        if not self.title_exact_match:
+            if not (self.title_start_match > 0 and self.title_end_match > 0):
+                if not (len(self.entity.ne.split()) > 1 and self.title_start_match > 0):
+                    if not self.last_part_match:
+                        self.name_conflict = 1
 
 
     def match_date(self):
