@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import inspect
-import Levenshtein
 from lxml import etree
 import math
 import models
@@ -24,17 +22,18 @@ class Linker():
 
     MIN_PROB = 0.5
 
-    query = ""
+    query = None
     solr_response = None
     solr_result_count = 0
     inlinks_total = 0
     score_total = 0
 
     entity = None
-    matches = []
-
     model = None
     result = None
+
+    matches = []
+
     flow = []
 
 
@@ -74,17 +73,14 @@ class Linker():
         for match in self.matches:
 
             # Entity features
-            match.parts = len(self.entity.ne.split())
             match.quotes = self.entity.quotes
 
             # Description features
             match.solr_pos = self.matches.index(match)
             if self.score_total > 0:
                 match.solr_score = match.description.document.get('score') / float(self.score_total)
-            match.score_local = match.solr_score
             if self.inlinks_total > 0:
                 match.inlinks = match.description.document.get('inlinks') / float(self.inlinks_total)
-            match.inlinks_local = match.inlinks
             match.lang = 1 if match.description.document.get('lang') == 'nl' else 0
             match.disambig = match.description.document.get('disambig')
 
@@ -101,7 +97,7 @@ class Linker():
                 match.match_abstract()
 
         # Calculate probability for all candidates
-        self.model = models.RadialSVM()
+        self.model = models.LinearSVM()
         for match in self.matches:
             example = []
             for j in range(len(self.model.features)):
@@ -135,21 +131,18 @@ class Linker():
                 #print 'main_title_end_match', match.main_title_end_match
                 #print 'main_title_start_match', match.main_title_start_match
                 #print 'main_title_match', match.main_title_match
-
                 #print 'title_exact_match', match.title_exact_match
                 #print 'title_end_match', match.title_end_match
                 #print 'title_start_match', match.title_start_match
                 #print 'title_match', match.title_match
-                #print 'title_match_fraction', match.title_match_fraction
-
-                print 'quotes', match.quotes
+                print 'last_part_match', match.last_part_match
+                print 'non_matching', match.non_matching
+                print 'title_match_fraction', match.title_match_fraction
 
         return self.result
 
 
     def pre_process(self, ne, ne_type=None, url=None):
-        if self.DEBUG:
-            self.flow.append(inspect.stack()[0][3])
 
         entity = Entity(ne, ne_type, url)
         if ne_type and url:
@@ -164,8 +157,6 @@ class Linker():
 
 
     def query_solr(self):
-        if self.DEBUG:
-            self.flow.append(inspect.stack()[0][3])
 
         # Temporary
         ne_parts = self.entity.clean_ne.split()
@@ -204,9 +195,6 @@ class Linker():
 
 
     def get_total_inlinks(self):
-        if self.DEBUG:
-            self.flow.append(inspect.stack()[0][3])
-
         inlinks_total = 0
         for i in range(self.solr_result_count):
             document = self.solr_response.results[i]
@@ -215,9 +203,6 @@ class Linker():
 
 
     def get_total_score(self):
-        if self.DEBUG:
-            self.flow.append(inspect.stack()[0][3])
-
         score_total = 0
         for i in range(self.solr_result_count):
             document = self.solr_response.results[i]
@@ -244,8 +229,6 @@ class Match():
     entity = None
     description = None
 
-    parts = 0
-
     solr_pos = 0
     solr_score = 0
     inlinks = 0
@@ -260,14 +243,18 @@ class Match():
     title_start_match = 0
     title_end_match = 0
     title_exact_match = 0
-    title_match_fraction = 0
     last_part_match = 0
     name_conflict = 0
+    non_matching = 0
+
+    title_match_fraction = 0
 
     date_match = 0
     type_match = 0
     cos_sim = 0
     quotes = 0
+
+    non_matching_labels = []
 
 
     def __init__(self, entity, description):
@@ -290,6 +277,8 @@ class Match():
             self.main_title_start_match = fraction
         elif match_label.find(ne) > -1:
             self.main_title_match = fraction
+        else:
+            self.non_matching_labels = [match_label]
 
 
     def match_titles(self):
@@ -298,104 +287,124 @@ class Match():
         title_end_match = 0
         title_exact_match = 0
 
-        non_empty = 0
-        non_matching = 0
-
         # Use normalized title string list until they are available from the index
         # match_label = self.description.document.get('title_str')
         ne = self.entity.ne
-        match_label = self.description.norm_title_str
+        match_label = self.description.norm_title_str[1:]
+        non_matching_labels = []
 
-        for l in match_label:
-            if len(l) > 0:
-                fraction = len(ne.split()) / float(len(l.split()))
-                non_empty += 1
+        for label in match_label:
 
-                if l == ne:
-                    title_exact_match += fraction
-                elif l.endswith(ne):
-                    title_end_match += fraction
-                elif l.startswith(ne):
-                    title_start_match += fraction
-                elif l.find(ne) > -1:
-                    title_match += fraction
+            # Skip empty labels
+            if not label.strip():
+                continue
+
+            fraction = len(ne.split()) / float(len(label.split()))
+
+            if label == ne:
+                title_exact_match += fraction
+            elif label.endswith(ne):
+                title_end_match += fraction
+            elif label.startswith(ne):
+                title_start_match += fraction
+            elif label.find(ne) > -1:
+                title_match += fraction
+            else:
+                non_matching_labels.append(label)
 
         self.title_match = title_match
         self.title_start_match = title_start_match
         self.title_end_match = title_end_match
         self.title_exact_match = title_exact_match
 
-        total_matching = title_exact_match + title_end_match + title_start_match + title_match
-        self.title_match_fraction = total_matching / float(non_empty)
+        self.non_matching_labels += non_matching_labels
 
 
     def match_last_part(self):
+
+        last_part_match = 0
+        matching_labels = []
         ne = self.entity.ne
-        match_label = self.description.norm_title_str
 
-        # If the entity consists of a single word
+        # Skip single word entities
         if not len(ne.split()) > 1:
-            # The main title must be longer than the ne
-            if len(match_label[0]) >= len(ne):
-                # The main title must start or end with the ne
-                if (match_label[0].startswith(ne) or match_label[0].endswith(ne)):
-                    # At least one title must contain the ne and not contain an opening bracket
-                    if True in [m.find(ne) > -1 and not m.find('(') > -1 for m in match_label]:
-                        # The main title itself consists of a single word or the last word is the ne and it doesn't contain 'et'
-                        if len(match_label[0].split()) == 1 or (match_label[0].split()[-1] == ne and not match_label[0].find(' et ') > -1):
-                            self.last_part_match = 1
+            return
 
-        # If the entity consists of multiple words
-        else:
-            # If the ne has more parts than the main label or the first part has more than two letters (i.e. not an initial) and differs from
-            # the first part of the main label
-            if len(match_label[0].split()) < len(ne.split()) or (len(ne.split()[0]) > 2 and not ne.split()[0] == match_label[0].split()[0]):
-                # And the initial letters of the main label and ne parts are not identical
-                if not [i[0] for i in match_label[0].split()] == [i[0] for i in ne.split()]:
-                    # No last part match can be made, so return
-                    return
+        # Preliminary check for ne's that are longer than main title:
+        # There has to be at least one alternative title that matches the
+        # longer version
+        main_label = self.description.norm_title_str[0]
+        alt_label = self.description.norm_title_str[1:]
+        if len(ne.split()) > len(main_label.split()):
+            skip = True
+            for l in alt_label:
+                if len(ne.split()) == len(l.split()) and ne.split()[-1] == l.split()[-1]:
+                    match = True
+                    for part in ne.split()[:-1]:
+                        if len(ne.split()[0]) > 2 and part != l.split()[ne.split().index(part)]:
+                            match = False
+                            break
+                        elif len(ne.split()[0]) <= 2 and part[0] != l.split()[ne.split().index(part)][0]:
+                            match = False
+                            break
+                    if match:
+                        skip = False
+                        break
+            if skip:
+                return
 
-            # Else, so the main label has at least as many parts as the ne and the first part has only one or two letters
-            for label in match_label:
+        # Last part match for titles that haven't been matched yet
+        match_label = self.non_matching_labels
 
-                # Skip empty titles
-                if not label.strip():
+        for l in match_label:
+
+            # If the last words of the title and the ne match
+            if ne.split()[-1] == l.split()[-1]:
+
+                # Check for any conflicting preceding parts
+                skip = False
+                source = l.split() if len(ne.split()) > len(l.split()) else ne.split()
+                target = ne.split() if len(ne.split()) > len(l.split()) else l.split()
+
+                target_pos = 0
+                for part in source[:-1]:
+                    if target_pos < len(target[:-1]):
+                        if len(ne.split()[0]) > 2 and part in target[target_pos:-1]:
+                            target_pos = target.index(part) + 1
+                        elif len(ne.split()[0]) <= 2 and part[0] in [p[0] for p in target[target_pos:-1]]:
+                            target_pos = [p[0] for p in target[target_pos:-1]].index(part[0]) + 1
+                        else:
+                            skip = True
+                            break
+                    else:
+                        break
+                if skip:
                     continue
 
-                # If the title ends with the last part of the ne
-                if label.endswith(ne.split()[-1]):
-                    # If the title and the ne have the same amount of parts
-                    if len(ne.split()) == len(label.split()):
-                        # And the initial letters don't match
-                        if not [i[0] for i in ne.split()] == [i[0] for i in label.split()]:
-                            # No last part match can be made, so continue to the next title
-                            continue
+                last_part_match += 1
+                matching_labels.append(l)
 
-                    # If the title has more parts than the ne
-                    else:
-                        skip = False
-                        for i in ne.split():
-                            # Each initial letter of the ne parts must appear
-                            # as initial letter of a title part
-                            if not i[0] in [i[0] for i in label.split()]:
-                                skip = True
-                                break
-                        if skip:
-                            continue
+        self.last_part_match = last_part_match
 
-                    # Now that initials match, check if the part length
-                    # indicates the use of initials
-                    if True in [len(l) <= 2 for l in ne.split()]:
-                        self.last_part_match = 1
-                        break
+        for l in matching_labels:
+            self.non_matching_labels.remove(l)
 
 
     def check_name_conflict(self):
-        if not self.title_exact_match:
+        # In order for a candidate to be considered, it must
+        # Have an exact title match
+        if not self.title_exact_match > 0:
+            # A combination of a title start and title end match
             if not (self.title_start_match > 0 and self.title_end_match > 0):
+                # Consist of multiple words and have a start match
                 if not (len(self.entity.ne.split()) > 1 and self.title_start_match > 0):
-                    if not self.last_part_match:
+                    # Or have a last part match
+                    if not self.last_part_match > 0:
                         self.name_conflict = 1
+
+        # Number of titles without any form of title match or last part match
+        self.non_matching = len(self.non_matching_labels)
+        self.title_match_fraction = (len(self.description.norm_title_str) - self.non_matching) / float(len(self.description.norm_title_str))
 
 
     def match_date(self):
