@@ -265,8 +265,10 @@ class Match():
     def match_id(self):
         # Use normalized title string list until they are available from the index
         # match_label = self.description.document.get('title_str')
-        ne = self.entity.ne
         match_label = self.description.norm_title_str[0]
+        non_matching_labels = []
+        ne = self.entity.ne
+
         fraction = len(ne.split()) / float(len(match_label.split()))
 
         if match_label == ne:
@@ -278,7 +280,9 @@ class Match():
         elif match_label.find(ne) > -1:
             self.main_title_match = fraction
         else:
-            self.non_matching_labels = [match_label]
+            non_matching_labels.append(match_label)
+
+        self.non_matching_labels = non_matching_labels
 
 
     def match_titles(self):
@@ -289,9 +293,9 @@ class Match():
 
         # Use normalized title string list until they are available from the index
         # match_label = self.description.document.get('title_str')
-        ne = self.entity.ne
         match_label = self.description.norm_title_str[1:]
         non_matching_labels = []
+        ne = self.entity.ne
 
         for label in match_label:
 
