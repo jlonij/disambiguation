@@ -126,7 +126,6 @@ class Linker():
             for match in self.matches:
                 print 'id', match.description.document.get('id')
                 print 'prob', match.prob
-
                 #print 'main_title_exact_match', match.main_title_exact_match
                 #print 'main_title_end_match', match.main_title_end_match
                 #print 'main_title_start_match', match.main_title_start_match
@@ -135,9 +134,10 @@ class Linker():
                 #print 'title_end_match', match.title_end_match
                 #print 'title_start_match', match.title_start_match
                 #print 'title_match', match.title_match
-                print 'last_part_match', match.last_part_match
-                print 'non_matching', match.non_matching
-                print 'title_match_fraction', match.title_match_fraction
+                #print 'last_part_match', match.last_part_match
+                #print 'non_matching', match.non_matching
+                #print 'title_match_fraction', match.title_match_fraction
+                print 'cos_sim', match.cos_sim
 
         return self.result
 
@@ -444,20 +444,22 @@ class Match():
             corpus = [ocr, abstract]
 
             # Tokenize both documents into bow's
-            punctuation = [',', '.']
+            punctuation = [',', '.', '(', ')', '"', "'"]
             bow = []
             for d in corpus:
                 for p in punctuation:
                     d = d.replace(p, '')
                 d = d.lower()
-                d = d.split()
+                d = [t for t in d.split() if len(t) >= 5]
+                if not len(d):
+                    return
                 bow.append(d)
 
-            # Build vocabulary of words of at least 5 characters
+            # Build vocabulary
             voc = []
             for b in bow:
                 for t in b:
-                    if not t in voc and len(t) >= 5:
+                    if not t in voc:
                         voc.append(t)
 
             # Create normalized word count vectors for both documents
