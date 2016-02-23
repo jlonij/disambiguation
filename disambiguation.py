@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import Levenshtein
 from lxml import etree
 import math
 import models
@@ -33,7 +34,6 @@ class Linker():
     result = None
 
     matches = []
-
     flow = []
 
 
@@ -76,7 +76,7 @@ class Linker():
             match.quotes = self.entity.quotes
 
             # Description features
-            match.solr_pos = self.matches.index(match)
+            match.solr_pos = self.matches.index(match) / float(self.SOLR_ROWS)
             if self.score_total > 0:
                 match.solr_score = match.description.document.get('score') / float(self.score_total)
             if self.inlinks_total > 0:
@@ -87,7 +87,8 @@ class Linker():
             # String matching
             match.match_id()
             match.match_titles()
-            match.match_last_part()
+            match.match_titles_last_part()
+            match.match_titles_levenshtein()
             match.check_name_conflict()
 
             # Context matching
@@ -134,10 +135,9 @@ class Linker():
                 #print 'title_end_match', match.title_end_match
                 #print 'title_start_match', match.title_start_match
                 #print 'title_match', match.title_match
-                #print 'last_part_match', match.last_part_match
-                #print 'non_matching', match.non_matching
-                #print 'title_match_fraction', match.title_match_fraction
-                print 'cos_sim', match.cos_sim
+                print 'last_part_match', match.last_part_match
+                print 'mean levenshtein', match.mean_levenshtein_ratio
+                #print 'cos_sim', match.cos_sim
 
         return self.result
 
@@ -245,9 +245,11 @@ class Match():
     title_exact_match = 0
     last_part_match = 0
     name_conflict = 0
-    non_matching = 0
 
-    title_match_fraction = 0
+    mean_levenshtein_ratio = 0
+
+    # Delete
+    non_matching = 0
 
     date_match = 0
     type_match = 0
@@ -266,23 +268,16 @@ class Match():
         # Use normalized title string list until they are available from the index
         # match_label = self.description.document.get('title_str')
         match_label = self.description.norm_title_str[0]
-        non_matching_labels = []
         ne = self.entity.ne
 
-        fraction = len(ne.split()) / float(len(match_label.split()))
-
         if match_label == ne:
-            self.main_title_exact_match = fraction
+            self.main_title_exact_match = 1
         elif match_label.endswith(ne):
-            self.main_title_end_match = fraction
+            self.main_title_end_match = 1
         elif match_label.startswith(ne):
-            self.main_title_start_match = fraction
+            self.main_title_start_match = 1
         elif match_label.find(ne) > -1:
-            self.main_title_match = fraction
-        else:
-            non_matching_labels.append(match_label)
-
-        self.non_matching_labels = non_matching_labels
+            self.main_title_match = 1
 
 
     def match_titles(self):
@@ -293,7 +288,7 @@ class Match():
 
         # Use normalized title string list until they are available from the index
         # match_label = self.description.document.get('title_str')
-        match_label = self.description.norm_title_str[1:]
+        match_label = self.description.norm_title_str
         non_matching_labels = []
         ne = self.entity.ne
 
@@ -303,7 +298,7 @@ class Match():
             if not label.strip():
                 continue
 
-            fraction = len(ne.split()) / float(len(label.split()))
+            fraction = 1 / float(len(match_label))
 
             if label == ne:
                 title_exact_match += fraction
@@ -321,10 +316,10 @@ class Match():
         self.title_end_match = title_end_match
         self.title_exact_match = title_exact_match
 
-        self.non_matching_labels += non_matching_labels
+        self.non_matching_labels = non_matching_labels
 
 
-    def match_last_part(self):
+    def match_titles_last_part(self):
 
         last_part_match = 0
         matching_labels = []
@@ -363,7 +358,7 @@ class Match():
         for l in match_label:
 
             # If the last words of the title and the ne match
-            if ne.split()[-1] == l.split()[-1]:
+            if Levenshtein.ratio(ne.split()[-1], l.split()[-1]) > 0.75:
 
                 # Check for any conflicting preceding parts
                 skip = False
@@ -388,10 +383,19 @@ class Match():
                 last_part_match += 1
                 matching_labels.append(l)
 
-        self.last_part_match = last_part_match
+        self.last_part_match = last_part_match / float(len(self.description.norm_title_str))
 
         for l in matching_labels:
             self.non_matching_labels.remove(l)
+
+
+    def match_titles_levenshtein(self):
+        match_label = self.description.norm_title_str
+        ne = self.entity.ne
+        sum = 0
+        for l in match_label:
+            sum += Levenshtein.ratio(ne, l)
+        self.mean_levenshtein_ratio = sum / float(len(self.description.norm_title_str))
 
 
     def check_name_conflict(self):
@@ -405,10 +409,6 @@ class Match():
                     # Or have a last part match
                     if not self.last_part_match > 0:
                         self.name_conflict = 1
-
-        # Number of titles without any form of title match or last part match
-        self.non_matching = len(self.non_matching_labels)
-        self.title_match_fraction = (len(self.description.norm_title_str) - self.non_matching) / float(len(self.description.norm_title_str))
 
 
     def match_date(self):
