@@ -1,47 +1,73 @@
+#!/usr/bin/env python
+
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+#
+
+#
+# Link service
+#
+# Expects ocr-text from supplied url parameter,
+# reads data from url and calls named entity recognizer with the data,
+# subsequently calls the disambiguation service. A particular named
+# entity in the text can be specified with the ne parameter.
+#
+
+from bottle import abort, route, run, template, request, response, default_app
+
 import os, sys
 os.chdir(os.path.dirname(__file__))
 sys.path.insert(0, os.path.dirname(__file__))
 
-
-from bottle import abort, route, run, template, request, default_app
 import disambiguation
-import hashlib
 
 
-@route('/link')
-def link():
+@route('/')
+def index():
     os.chdir(os.path.dirname(__file__))
 
-    if request.params.get('ne') is not None:
-        ne = request.params.get('ne')
-        ne_type = request.params.get('ne_type')
-	url = request.params.get('url')
-        debug = request.params.get('debug')
+    url = request.params.get('url')
+    ne = request.params.get('ne')
+    callback = request.params.get('callback')
+    debug = request.params.get('debug')
 
-        linker = disambiguation.Linker()
-        link, p, mainLabel, reason = linker.link(ne, ne_type, url)
+    if not url:
+        abort(400, "No fitting argument (\"url=...\") given.")
 
-	result = dict()
+    linker = disambiguation.Linker()
+    results = linker.link(url, ne)
 
-        if debug:
-            result['ne'] = ne
-            result['reason'] = reason
-            fh = open('disambiguation.py', 'r')
-            disambig = fh.read()
-            fh.close()
-            result['checksum'] = hashlib.md5(disambig).hexdigest()
+    resp = []
+    for result in results:
+        if result['link'] or debug:
+            r = {}
+            r['text'] = result['text'].encode('utf-8')
+            if debug:
+                r['reason'] = result['reason'].encode('utf-8')
+                if result['prob'] > 0:
+                    r['prob'] = result['prob']
+            if result['link']:
+                r['link'] = result['link'].encode('utf-8')
+                r['label'] = result['label'].encode('utf-8')
+                r['prob'] = result['prob']
+            resp.append(r)
 
-        if link:
-            result['ne'] = ne
-            result['link'] = link[1:-1]
-            result['p'] = p
-            result['name'] = mainLabel
+    resp = {'linkedNEs': resp}
+    if callback:
+        resp = callback + '(' + str(resp) + ');'
 
-        return result
+    response.set_header('Content-Type', 'application/json')
+    return resp
 
-    else:
-        abort(400, "No fitting argument (\"ne=...\") given.")
-
-
-#run(host='localhost', port=5001)
 application = default_app()

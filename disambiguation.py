@@ -2,164 +2,392 @@
 # -*- coding: utf-8 -*-
 
 import Levenshtein
-from lxml import etree
 import math
 import models
 import numpy as np
 import re
-from scipy import spatial
 import solr
 import sys
 import urllib
 import warnings
 
+from lxml import etree
+from scipy import spatial
+
 
 class Linker():
 
-    DEBUG = False
+    url = None
+    ne = None
+    debug = False
+
+    context = None
+    to_return = []
+    to_link = []
+
+
+    def link(self, url, ne=None, debug=False):
+
+        self.url = url
+        self.debug = debug
+
+        # Create global context for all ne's
+        self.context = Context(url)
+
+        # A prediction result should be returned for all names or a single ne
+        # if specified
+        if ne:
+            self.ne = ne.decode('utf-8')
+            for name in self.context.names:
+                if name.text == self.ne:
+                    self.to_return = [name]
+                    for entity in self.context.entities:
+                        if self.to_return[0] in entity.names:
+                            self.to_link = [entity]
+                            break
+                    break
+            if len(self.to_return) == 0:
+                result = {}
+                result['text'] = self.ne
+                result['reason'] = "Unknown entity"
+                result['link'] = None
+                result['label'] = None
+                result['prob'] = 0
+                return [result]
+        else:
+            self.to_return = self.context.names
+            self.to_link = self.context.entities
+
+        # Link the relevant entities
+        self.model = models.RadialSVM()
+        for entity in self.to_link:
+            entity.resolve(self.model)
+
+            if self.debug:
+                for d in entity.descriptions:
+                    print d.document.get('id')
+                    for j in range(len(self.model.features)):
+                        print self.model.features[j], float(getattr(d,self.model.features[j]))
+                    print 'prob', d.prob
+
+        # Return the results
+        results = []
+        for name in self.to_return:
+            result = {}
+            result['text'] = name.text
+            for entity in self.context.entities:
+                if name in entity.names:
+                    result['link'] = entity.link
+                    result['label'] = entity.label
+                    result['prob'] = entity.prob
+                    result['reason'] = entity.reason
+                    break
+            results.append(result)
+        return results
+
+
+class Context():
+
+    TPTA_URL = 'http://145.100.59.224:8080/tpta/analyse?lang=nl&url='
+
+    url = None
+    ocr = None
+    publ_date = None
+    publ_place = None
+    names = []
+    entities = []
+
+
+    def __init__(self, url):
+        self.url = url
+        self.names = self.get_names(self.url)
+        self.entities = self.get_entities(self.names)
+        if len(self.entities) > 0:
+            self.ocr = self.get_ocr(self.url)
+            self.publ_date, self.publ_place = self.get_metadata(self.url)
+
+
+    def get_names(self, url):
+        names = []
+        done = []
+        try:
+            data = urllib.urlopen(self.TPTA_URL + url).read()
+            xml = etree.fromstring(data)
+        except:
+            return []
+        for node in xml.iter():
+            if node.text and len(node.text) > 1:
+                unicode_text = node.text if isinstance(node.text, unicode) else node.text.decode('utf-8')
+                if unicode_text not in done:
+                    done.append(unicode_text)
+                    names.append(Name(unicode_text, node.tag, self))
+        return names
+
+
+    def get_entities(self, names):
+        entities = []
+        # Empty names all become their own entity
+        empty_names = [n for n in names if len(n.norm) == 0]
+        for name in empty_names:
+            entities.append(Entity([name], self))
+        # Combine shorter names with extended versions
+        non_empty_names = [n for n in names if len(n.norm) > 0]
+        for source in non_empty_names:
+            targets = []
+            for target in non_empty_names:
+                if (target.norm.split()[-1] == source.norm.split()[-1] and
+                        len(target.norm.split()) > len(source.norm.split())):
+                    targets.append(target)
+            if len(targets) == 1:
+                source.is_repr = False
+                existing_entity = False
+                for entity in entities:
+                    for name in entity.names:
+                        if name.norm == targets[0].norm:
+                            entity.add_name(source)
+                            existing_entity = True
+                            break
+                if not existing_entity:
+                    entities.append(Entity([targets[0], source], self))
+            else:
+                entities.append(Entity([source], self))
+        return entities
+
+
+    def get_ocr(self, url):
+        data = urllib.urlopen(url).read()
+        xml = etree.fromstring(data)
+        return etree.tostring(xml, encoding='utf8', method='text')
+
+
+    def get_metadata(self, url):
+        publ_date, publ_place = None, None
+        url = url[:url.find('mpeg21') + 6]
+        try:
+            data = urllib.urlopen(url).read()
+            xml = etree.fromstring(data)
+        except:
+            return None, None
+        md_id = url[url.find('ddd:'):] + ':metadata'
+        for node in xml.iter('{urn:mpeg:mpeg21:2002:02-DIDL-NS}Component'):
+            if node.attrib['{http://purl.org/dc/elements/1.1/}identifier'] == md_id:
+                dcx = node.find('{urn:mpeg:mpeg21:2002:02-DIDL-NS}Resource/{info:srw/schema/1/dc-v1.1}dcx')
+                publ_date = dcx.findtext('{http://purl.org/dc/elements/1.1/}date')
+                for sp in dcx.iter('{http://purl.org/dc/terms/}spatial'):
+                    if '{http://www.w3.org/2001/XMLSchema-instance}type' in sp.attrib:
+                        publ_place = sp.text
+        return publ_date, publ_place
+
+
+class Name():
+
+    is_repr = True
+
+    text = None
+    tpta_type = None
+    context = None
+
+    cleaned = None
+    norm = None
+    last_part = None
+
+    titles = []
+
+    quotes = 0
+
+
+    def __init__(self, text, tpta_type, context):
+        self.text = text
+        self.tpta_type = tpta_type
+        self.context = context
+
+        # Clean and normalize input text
+        self.cleaned = self.clean(self.text)
+        self.norm = self.normalize(self.cleaned)
+        self.norm, self.titles = self.strip_titles(self.norm)
+        self.last_part = self.strip_digits(self.norm)
+
+
+    def clean(self, ne):
+        remove_char = ["+", "&&", "||", "!", "(", ")", "{", u'„',
+                       "}", "[", "]", "^", "\"", "~", "*", "?", ":"]
+
+        for char in remove_char:
+            if ne.find(char) > -1:
+                ne = ne.replace(char, u'')
+
+        ne = ne.strip()
+        return ne
+
+
+    def normalize(self, ne):
+        if ne.find('.') > -1:
+            ne = ne.replace('.', ' ')
+        if ne.find('-') > -1:
+            ne = ne.replace('-', ' ')
+        if ne.find(u'\u2013') > -1:
+            ne = ne.replace(u'\u2013', ' ')
+        while ne.find('  ') > -1:
+            ne = ne.replace('  ', ' ')
+        ne = ne.strip()
+        ne = ne.lower()
+        return ne
+
+
+    def strip_titles(self, ne):
+        GENERAL_TITLES_MALE = ['de heer', 'dhr']
+        GENERAL_TITLES_FEMALE = ['mevrouw', 'mevr', 'mw', 'mejuffrouw', 'juffrouw',
+            'mej']
+        ACADEMIC_TITLES = ['professor', 'prof', 'drs', 'mr', 'ing', 'ir', 'dr',
+            'doctor', 'meester', 'doctorandus', 'ingenieur']
+        POLITICAL_TITLES = ['minister', 'minister-president', 'staatssecretaris',
+            'ambassadeur', 'kamerlid', 'burgemeester', 'wethouder',
+            'gemeenteraadslid', 'consul']
+        MILITARY_TITLES = ['generaal', 'gen', 'majoor', 'maj', 'luitenant',
+            'kolonel', 'kol', 'kapitein']
+        RELIGIOUS_TITLES = ['dominee', 'ds', 'paus', 'kardinaal', 'aartsbisschop',
+            'bisschop', 'monseigneur', 'mgr', 'kapelaan', 'deken', 'abt',
+            'prior', 'pastoor', 'pater', 'predikant', 'opperrabbijn', 'rabbijn',
+            'imam']
+        TITLES = (GENERAL_TITLES_MALE + GENERAL_TITLES_FEMALE + ACADEMIC_TITLES +
+            POLITICAL_TITLES + MILITARY_TITLES + RELIGIOUS_TITLES)
+
+        titles = []
+
+        for t in TITLES:
+            regex = '(^|\W)('+t+')(\W|$)'
+            if re.search(regex, ne) is not None:
+                titles.append(t)
+                ne = re.sub(regex, ' ', ne)
+        while ne.find('  ') > -1:
+            ne = ne.replace('  ', ' ')
+        ne = ne.strip()
+        return ne, titles
+
+
+    def strip_digits(self, ne):
+        ne_parts = ne.split()
+        last_part = None
+        for part in reversed(ne_parts):
+            if not part.isdigit():
+                last_part = part
+                break
+        return last_part
+
+
+    def count_quotes(self):
+        quotes = 0
+        quote_chars = ['"', "'", '„', '”', '‚', '’']
+        pos = [m.start() - 1 for m in re.finditer(re.escape(self.text), self.context.ocr)]
+        pos.extend([m.end() for m in re.finditer(re.escape(self.text), self.context.ocr)])
+        for p in pos:
+            if self.context.ocr[p] in quote_chars:
+                quotes += 1
+        self.quotes = quotes
+        return quotes
+
+
+class Entity():
 
     SOLR_SERVER = 'http://linksolr.kbresearch.nl/dbpedia/'
     SOLR_ROWS = 20
 
-    MIN_PROB = 0.5
+    names = []
+    context = None
+    repr_name = None
 
-    query = None
+    link = None
+    label = None
+    prob = 0
+    reason = None
+
     solr_response = None
-    solr_result_count = 0
+    solr_result_count = None
     inlinks_total = 0
     score_total = 0
 
-    entity = None
+    descriptions = []
+
+    quotes = 0
+
     model = None
-    result = None
-
-    matches = []
-    flow = []
 
 
-    def __init__(self, debug=False):
+    def __init__(self, names, context):
+        self.names = names
+        self.context = context
 
-        if debug:
-            self.DEBUG = debug
+
+    def add_name(self, name):
+        if name not in self.names:
+            if name.is_repr == True:
+                for n in self.names:
+                    n.is_repr = False
+            self.names.append(name)
 
 
-    def link(self, ne, ne_type=None, url=None):
+    def resolve(self, model):
 
-        # Pre-process entity and context information
-        self.entity = self.pre_process(ne, ne_type, url)
-        if self.result:
-            return self.result
+        # Pre-process entity information
+        self.repr_name = self.get_repr_name()
+        if self.reason:
+            return
 
         # If a valid entity is found, query Solr for DBpedia candidates
         self.solr_response, self.solr_result_count = self.query_solr()
-        if self.result:
-            return self.result
+        if self.reason:
+            return
 
-        # If any DBpedia candidates were found, continue pre-processing for feature calculation
+        # Initialize list of candidate entity descriptions
+        descriptions = []
+        for i in range(self.solr_result_count):
+            description = Description(self.solr_response.results[i], self)
+            descriptions.append(description)
+        self.descriptions = descriptions
+
+        # Prerequisites for feature calculation
         self.inlinks_total = self.get_total_inlinks()
         self.score_total = self.get_total_score()
-        if self.entity.ne_type and self.entity.url:
-            self.entity.count_quotes()
-
-        # Initialize list of potential matches (i.e. entity-candidate combinations)
-        matches = []
-        for i in range(self.solr_result_count):
-            description = Description(self.solr_response.results[i])
-            match = Match(self.entity, description)
-            matches.append(match)
-        self.matches = matches
-
-        # Calculate feature values for each match
-        for match in self.matches:
-
-            # Entity features
-            match.quotes = self.entity.quotes
-
-            # Description features
-            match.solr_pos = self.matches.index(match) / float(self.SOLR_ROWS)
-            if self.score_total > 0:
-                match.solr_score = match.description.document.get('score') / float(self.score_total)
-            if self.inlinks_total > 0:
-                match.inlinks = match.description.document.get('inlinks') / float(self.inlinks_total)
-            match.lang = 1 if match.description.document.get('lang') == 'nl' else 0
-            match.disambig = match.description.document.get('disambig')
-
-            # String matching
-            match.match_id()
-            match.match_titles()
-            match.match_titles_last_part()
-            match.match_titles_levenshtein()
-            match.check_name_conflict()
-
-            # Context matching
-            if self.entity.ne_type and self.entity.url:
-                match.match_date()
-                match.match_type()
-                match.match_abstract()
+        self.quotes = self.count_quotes()
 
         # Calculate probability for all candidates
-        self.model = models.LinearSVM()
-        for match in self.matches:
+        self.model = model
+        for description in self.descriptions:
             example = []
+            description.match()
             for j in range(len(self.model.features)):
-                example.append(float(getattr(match, self.model.features[j])))
-            match.prob = self.model.predict(example)
+                example.append(float(getattr(description, self.model.features[j])))
+            description.prob = self.model.predict(example)
 
         # Select best candidate, if any, and return the result
         best_prob = 0
-        best_match_id = -1
-        for match in self.matches:
-            if match.prob > best_prob:
-                best_prob = match.prob
-                best_match_id = self.matches.index(match)
+        best_match = 0
+        for description in self.descriptions:
+            if description.prob > best_prob:
+                best_prob = description.prob
+                best_match = self.descriptions.index(description)
 
-        if best_prob >= self.MIN_PROB:
-            reason = "SVM classifier best probability"
-            match = self.matches[best_match_id].description.document.get('id')
-            label = self.matches[best_match_id].description.label
-            prob = self.matches[best_match_id].prob
-            self.result = match, prob, label, reason
+        if best_prob >= 0.5:
+            self.reason = "SVM classifier best probability"
+            self.link = self.descriptions[best_match].document.get('id')[1:-1]
+            self.label = self.descriptions[best_match].document.get('title')[0]
         else:
-            reason = "SVM classifier probability too low"
-            self.result = False, 0, False, reason
-
-        if self.DEBUG:
-            for match in self.matches:
-                print 'id', match.description.document.get('id')
-                print 'prob', match.prob
-                #print 'main_title_exact_match', match.main_title_exact_match
-                #print 'main_title_end_match', match.main_title_end_match
-                #print 'main_title_start_match', match.main_title_start_match
-                #print 'main_title_match', match.main_title_match
-                #print 'title_exact_match', match.title_exact_match
-                #print 'title_end_match', match.title_end_match
-                #print 'title_start_match', match.title_start_match
-                #print 'title_match', match.title_match
-                print 'last_part_match', match.last_part_match
-                print 'mean levenshtein', match.mean_levenshtein_ratio
-                #print 'cos_sim', match.cos_sim
-
-        return self.result
+            self.reason = "Probability too low for: " + self.descriptions[best_match].document.get('title')[0]
+        self.prob = self.descriptions[best_match].prob
 
 
-    def pre_process(self, ne, ne_type=None, url=None):
-
-        entity = Entity(ne, ne_type, url)
-        if ne_type and url:
-            entity.get_metadata()
-            entity.get_ocr()
-
-        if len(entity.ne) < 2 or not entity.last_part:
-            reason = "Entity too short"
-            self.result = None, -1.0, None, reason
-
-        return entity
+    def get_repr_name(self):
+        for name in self.names:
+            if name.is_repr:
+                if len(name.norm) < 2 or not name.last_part:
+                    self.reason = "Entity too short"
+                return name
 
 
     def query_solr(self):
 
-        # Temporary
-        ne_parts = self.entity.clean_ne.split()
+        # Temporary until normalization in index
+        ne_parts = self.repr_name.cleaned.split()
         last_part = None
         for part in reversed(ne_parts):
             if not part.isdigit():
@@ -167,14 +395,11 @@ class Linker():
                 break
 
         query = "title:\""
-        query += self.entity.ne + "\" OR "
+        query += self.repr_name.norm + "\" OR "
         query += "title_str:\""
-        query += self.entity.clean_ne + "\""
+        query += self.repr_name.cleaned + "\""
         query += " OR lastpart_str:\""
         query += last_part + "\""
-
-        if self.DEBUG:
-            self.query = query + "&sort=lang+desc,inlinks+desc"
 
         self.SOLR_CONNECTION = solr.SolrConnection(self.SOLR_SERVER)
 
@@ -185,11 +410,11 @@ class Linker():
             numfound = solr_response.numFound
             solr_result_count = numfound if numfound <= self.SOLR_ROWS else self.SOLR_ROWS
         except Exception as error_msg:
-            reason = "Failed to query solr: " + str(error_msg)
-            self.result = None, -1.0, None, reason
+            self.reason = "Failed to query solr: " + str(error_msg)
+            self.prob = -1.0
 
         if solr_response is not None and solr_response.numFound == 0:
-            self.result = False, 0, False, 'Nothing found'
+            self.reason = "Nothing found"
 
         return solr_response, solr_result_count
 
@@ -210,24 +435,19 @@ class Linker():
         return score_total
 
 
-    def __repr__(self):
-        response = str(self.result)
-        if self.DEBUG:
-            response = str(self.result) + ", flow: " + ":".join(self.flow)
-            response += ", query: " + self.SOLR_SERVER + "select?q=" + self.query
-        return response
+    def count_quotes(self):
+        quotes = 0
+        for name in self.names:
+            quotes += name.count_quotes()
+        return quotes
 
 
-    def __getitem__(self, count):
-        if self.result:
-            return [i for i in self.result][count]
-        return False
+class Description():
 
-
-class Match():
-
+    document = None
     entity = None
-    description = None
+
+    norm_title_str = []
 
     solr_pos = 0
     solr_score = 0
@@ -248,9 +468,6 @@ class Match():
 
     mean_levenshtein_ratio = 0
 
-    # Delete
-    non_matching = 0
-
     date_match = 0
     type_match = 0
     cos_sim = 0
@@ -259,16 +476,66 @@ class Match():
     non_matching_labels = []
 
 
-    def __init__(self, entity, description):
+    def __init__(self, document, entity):
+
+        self.document = document
         self.entity = entity
-        self.description = description
+
+        # Normalize titles here until they become available from the index
+        norm_title_str = []
+        for t in document.get('title_str'):
+            norm = self.normalize(t)
+            if len(norm) > 0:
+                norm_title_str.append(norm)
+        self.norm_title_str = norm_title_str
+
+
+    def normalize(self, ne):
+        if ne.find('.') > -1:
+            ne = ne.replace('.', ' ')
+        if ne.find('-') > -1:
+            ne = ne.replace('-', ' ')
+        if ne.find(u'\u2013') > -1:
+            ne = ne.replace(u'\u2013', ' ')
+        while ne.find('  ') > -1:
+            ne = ne.replace('  ', ' ')
+        ne = ne.strip()
+        ne = ne.lower()
+        return ne
+
+
+    def match(self):
+
+        # Entity features
+        self.quotes = self.entity.quotes
+
+        # Description features
+        self.solr_pos = self.entity.descriptions.index(self) / float(self.entity.SOLR_ROWS)
+        if self.entity.score_total > 0:
+            self.solr_score = self.document.get('score') / float(self.entity.score_total)
+        if self.entity.inlinks_total > 0:
+            self.inlinks = self.document.get('inlinks') / float(self.entity.inlinks_total)
+        self.lang = 1 if self.document.get('lang') == 'nl' else 0
+        self.disambig = self.document.get('disambig')
+
+        # String matching
+        self.match_id()
+        self.match_titles()
+        self.match_titles_last_part()
+        self.match_titles_levenshtein()
+        self.check_name_conflict()
+
+        # Context matching
+        self.match_date()
+        self.match_type()
+        self.match_abstract()
 
 
     def match_id(self):
         # Use normalized title string list until they are available from the index
         # match_label = self.description.document.get('title_str')
-        match_label = self.description.norm_title_str[0]
-        ne = self.entity.ne
+        match_label = self.norm_title_str[0]
+        ne = self.entity.repr_name.norm
 
         if match_label == ne:
             self.main_title_exact_match = 1
@@ -288,9 +555,10 @@ class Match():
 
         # Use normalized title string list until they are available from the index
         # match_label = self.description.document.get('title_str')
-        match_label = self.description.norm_title_str
+        match_label = self.norm_title_str
+        ne = self.entity.repr_name.norm
+
         non_matching_labels = []
-        ne = self.entity.ne
 
         for label in match_label:
 
@@ -323,7 +591,7 @@ class Match():
 
         last_part_match = 0
         matching_labels = []
-        ne = self.entity.ne
+        ne = self.entity.repr_name.norm
 
         # Skip single word entities
         if not len(ne.split()) > 1:
@@ -332,8 +600,8 @@ class Match():
         # Preliminary check for ne's that are longer than main title:
         # There has to be at least one alternative title that matches the
         # longer version
-        main_label = self.description.norm_title_str[0]
-        alt_label = self.description.norm_title_str[1:]
+        main_label = self.norm_title_str[0]
+        alt_label = self.norm_title_str[1:]
         if len(ne.split()) > len(main_label.split()):
             skip = True
             for l in alt_label:
@@ -383,38 +651,32 @@ class Match():
                 last_part_match += 1
                 matching_labels.append(l)
 
-        self.last_part_match = last_part_match / float(len(self.description.norm_title_str))
+        self.last_part_match = last_part_match / float(len(self.norm_title_str))
 
         for l in matching_labels:
             self.non_matching_labels.remove(l)
 
 
     def match_titles_levenshtein(self):
-        match_label = self.description.norm_title_str
-        ne = self.entity.ne
+        match_label = self.norm_title_str
+        ne = self.entity.repr_name.norm
         sum = 0
         for l in match_label:
             sum += Levenshtein.ratio(ne, l)
-        self.mean_levenshtein_ratio = sum / float(len(self.description.norm_title_str))
+        self.mean_levenshtein_ratio = sum / float(len(self.norm_title_str))
 
 
     def check_name_conflict(self):
-        # In order for a candidate to be considered, it must
-        # Have an exact title match
         if not self.title_exact_match > 0:
-            # A combination of a title start and title end match
-            if not (self.title_start_match > 0 and self.title_end_match > 0):
-                # Consist of multiple words and have a start match
-                if not (len(self.entity.ne.split()) > 1 and self.title_start_match > 0):
-                    # Or have a last part match
-                    if not self.last_part_match > 0:
-                        self.name_conflict = 1
+            if not (self.title_start_match > 0 or self.title_end_match > 0):
+                if not self.last_part_match > 0:
+                    self.name_conflict = 1
 
 
     def match_date(self):
-        if self.entity.publ_date:
-            year_of_publ = int(self.entity.publ_date[:4])
-            year_of_birth = self.description.document.get('yob')
+        if self.entity.context.publ_date:
+            year_of_publ = int(self.entity.context.publ_date[:4])
+            year_of_birth = self.document.get('yob')
             if year_of_birth is not None:
                 if year_of_publ < year_of_birth:
                     self.date_match = -1
@@ -426,19 +688,21 @@ class Match():
 
         TPTA_SCHEMA_MAPPING = {'person': 'Person', 'location': 'Place', 'organisation': 'Organization'}
 
-        if self.entity.ne_type in TPTA_SCHEMA_MAPPING:
-            schema_types = self.description.document.get('schemaorgtype')
+        tpta_type = self.entity.repr_name.tpta_type
+
+        if tpta_type in TPTA_SCHEMA_MAPPING:
+            schema_types = self.document.get('schemaorgtype')
             if schema_types:
                 for t in schema_types:
-                    if t == TPTA_SCHEMA_MAPPING[self.entity.ne_type]:
+                    if t == TPTA_SCHEMA_MAPPING[tpta_type]:
                         self.type_match = 1
                         break
 
 
     def match_abstract(self):
         warnings.filterwarnings('ignore', message='.*Unicode equal comparison.*')
-        abstract = self.description.document.get('abstract')
-        ocr = self.entity.ocr
+        abstract = self.document.get('abstract')
+        ocr = self.entity.context.ocr
 
         if ocr and abstract:
             corpus = [ocr, abstract]
@@ -475,201 +739,15 @@ class Match():
             self.cos_sim = 1 - spatial.distance.cosine(vec[0], vec[1])
 
 
-class Description():
-
-    document = None
-    norm_title_str = []
-    label = ''
-
-
-    def __init__(self, doc):
-        self.document = doc
-        self.label = doc.get('title')[0]
-
-        # Normalize titles here until they become available from the index
-        norm_title_str = []
-        for t in doc.get('title_str'):
-            norm_title_str.append(self.normalize(t))
-        self.norm_title_str = norm_title_str
-
-
-    def normalize(self, ne):
-        if ne.find('.') > -1:
-            ne = ne.replace('.', ' ')
-        if ne.find('-') > -1:
-            ne = ne.replace('-', ' ')
-        if ne.find(u'\u2013') > -1:
-            ne = ne.replace(u'\u2013', ' ')
-        while ne.find('  ') > -1:
-            ne = ne.replace('  ', ' ')
-        ne = ne.strip()
-        ne = ne.lower()
-        return ne
-
-
-class Entity():
-
-    orig_ne = ''
-    ne_type = ''
-    url = ''
-
-    clean_ne = ''
-    norm_ne = ''
-    ne = ''
-    last_part = ''
-
-    titles = []
-
-    ocr = ''
-    publ_date = ''
-    publ_place = ''
-
-    quotes = 0
-
-
-    def __init__(self, ne, ne_type=None, url=None):
-        self.orig_ne = ne
-        self.ne_type = ne_type
-        self.url = url
-
-        self.clean_ne = self.clean(ne.decode('utf-8'))
-        self.norm_ne = self.normalize(self.clean_ne)
-        self.ne, self.titles = self.strip_titles(self.norm_ne)
-        self.last_part = self.strip_digits(self.ne)
-
-
-    def clean(self, ne):
-        '''
-        Remove unwanted characters from the named entity.
-        '''
-        remove_char = ["+", "&&", "||", "!", "(", ")", "{", u'„',
-                       "}", "[", "]", "^", "\"", "~", "*", "?", ":"]
-
-        for char in remove_char:
-            if ne.find(char) > -1:
-                ne = ne.replace(char, u'')
-
-        ne = ne.strip()
-        return ne
-
-
-    def normalize(self, ne):
-        '''
-        Remove periods, hyphens, capitalization.
-        '''
-        if ne.find('.') > -1:
-            ne = ne.replace('.', ' ')
-        if ne.find('-') > -1:
-            ne = ne.replace('-', ' ')
-        if ne.find(u'\u2013') > -1:
-            ne = ne.replace(u'\u2013', ' ')
-        while ne.find('  ') > -1:
-            ne = ne.replace('  ', ' ')
-        ne = ne.strip()
-        ne = ne.lower()
-        return ne
-
-
-    def strip_titles(self, ne):
-
-        GENERAL_TITLES_MALE = ['de heer', 'dhr']
-        GENERAL_TITLES_FEMALE = ['mevrouw', 'mevr', 'mw', 'mejuffrouw', 'juffrouw',
-            'mej']
-        ACADEMIC_TITLES = ['professor', 'prof', 'drs', 'mr', 'ing', 'ir', 'dr',
-            'doctor', 'meester', 'doctorandus', 'ingenieur']
-        POLITICAL_TITLES = ['minister', 'minister-president', 'staatssecretaris',
-            'ambassadeur', 'kamerlid', 'burgemeester', 'wethouder',
-            'gemeenteraadslid', 'consul']
-        MILITARY_TITLES = ['generaal', 'gen', 'majoor', 'maj', 'luitenant',
-            'kolonel', 'kol', 'kapitein']
-        RELIGIOUS_TITLES = ['dominee', 'ds', 'paus', 'kardinaal', 'aartsbisschop',
-            'bisschop', 'monseigneur', 'mgr', 'kapelaan', 'deken', 'abt',
-            'prior', 'pastoor', 'pater', 'predikant', 'opperrabbijn', 'rabbijn',
-            'imam']
-        TITLES = (GENERAL_TITLES_MALE + GENERAL_TITLES_FEMALE + ACADEMIC_TITLES +
-            POLITICAL_TITLES + MILITARY_TITLES + RELIGIOUS_TITLES)
-
-        titles = []
-
-        for t in TITLES:
-            regex = '(^|\W)('+t+')(\W|$)'
-            if re.search(regex, ne) is not None:
-                titles.append(t)
-                ne = re.sub(regex, ' ', ne)
-        while ne.find('  ') > -1:
-            ne = ne.replace('  ', ' ')
-        ne = ne.strip()
-        return ne, titles
-
-
-    def strip_digits(self, ne):
-        ne_parts = ne.split()
-        last_part = None
-        for part in reversed(ne_parts):
-            if not part.isdigit():
-                last_part = part
-                break
-        return last_part
-
-
-    def get_ocr(self):
-        '''
-        Get plain text OCR for the article in which the ne occurs.
-        '''
-        url = self.url
-        f = urllib.urlopen(url)
-        ocr_string = f.read()
-        f.close()
-        ocr_tree = etree.fromstring(ocr_string)
-        self.ocr = etree.tostring(ocr_tree, encoding='utf8', method='text')
-
-
-    def get_metadata(self):
-        '''
-        Get the date and place of publication of the article in which the ne occurs.
-        '''
-        url = self.url
-        pos = url.find('mpeg21') + 6
-        url = url[:pos]
-        f = urllib.urlopen(url)
-        md_string = f.read()
-        f.close()
-        md_tree = etree.fromstring(md_string)
-        md_id = url[url.find('ddd:'):] + ':metadata'
-        for node in md_tree.iter('{urn:mpeg:mpeg21:2002:02-DIDL-NS}Component'):
-            if node.attrib['{http://purl.org/dc/elements/1.1/}identifier'] == md_id:
-                dcx = node.find('{urn:mpeg:mpeg21:2002:02-DIDL-NS}Resource/{info:srw/schema/1/dc-v1.1}dcx')
-                self.publ_date = dcx.findtext('{http://purl.org/dc/elements/1.1/}date')
-                for sp in dcx.iter('{http://purl.org/dc/terms/}spatial'):
-                    if '{http://www.w3.org/2001/XMLSchema-instance}type' in sp.attrib:
-                        self.publ_place = sp.text
-
-
-    def count_quotes(self):
-        '''
-        Count the number of quote characters surrounding occurences of the
-        entity in the ocr text.
-        '''
-        quote_chars = ['"', "'", '„', '”', '‚', '’']
-        pos = [m.start() - 1 for m in re.finditer(re.escape(self.orig_ne), self.ocr)]
-        pos.extend([m.end() for m in re.finditer(re.escape(self.orig_ne), self.ocr)])
-
-        quotes = 0
-        for p in pos:
-            if self.ocr[p] in quote_chars:
-                quotes += 1
-        self.quotes = quotes
-
-
 if __name__ == '__main__':
 
     if not len(sys.argv) > 1:
-        print("Usage: ./disambiguation.py [Named Entity (string)]")
+        print("Usage: ./disambiguation.py [url (string)]")
     else:
-        linker = Linker(debug=True)
+        linker = Linker()
 
-    if len(sys.argv) > 3:
-        print(linker.link(sys.argv[1], sys.argv[2], sys.argv[3]))
+    if len(sys.argv) > 2:
+        print(linker.link(sys.argv[1], sys.argv[2], debug=True))
     else:
-        print(linker.link(sys.argv[1]))
+        print(linker.link(sys.argv[1], debug=True))
 
