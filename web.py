@@ -45,7 +45,7 @@ def index():
     if not url:
         abort(400, "No fitting argument (\"url=...\") given.")
 
-    linker = disambiguation.Linker()
+    linker = disambiguation.EntityLinker()
     results = linker.link(url, ne)
 
     resp = []
