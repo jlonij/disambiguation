@@ -435,6 +435,8 @@ class Description():
     labels = []
     non_matching_labels = []
 
+    quotes = 0
+
     solr_pos = 0
     solr_score = 0
     inlinks = 0
@@ -456,8 +458,8 @@ class Description():
 
     date_match = 0
     type_match = 0
+    entity_match = 0
     cos_sim = 0
-    quotes = 0
 
 
     def __init__(self, document, position, entity):
@@ -526,6 +528,7 @@ class Description():
         # Context matching
         self.match_date()
         self.match_type()
+        self.match_entities()
         self.match_abstract()
 
 
@@ -611,7 +614,6 @@ class Description():
         for l in match_label:
 
             # If the last words of the title and the ne match
-            print type(ne), type(l)
             if Levenshtein.ratio(ne.split()[-1], l.split()[-1]) > 0.75:
 
                 # Check for any conflicting preceding parts
@@ -678,6 +680,18 @@ class Description():
                     if t == TPTA_SCHEMA_MAPPING[tpta_type]:
                         self.type_match = 1
                         break
+
+
+    def match_entities(self):
+        entity_match = 0
+        abstract = self.document.get('abstract')
+        for entity in [e.mentions[0].cleaned for e in
+                self.entity.document.entities if e != self.entity]:
+            if entity not in ['Nederland', 'Nederlandse', 'Amsterdam',
+                    'Amsterdamse']:
+                if abstract.find(entity) > -1:
+                    entity_match += 1
+        self.entity_match = entity_match
 
 
     def match_abstract(self):
