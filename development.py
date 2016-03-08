@@ -24,25 +24,27 @@ class EntityLinker():
     ne = None
     document = None
 
+    to_link = None
+
 
     def __init__(self, model=None, debug=None):
         self.debug = debug
         self.model = models.RadialSVM()
+
 
     def link(self, url, ne=None):
         self.url = url
         self.document = Document(self.url)
 
         if ne:
-            to_link = None
             self.ne = ne.decode('utf-8')
             for entity in self.document.entities:
                 if self.ne in [mention.text for mention in entity.mentions]:
-                    to_link = entity
+                    self.to_link = entity
                     break
-            if not to_link:
-                to_link = self.document.get_entity(Mention(self.ne, None, self.document), self.document.entities)
-            result = to_link.get_result(self.model)
+            if not self.to_link:
+                self.to_link = self.document.get_entity(Mention(self.ne, None, self.document), self.document.entities)
+            result = self.to_link.get_result(self.model)
             result['text'] = self.ne
             return [result]
 
