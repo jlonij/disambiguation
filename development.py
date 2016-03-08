@@ -285,7 +285,7 @@ class Entity():
     solr_response = None
     solr_result_count = None
     inlinks_total = 0
-    score_total = 0
+    max_score = 0
 
     descriptions = []
 
@@ -334,7 +334,7 @@ class Entity():
 
         # Prerequisites for feature calculation
         self.inlinks_total = self.get_total_inlinks()
-        self.score_total = self.get_total_score()
+        self.max_score = self.get_max_score()
         self.quotes = self.count_quotes()
 
         # Calculate probability for all candidates
@@ -410,13 +410,13 @@ class Entity():
         return inlinks_total
 
 
-    # Berekening moet veranderd worden: maximum i.p.v. totaal
-    def get_total_score(self):
-        score_total = 0
+    def get_max_score(self):
+        max_score = 0
         for i in range(self.solr_result_count):
             document = self.solr_response.results[i]
-            score_total += document.get('score')
-        return score_total
+            if document.get('score') > max_score:
+                max_score = document.get('score')
+        return max_score
 
 
     def count_quotes(self):
@@ -510,8 +510,8 @@ class Description():
 
         # Description features
         self.solr_pos = self.position / float(self.entity.SOLR_ROWS)
-        if self.entity.score_total > 0:
-            self.solr_score = self.document.get('score') / float(self.entity.score_total)
+        if self.entity.max_score > 0:
+            self.solr_score = self.document.get('score') / float(self.entity.max_score)
         if self.entity.inlinks_total > 0:
             self.inlinks = self.document.get('inlinks') / float(self.entity.inlinks_total)
         self.lang = 1 if self.document.get('lang') == 'nl' else 0
