@@ -685,12 +685,13 @@ class Description():
     def match_entities(self):
         entity_match = 0
         abstract = self.document.get('abstract')
-        for entity in [e.mentions[0].cleaned for e in
+        if abstract:
+            for entity in [e.mentions[0].cleaned for e in
                 self.entity.document.entities if e != self.entity]:
-            if entity not in ['Nederland', 'Nederlandse', 'Amsterdam',
+                if len(entity) > 3 and entity not in ['Nederland', 'Nederlandse', 'Amsterdam',
                     'Amsterdamse']:
-                if abstract.find(entity) > -1:
-                    entity_match += 1
+                    if abstract.find(entity) > -1:
+                        entity_match += 1
         self.entity_match = entity_match
 
 
