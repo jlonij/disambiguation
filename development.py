@@ -736,14 +736,12 @@ class Description():
 
 
 if __name__ == '__main__':
-
     if not len(sys.argv) > 1:
         print("Usage: ./disambiguation.py [url (string)]")
     else:
         linker = EntityLinker(debug=True)
-
-    if len(sys.argv) > 2:
-        print(linker.link(sys.argv[1], sys.argv[2]))
-    else:
-        print(linker.link(sys.argv[1]))
+        if len(sys.argv) > 2:
+            print(linker.link(sys.argv[1], sys.argv[2]))
+        else:
+            print(linker.link(sys.argv[1]))
 
