@@ -349,7 +349,7 @@ class Entity():
                 best_prob = description.prob
                 best_match = self.descriptions.index(description)
 
-        if best_prob >= 0.5:
+        if best_prob >= 0.4:
             self.reason = "SVM classifier best probability"
             self.link = self.descriptions[best_match].document.get('id')[1:-1]
             self.label = self.descriptions[best_match].document.get('title')[0]
