@@ -29,7 +29,7 @@ class EntityLinker():
 
     def __init__(self, model=None, debug=None):
         self.debug = debug
-        self.model = models.RadialSVM()
+        self.model = models.LinearSVM()
 
 
     def link(self, url, ne=None):
