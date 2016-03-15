@@ -29,7 +29,7 @@ class EntityLinker():
 
     def __init__(self, model=None, debug=None):
         self.debug = debug
-        self.model = models.LinearSVM()
+        self.model = models.RadialSVM()
 
 
     def link(self, url, ne=None):
@@ -341,6 +341,7 @@ class Entity():
     max_score = 0
 
     descriptions = []
+    candidates = []
 
     quotes = 0
 
@@ -378,22 +379,27 @@ class Entity():
         self.descriptions = descriptions
 
         # Harde criteria: name conflict
+        candidates = []
+        for description in self.descriptions:
+            if not description.has_name_conflict():
+                candidates.append(description)
+        self.candidates = candidates
+
+        if len(self.candidates) == 0:
+            self.reason = "Name conflict"
+            return
 
         # If remaining candidates: apply probabilistic model
-
         # Prerequisites for feature calculation
         self.inlinks_total = self.get_total_inlinks()
         self.max_score = self.get_max_score()
         self.quotes = self.count_quotes()
 
-        # Calculate probability for all candidates
-        for description in self.descriptions:
-            description.get_probability()
-
-        # Select best candidate, if any, and return the result
+        # Calculate probability for remaining candidates and select best
         best_prob = 0
         best_match = 0
-        for description in self.descriptions:
+        for description in self.candidates:
+            description.get_probability()
             if description.prob > best_prob:
                 best_prob = description.prob
                 best_match = self.descriptions.index(description)
@@ -546,20 +552,20 @@ class Description():
         return ne
 
 
+    def has_name_conflict(self):
+        self.match_id()
+        self.match_titles()
+        self.match_titles_last_part()
+
+        if not self.title_exact_match:
+            if not (self.title_start_match or self.title_end_match):
+                if not self.last_part_match:
+                    self.name_conflict = 1
+                    return True
+        return False
+
+
     def get_probability(self):
-        self.get_features()
-        example = []
-        print self.document.get('id')
-        for j in range(len(self.entity.model.features)):
-            example.append(float(getattr(self, self.entity.model.features[j])))
-            print self.entity.model.features[j], float(getattr(self,
-                self.entity.model.features[j]))
-        self.prob = self.entity.model.predict(example)
-        return self.prob
-
-
-    def get_features(self):
-
         # Entity features
         self.quotes = self.entity.quotes
 
@@ -574,17 +580,22 @@ class Description():
 
         # Combination features
         # String matching
-        self.match_id()
-        self.match_titles()
-        self.match_titles_last_part()
         self.match_titles_levenshtein()
-        self.check_name_conflict()
 
         # Context matching
         self.match_date()
         self.match_type()
         self.match_entities()
         self.match_abstract()
+
+        example = []
+        print self.document.get('id')
+        for j in range(len(self.entity.model.features)):
+            example.append(float(getattr(self, self.entity.model.features[j])))
+            #print self.entity.model.features[j], float(getattr(self,self.entity.model.features[j]))
+        self.prob = self.entity.model.predict(example)
+        print self.prob
+        return self.prob
 
 
     def match_id(self):
@@ -703,13 +714,6 @@ class Description():
                 last_part_match += 1
 
         self.last_part_match = last_part_match / float(len(self.labels))
-
-
-    def check_name_conflict(self):
-        if not self.title_exact_match:
-            if not (self.title_start_match or self.title_end_match):
-                if not self.last_part_match:
-                    self.name_conflict = 1
 
 
     def match_titles_levenshtein(self):
