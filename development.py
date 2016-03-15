@@ -85,7 +85,8 @@ class Document():
     def get_ocr(self, url):
         data = urllib.urlopen(url).read()
         xml = etree.fromstring(data)
-        return etree.tostring(xml, encoding='utf8', method='text')
+        return etree.tostring(xml, encoding='utf8',
+                method='text').decode('utf-8')
 
 
     def get_mentions(self, url):
@@ -95,10 +96,13 @@ class Document():
             xml = etree.fromstring(data)
         except:
             return []
+        doc_pos = 0
         for node in xml.iter():
             if node.text and len(node.text) > 1:
                 unicode_text = node.text if isinstance(node.text, unicode) else node.text.decode('utf-8')
-                mentions.append(Mention(unicode_text, node.tag, self))
+                mention = Mention(unicode_text, node.tag, self, doc_pos)
+                doc_pos = mention.end_pos
+                mentions.append(mention)
         return mentions
 
 
@@ -126,8 +130,9 @@ class Document():
             for m in entity.mentions:
                 if m.norm and mention.norm.split()[-1] == m.norm.split()[-1]:
                     if len(m.norm.split()) > len(mention.norm.split()):
-                        candidates.append(entity)
-                        break
+                        if m.tpta_type == 'person' and mention.tpta_type == 'person':
+                            candidates.append(entity)
+                            break
         if len(candidates) == 1:
             return candidates[0]
         else:
@@ -158,6 +163,10 @@ class Mention():
     tpta_type = None
     document = None
 
+    doc_pos = 0
+    start_pos = 0
+    end_pos = 0
+
     cleaned = None
     norm = None
     last_part = None
@@ -167,20 +176,63 @@ class Mention():
     quotes = 0
 
 
-    def __init__(self, text, tpta_type, document):
+    def __init__(self, text, tpta_type, document, doc_pos=0):
         self.text = text
         self.tpta_type = tpta_type
         self.document = document
+        self.doc_pos = doc_pos
+
+        # Get position in text, window
+        self.start_pos, self.end_pos = self.get_position(self.document.ocr,
+                self.text, self.doc_pos)
+        self.window = self.get_window(self.document.ocr,
+                start_pos=self.start_pos, end_pos=self.end_pos, size=10)
 
         # Clean and normalize input text
         self.cleaned = self.clean(self.text)
         self.norm = self.normalize(self.cleaned)
         self.norm, self.titles = self.strip_titles(self.norm)
         self.last_part = self.strip_digits(self.norm)
+
+        # Needed for sorting
         self.length = len(self.norm.split())
 
-        # Get position in text
-        # Check borders etc.
+
+    def get_position(self, document, phrase, doc_pos=None):
+        start_pos = document.find(phrase, doc_pos)
+        end_pos = start_pos + len(phrase)
+        if start_pos > 0 and end_pos <= len(document):
+            return start_pos, end_pos
+        else:
+            return -1, -1
+
+
+    def get_window(self, document, phrase=None, start_pos=None, end_pos=None, size=None, direction=None):
+
+        left_bow = []
+        right_bow = []
+
+        if not start_pos or not end_pos:
+            start_pos = document.find(phrase)
+            end_pos = start_pos + len(phrase)
+
+        if start_pos > 0 and end_pos <= len(document):
+            left_space_pos = document.rfind(' ', 0, start_pos)
+            if left_space_pos > 0:
+                left_bow = tokenize(document[:left_space_pos])
+            right_space_pos = document.find(' ', end_pos)
+            if right_space_pos > 0:
+                right_bow = tokenize(document[right_space_pos:])
+
+        if size:
+            left_bow = left_bow[-size:]
+            right_bow = right_bow[:size]
+
+        if direction == 'left':
+            return left_bow
+        elif direction == 'right':
+            return right_bow
+        return left_bow + right_bow
 
 
     def clean(self, ne):
@@ -251,9 +303,14 @@ class Mention():
         return last_part
 
 
+    def is_date(self):
+        # Check for dates to exclude
+        return False
+
+
     def count_quotes(self):
         quotes = 0
-        quote_chars = ['"', "'", '„', '”', '‚', '’']
+        quote_chars = [u'"', u"'", u'„', u'”', u'‚', u'’']
         pos = [m.start() - 1 for m in re.finditer(re.escape(self.text), self.document.ocr)]
         pos.extend([m.end() for m in re.finditer(re.escape(self.text), self.document.ocr)])
         for p in pos:
@@ -263,11 +320,6 @@ class Mention():
         return quotes
 
 
-    def is_date(self):
-        # Check for dates to exclude
-        return False
-
-
 class Entity():
 
     SOLR_SERVER = 'http://linksolr.kbresearch.nl/dbpedia/'
@@ -275,6 +327,7 @@ class Entity():
 
     mentions = []
     document = None
+    valid = None
     model = None
 
     link = None
@@ -295,6 +348,7 @@ class Entity():
     def __init__(self, mentions, document):
         self.mentions = mentions
         self.document = document
+        self.valid = self.is_valid()
 
 
     def get_result(self, model):
@@ -310,11 +364,6 @@ class Entity():
 
 
     def resolve(self):
-
-        # Check for valid entity
-        self.check()
-        if self.reason:
-            return
 
         # If entity is valid, query Solr for DBpedia candidates
         self.solr_response, self.solr_result_count = self.query_solr()
@@ -358,13 +407,16 @@ class Entity():
         self.prob = self.descriptions[best_match].prob
 
 
-    def check(self):
+    def is_valid(self):
         if len(self.mentions[0].norm) <= 2:
             self.reason = "Entity too short"
         elif not self.mentions[0].last_part:
             self.reason = "Entity is numeric"
         elif self.mentions[0].is_date():
             self.reason = "Entity is date"
+        else:
+            return True
+        return False
 
 
     def query_solr(self):
@@ -497,8 +549,11 @@ class Description():
     def get_probability(self):
         self.get_features()
         example = []
+        print self.document.get('id')
         for j in range(len(self.entity.model.features)):
             example.append(float(getattr(self, self.entity.model.features[j])))
+            print self.entity.model.features[j], float(getattr(self,
+                self.entity.model.features[j]))
         self.prob = self.entity.model.predict(example)
         return self.prob
 
@@ -580,10 +635,7 @@ class Description():
 
     def match_titles_last_part(self):
 
-        # Skip single word entities
         ne = self.entity.mentions[0].norm
-        if len(ne.split()) == 1:
-            return
 
         # Preliminary check for ne's that are longer than main title:
         # There has to be at least one alternative title that matches the
@@ -611,10 +663,16 @@ class Description():
         # Last part match for titles that haven't been matched yet
         last_part_match = 0
         match_label = self.non_matching_labels
+
         for l in match_label:
 
             # If the last words of the title and the ne match
-            if Levenshtein.ratio(ne.split()[-1], l.split()[-1]) > 0.75:
+            if Levenshtein.distance(ne.split()[-1], l.split()[-1]) <= 1:
+
+                # Single word entities
+                if len(ne.split()) == 1:
+                    last_part_match += 1
+                    continue
 
                 # Check for any conflicting preceding parts
                 skip = False
@@ -624,9 +682,15 @@ class Description():
                 target_pos = 0
                 for part in source[:-1]:
                     if target_pos < len(target[:-1]):
-                        if len(ne.split()[0]) > 2 and part in target[target_pos:-1]:
+                        if len(part) > 2 and part in target[target_pos:-1]:
                             target_pos = target.index(part) + 1
-                        elif len(ne.split()[0]) <= 2 and part[0] in [p[0] for p in target[target_pos:-1]]:
+                        elif len(part) > 2 and len([p for p in
+                            target[target_pos:-1] if Levenshtein.distance(p, part) <= 1]) > 0:
+                            for p in target[target_pos:-1]:
+                                if Levenshtein.distance(p, part) <= 1:
+                                    target_pos = target.index(p) + 1
+                                    break
+                        elif len(part) <= 2 and part[0] in [p[0] for p in target[target_pos:-1]]:
                             target_pos = [p[0] for p in target[target_pos:-1]].index(part[0]) + 1
                         else:
                             skip = True
@@ -684,47 +748,39 @@ class Description():
 
     def match_entities(self):
         entity_match = 0
+        entity_list = [e.mentions[0].cleaned for e in
+                self.entity.document.entities if e.valid and e != self.entity
+                and e.mentions[0].cleaned not in ['Nederland', 'Nederlandse', 'Amsterdam', 'Amsterdamse']]
         abstract = self.document.get('abstract')
         if abstract:
-            for entity in [e.mentions[0].cleaned for e in
-                self.entity.document.entities if e != self.entity]:
-                if len(entity) > 3 and entity not in ['Nederland', 'Nederlandse', 'Amsterdam',
-                    'Amsterdamse']:
-                    if abstract.find(entity) > -1:
-                        entity_match += 1
+            for entity in entity_list:
+                if abstract.find(entity) > -1:
+                    entity_match += 1
         self.entity_match = entity_match
 
 
     def match_abstract(self):
-        warnings.filterwarnings('ignore', message='.*Unicode equal comparison.*')
+        # warnings.filterwarnings('ignore', message='.*Unicode equal comparison.*')
         abstract = self.document.get('abstract')
-        ocr = self.entity.document.ocr
+        window = []
+        for mention in self.entity.mentions:
+            window += mention.window
 
-        if ocr and abstract:
-            corpus = [ocr, abstract]
+        if window and abstract:
 
-            # Tokenize both documents into bow's
-            punctuation = [',', '.', '(', ')', '"', "'"]
-            bow = []
-            for d in corpus:
-                for p in punctuation:
-                    d = d.replace(p, '')
-                d = d.lower()
-                d = [t for t in d.split() if len(t) >= 5]
-                if not len(d):
-                    return
-                bow.append(d)
+            # Tokenize
+            abstract = tokenize(abstract)
 
             # Build vocabulary
             voc = []
-            for b in bow:
+            for b in [window, abstract]:
                 for t in b:
-                    if not t in voc:
+                    if not t in voc and len(t) > 3:
                         voc.append(t)
 
             # Create normalized word count vectors for both documents
             vec = []
-            for b in bow:
+            for b in [window, abstract]:
                 v = np.zeros(len(voc))
                 for t in voc:
                     v[voc.index(t)] = b.count(t)
@@ -733,6 +789,11 @@ class Description():
 
             # Calculate the distance between the resulting vectors
             self.cos_sim = 1 - spatial.distance.cosine(vec[0], vec[1])
+
+
+def tokenize(document):
+    document = re.split('\W+', document)
+    return [t for t in document if t]
 
 
 if __name__ == '__main__':
