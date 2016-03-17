@@ -2,18 +2,15 @@
 # -*- coding: utf-8 -*-
 
 import Levenshtein
-import math
 import models
-import numpy as np
 import re
 import solr
 import sys
 import urllib
-import warnings
+import utilities
 
 from lxml import etree
 from operator import attrgetter
-from scipy import spatial
 
 
 class EntityLinker():
@@ -29,13 +26,14 @@ class EntityLinker():
 
     def __init__(self, model=None, debug=None):
         self.debug = debug
-        self.model = models.LinearSVM()
+        self.model = models.RadialSVM()
 
 
     def link(self, url, ne=None):
         self.url = url
         self.document = Document(self.url)
 
+        # Link a single entity
         if ne:
             self.ne = ne.decode('utf-8')
             for entity in self.document.entities:
@@ -48,6 +46,7 @@ class EntityLinker():
             result['text'] = self.ne
             return [result]
 
+        # Link all entities in document
         results = []
         for mention in self.document.mentions:
             if mention.text not in [result['text'] for result in results]:
@@ -65,7 +64,7 @@ class Document():
 
     url = None
     ocr = None
-    mentions = []
+    tpta_entities = []
     entities = []
 
     publ_date = None
@@ -75,10 +74,13 @@ class Document():
     def __init__(self, url):
         self.url = url
         self.ocr = self.get_ocr(self.url)
-        self.mentions = self.get_mentions(self.url)
-        self.entities = self.get_entities(self.mentions)
 
-        # Later pas:
+        # Get and group entities
+        self.tpta_entities = self.get_entities(self.url)
+        self.entities = self.sort_entities(self.tpta_entities)
+
+
+        # Later pas, vanuit Entity.resolve?:
         self.publ_date, self.publ_place = self.get_metadata(self.url)
 
 
@@ -89,8 +91,8 @@ class Document():
                 method='text').decode('utf-8')
 
 
-    def get_mentions(self, url):
-        mentions = []
+    def get_entities(self, url):
+        entities = []
         try:
             data = urllib.urlopen(self.TPTA_URL + url).read()
             xml = etree.fromstring(data)
@@ -100,43 +102,40 @@ class Document():
         for node in xml.iter():
             if node.text and len(node.text) > 1:
                 unicode_text = node.text if isinstance(node.text, unicode) else node.text.decode('utf-8')
-                mention = Mention(unicode_text, node.tag, self, doc_pos)
-                doc_pos = mention.end_pos
-                mentions.append(mention)
-        return mentions
-
-
-    def get_entities(self, mentions):
-        sorted_mentions = sorted(mentions, key=attrgetter('norm'), reverse=True)
-        sorted_mentions = sorted(sorted_mentions, key=attrgetter('length'), reverse=True)
-        entities = []
-        for mention in sorted_mentions:
-            entity = self.get_entity(mention, entities)
-            if mention not in entity.mentions:
-                entity.mentions.append(mention)
-            if entity not in entities:
+                entity = Entity(unicode_text, node.tag, self, doc_pos)
+                doc_pos = entity.end_pos if entity.end_pos > -1 else doc_pos
                 entities.append(entity)
         return entities
 
 
-    def get_entity(self, mention, entities):
-        if not mention.norm:
-            return Entity([mention], self)
-        for entity in entities:
-            if mention.norm in [m.norm for m in entity.mentions]:
-                return entity
+    def sort_entities(self, tpta_entities):
+        sorted_entities = sorted(tpta_entities, key=attrgetter('norm'), reverse=True)
+        sorted_entities = sorted(sorted_entities, key=attrgetter('length'), reverse=True)
+
+        for entity in sorted_entities:
+            entity.representative = self.get_representative(entity, entities)
+
+        return sorted_entities
+
+
+    def get_representative(self, entity, entities):
+        # Exclude invalid entities
+        if not entity.valid:
+            return None
+        # First look for extended versions
         candidates = []
-        for entity in entities:
-            for m in entity.mentions:
-                if m.norm and mention.norm.split()[-1] == m.norm.split()[-1]:
-                    if len(m.norm.split()) > len(mention.norm.split()):
-                        if m.tpta_type == 'person' and mention.tpta_type == 'person':
-                            candidates.append(entity)
-                            break
+        for e in entities:
+            if e.valid and entity.norm.split()[-1] == e.norm.split()[-1]:
+                if len(e.norm.split()) > len(entity.norm.split()):
+                    candidates.append(e)
+                    break
         if len(candidates) == 1:
             return candidates[0]
-        else:
-            return Entity([mention], self)
+        # Then for same
+        for e in entities:
+            if entity.norm == e.norm:
+                return e
+        return None
 
 
     def get_metadata(self, url):
@@ -158,11 +157,14 @@ class Document():
         return publ_date, publ_place
 
 
-class Mention():
+class Entity():
+
+    SOLR_SERVER = 'http://linksolr.kbresearch.nl/dbpedia/'
+    SOLR_ROWS = 20
+
     text = None
     tpta_type = None
     document = None
-
     doc_pos = 0
     start_pos = 0
     end_pos = 0
@@ -170,13 +172,30 @@ class Mention():
     cleaned = None
     norm = None
     last_part = None
+    valid = None
 
-    titles = []
+    representative = None
 
     quotes = 0
 
+    model = None
+
+    link = None
+    label = None
+    prob = 0
+    reason = None
+
+    solr_response = None
+    solr_result_count = None
+    inlinks_total = 0
+    max_score = 0
+
+    descriptions = []
+    candidates = []
+
 
     def __init__(self, text, tpta_type, document, doc_pos=0):
+
         self.text = text
         self.tpta_type = tpta_type
         self.document = document
@@ -189,10 +208,10 @@ class Mention():
                 start_pos=self.start_pos, end_pos=self.end_pos, size=10)
 
         # Clean and normalize input text
-        self.cleaned = self.clean(self.text)
-        self.norm = self.normalize(self.cleaned)
-        self.norm, self.titles = self.strip_titles(self.norm)
-        self.last_part = self.strip_digits(self.norm)
+        self.cleaned = utilities.clean(self.text)
+        self.norm = utilities.normalize(self.cleaned)
+        self.last_part = self.get_last_part(self.norm)
+        self.valid = self.is_valid()
 
         # Needed for sorting
         self.length = len(self.norm.split())
@@ -219,10 +238,10 @@ class Mention():
         if start_pos > 0 and end_pos <= len(document):
             left_space_pos = document.rfind(' ', 0, start_pos)
             if left_space_pos > 0:
-                left_bow = tokenize(document[:left_space_pos])
+                left_bow = utilities.tokenize(document[:left_space_pos])
             right_space_pos = document.find(' ', end_pos)
             if right_space_pos > 0:
-                right_bow = tokenize(document[right_space_pos:])
+                right_bow = utilities.tokenize(document[right_space_pos:])
 
         if size:
             left_bow = left_bow[-size:]
@@ -235,65 +254,7 @@ class Mention():
         return left_bow + right_bow
 
 
-    def clean(self, ne):
-        remove_char = ["+", "&&", "||", "!", "(", ")", "{", u'„',
-                       "}", "[", "]", "^", "\"", "~", "*", "?", ":"]
-
-        for char in remove_char:
-            if ne.find(char) > -1:
-                ne = ne.replace(char, u'')
-
-        ne = ne.strip()
-        return ne
-
-
-    def normalize(self, ne):
-        if ne.find('.') > -1:
-            ne = ne.replace('.', ' ')
-        if ne.find('-') > -1:
-            ne = ne.replace('-', ' ')
-        if ne.find(u'\u2013') > -1:
-            ne = ne.replace(u'\u2013', ' ')
-        while ne.find('  ') > -1:
-            ne = ne.replace('  ', ' ')
-        ne = ne.strip()
-        ne = ne.lower()
-        return ne
-
-
-    def strip_titles(self, ne):
-        GENERAL_TITLES_MALE = ['de heer', 'dhr']
-        GENERAL_TITLES_FEMALE = ['mevrouw', 'mevr', 'mw', 'mejuffrouw', 'juffrouw',
-            'mej']
-        ACADEMIC_TITLES = ['professor', 'prof', 'drs', 'mr', 'ing', 'ir', 'dr',
-            'doctor', 'meester', 'doctorandus', 'ingenieur']
-        POLITICAL_TITLES = ['minister', 'minister-president', 'staatssecretaris',
-            'ambassadeur', 'kamerlid', 'burgemeester', 'wethouder',
-            'gemeenteraadslid', 'consul']
-        MILITARY_TITLES = ['generaal', 'gen', 'majoor', 'maj', 'luitenant',
-            'kolonel', 'kol', 'kapitein']
-        RELIGIOUS_TITLES = ['dominee', 'ds', 'paus', 'kardinaal', 'aartsbisschop',
-            'bisschop', 'monseigneur', 'mgr', 'kapelaan', 'deken', 'abt',
-            'prior', 'pastoor', 'pater', 'predikant', 'opperrabbijn', 'rabbijn',
-            'imam']
-        TITLES = (GENERAL_TITLES_MALE + GENERAL_TITLES_FEMALE + ACADEMIC_TITLES +
-            POLITICAL_TITLES + MILITARY_TITLES + RELIGIOUS_TITLES)
-
-        titles = []
-
-        for t in TITLES:
-            regex = '(^|\W)('+t+')(\W|$)'
-            if re.search(regex, ne) is not None:
-                titles.append(t)
-                ne = re.sub(regex, ' ', ne)
-        while ne.find('  ') > -1:
-            ne = ne.replace('  ', ' ')
-        ne = ne.strip()
-
-        return ne, titles
-
-
-    def strip_digits(self, ne):
+    def get_last_part(self, ne):
         ne_parts = ne.split()
         last_part = None
         for part in reversed(ne_parts):
@@ -303,10 +264,23 @@ class Mention():
         return last_part
 
 
+    def is_valid(self):
+        if len(self.norm) <= 2:
+            self.reason = "Entity too short"
+        elif not self.last_part:
+            self.reason = "Entity is numeric"
+        elif self.is_date():
+            self.reason = "Entity is date"
+        else:
+            return True
+        return False
+
+
     def is_date(self):
         # Check for dates to exclude
         return False
 
+    ###
 
     def count_quotes(self):
         quotes = 0
@@ -318,38 +292,6 @@ class Mention():
                 quotes += 1
         self.quotes = quotes
         return quotes
-
-
-class Entity():
-
-    SOLR_SERVER = 'http://linksolr.kbresearch.nl/dbpedia/'
-    SOLR_ROWS = 20
-
-    mentions = []
-    document = None
-    valid = None
-    model = None
-
-    link = None
-    label = None
-    prob = 0
-    reason = None
-
-    solr_response = None
-    solr_result_count = None
-    inlinks_total = 0
-    max_score = 0
-
-    descriptions = []
-    candidates = []
-
-    quotes = 0
-
-
-    def __init__(self, mentions, document):
-        self.mentions = mentions
-        self.document = document
-        self.valid = self.is_valid()
 
 
     def get_result(self, model):
@@ -413,18 +355,6 @@ class Entity():
         self.prob = self.descriptions[best_match].prob
 
 
-    def is_valid(self):
-        if len(self.mentions[0].norm) <= 2:
-            self.reason = "Entity too short"
-        elif not self.mentions[0].last_part:
-            self.reason = "Entity is numeric"
-        elif self.mentions[0].is_date():
-            self.reason = "Entity is date"
-        else:
-            return True
-        return False
-
-
     def query_solr(self):
 
         # Temporary until normalization in index
@@ -477,13 +407,6 @@ class Entity():
         return max_score
 
 
-    def count_quotes(self):
-        quotes = 0
-        for mention in self.mentions:
-            quotes += mention.count_quotes()
-        return quotes
-
-
 class Description():
 
     document = None
@@ -532,24 +455,10 @@ class Description():
         # Normalize titles here until they become available from the index
         labels = []
         for t in self.document.get('title_str'):
-            norm = self.normalize(t)
+            norm = utilities.normalize(t)
             if len(norm) > 0:
                 labels.append(norm)
         return labels
-
-
-    def normalize(self, ne):
-        if ne.find('.') > -1:
-            ne = ne.replace('.', ' ')
-        if ne.find('-') > -1:
-            ne = ne.replace('-', ' ')
-        if ne.find(u'\u2013') > -1:
-            ne = ne.replace(u'\u2013', ' ')
-        while ne.find('  ') > -1:
-            ne = ne.replace('  ', ' ')
-        ne = ne.strip()
-        ne = ne.lower()
-        return ne
 
 
     def has_name_conflict(self):
@@ -586,15 +495,14 @@ class Description():
         self.match_date()
         self.match_type()
         self.match_entities()
-        self.match_abstract()
 
         example = []
         print self.document.get('id')
         for j in range(len(self.entity.model.features)):
             example.append(float(getattr(self, self.entity.model.features[j])))
-            print self.entity.model.features[j], float(getattr(self,
-                self.entity.model.features[j]))
+            print self.entity.model.features[j], float(getattr(self,self.entity.model.features[j]))
         self.prob = self.entity.model.predict(example)
+        print self.prob
         return self.prob
 
 
@@ -736,11 +644,8 @@ class Description():
 
 
     def match_type(self):
-
         TPTA_SCHEMA_MAPPING = {'person': 'Person', 'location': 'Place', 'organisation': 'Organization'}
-
         tpta_type = self.entity.mentions[0].tpta_type
-
         if tpta_type in TPTA_SCHEMA_MAPPING:
             schema_types = self.document.get('schemaorgtype')
             if schema_types:
@@ -761,43 +666,6 @@ class Description():
                 if abstract.find(entity) > -1:
                     entity_match += 1
         self.entity_match = entity_match
-
-
-    def match_abstract(self):
-        # warnings.filterwarnings('ignore', message='.*Unicode equal comparison.*')
-        abstract = self.document.get('abstract')
-        window = []
-        for mention in self.entity.mentions:
-            window += mention.window
-
-        if window and abstract:
-
-            # Tokenize
-            abstract = tokenize(abstract)
-
-            # Build vocabulary
-            voc = []
-            for b in [window, abstract]:
-                for t in b:
-                    if not t in voc and len(t) > 3:
-                        voc.append(t)
-
-            # Create normalized word count vectors for both documents
-            vec = []
-            for b in [window, abstract]:
-                v = np.zeros(len(voc))
-                for t in voc:
-                    v[voc.index(t)] = b.count(t)
-                v_norm = v / np.linalg.norm(v)
-                vec.append(v_norm)
-
-            # Calculate the distance between the resulting vectors
-            self.cos_sim = 1 - spatial.distance.cosine(vec[0], vec[1])
-
-
-def tokenize(document):
-    document = re.split('\W+', document)
-    return [t for t in document if t]
 
 
 if __name__ == '__main__':

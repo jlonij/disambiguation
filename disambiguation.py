@@ -589,12 +589,12 @@ class Description():
         self.match_abstract()
 
         example = []
-        print self.document.get('id')
+        #print self.document.get('id')
         for j in range(len(self.entity.model.features)):
             example.append(float(getattr(self, self.entity.model.features[j])))
             #print self.entity.model.features[j], float(getattr(self,self.entity.model.features[j]))
         self.prob = self.entity.model.predict(example)
-        print self.prob
+        #print self.prob
         return self.prob
 
 
