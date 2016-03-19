@@ -27,9 +27,7 @@ class EntityLinker():
     url = None
     ne = None
     context = None
-    entity = None
 
-    to_link = []
     linked = []
 
 
@@ -42,55 +40,58 @@ class EntityLinker():
     def link(self, url, ne=None):
         self.url = url
         self.context = Context(self.url, self.TPTA_URL)
+        self.ne = ne.decode('utf-8') if ne else None
 
         # If a specific ne was requested, search for a corresponding known entity
-        if ne:
-            self.ne = ne.decode('utf-8')
+        if self.ne:
+            entity_to_link = None
             for entity in self.context.entities:
                 if self.ne == entity.text:
-                    self.entity = entity
-                    break
-            if not self.entity:
-                self.entity = Entity(self.ne, None, self.context)
-                self.context.entities.append(self.entity) 
+                    entity_to_link = entity
+            if not entity_to_link:
+                entity_to_link = Entity(self.ne, None, self.context)
+                self.context.entities.append(entity_to_link)
 
-        # Group related entities into clusters and try to link each relevant cluster
+        # Group related entities into clusters and try to link relevant clusters
         clusters = self.get_clusters(self.context.entities)
-        self.to_link = [c for c in clusters if self.entity in c.entities] if self.entity else clusters
-        while self.to_link:
-            cluster = self.to_link.pop()
+        clusters_to_link = [c for c in clusters if entity_to_link in c.entities] if self.ne else clusters
+
+        linked = []
+        while clusters_to_link:
+            cluster = clusters_to_link.pop()
             result = cluster.resolve(self.solr_connection, self.SOLR_ROWS, self.model, self.MIN_PROB)
             dependencies = [e for e in cluster.entities if e.norm != cluster.entities[0].norm]
             if dependencies and (not result.description or (result.description.document.get('schemaorgtype')
                     and 'Person' not in result.description.document.get('schemaorgtype'))):
                 new_clusters = [Cluster([e for e in cluster.entities if e not in dependencies])]
                 new_clusters.extend(self.get_clusters(dependencies))
-                if self.entity:
-                    self.to_link.extend([c for c in new_clusters if self.entity in c.entities])
+                if self.ne:
+                    clusters_to_link.extend([c for c in new_clusters if entity_to_link in c.entities])
                 else:
-                    self.to_link.extend(new_clusters)
+                    clusters_to_link.extend(new_clusters)
             else:
-                self.linked.append(cluster)
+                linked.append(cluster)
+        self.linked = linked
 
         if self.debug:
-            for cluster in self.linked:
+            for cluster in linked:
                 print '\n'
                 print [e.text for e in cluster.entities]
                 if cluster.descriptions:
                     for description in cluster.descriptions:
                         print description.document.get('id')
                         print description.prob
-                        if self.entity:
+                        if entity_to_link:
                             for j in range(len(self.model.features)):
                                 print self.model.features[j], getattr(description, self.model.features[j])
                             print '\n'
 
         # Return the result for each enitity
         results = []
-        to_return = [self.entity] if self.entity else self.context.entities
+        to_return = [entity_to_link] if self.ne else self.context.entities
         for entity in to_return:
             if entity.text not in [result['text'] for result in results]:
-                for cluster in self.linked:
+                for cluster in linked:
                     if entity in cluster.entities:
                         result = cluster.result.get_dict()
                         result['text'] = entity.text
@@ -316,6 +317,7 @@ class Cluster():
     entities = None
     result = None
 
+    solr_rows = None
     solr_response = None
     solr_result_count = None
     descriptions = None
@@ -349,7 +351,7 @@ class Cluster():
         # If any descriptions were found, initialize list of candidate descriptions
         descriptions = []
         for i in range(self.solr_result_count):
-            description = Description(self.solr_response.results[i], i, self)
+            description = Description(self.solr_response.results[i], i + 1, self)
             descriptions.append(description)
         self.descriptions = descriptions
         
@@ -367,6 +369,7 @@ class Cluster():
         self.quotes_total = self.get_total_quotes()
         self.inlinks_total = self.get_total_inlinks()
         self.max_score = self.get_max_score()
+        self.solr_rows = solr_rows
 
         best_match = candidates[0]
         for description in candidates:
@@ -534,7 +537,7 @@ class Description():
 
     def calculate_prob_features(self):
         self.quotes = self.cluster.quotes_total
-        self.solr_pos = self.position / float(self.cluster.solr_result_count)
+        self.solr_pos = self.position / float(self.cluster.solr_rows)
         if self.cluster.max_score > 0:
             self.solr_score = self.document.get('score') / float(self.cluster.max_score)
         if self.cluster.inlinks_total > 0:
