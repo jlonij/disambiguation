@@ -81,7 +81,7 @@ class EntityLinker():
                     for description in cluster.descriptions:
                         print description.document.get('id')
                         print description.prob
-                        if entity_to_link:
+                        if self.ne:
                             for j in range(len(self.model.features)):
                                 print self.model.features[j], getattr(description, self.model.features[j])
                             print '\n'
@@ -711,12 +711,14 @@ class Description():
     def match_entities(self):
         entity_match = 0
         excluded_entities = ['Nederland', 'Nederlandse', 'Amsterdam', 'Amsterdamse']
+        found_entities = []
         abstract = self.document.get('abstract')
         if abstract:
             entity_list = [e.clean for e in self.cluster.entities[0].context.entities
                     if e.valid and self.cluster.entities[0].clean.find(e.clean) == -1 and e.clean not in excluded_entities]
             for entity in entity_list:
-                if abstract.find(entity) > -1:
+                if entity not in found_entities and abstract.find(entity) > -1:
+                    found_entities.append(entity)
                     entity_match += 1
         self.entity_match = entity_match
 
