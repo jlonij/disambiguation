@@ -33,7 +33,7 @@ class EntityLinker():
 
     def __init__(self, debug=None):
         self.debug = debug
-        self.model = models.RadialSVM()
+        self.model = models.LinearSVM()
         self.solr_connection = solr.SolrConnection(self.SOLR_URL)
 
 
@@ -81,7 +81,7 @@ class EntityLinker():
                     for description in cluster.descriptions:
                         print description.document.get('id')
                         print description.prob
-                        if entity_to_link:
+                        if self.ne:
                             for j in range(len(self.model.features)):
                                 print self.model.features[j], getattr(description, self.model.features[j])
                             print '\n'
@@ -354,7 +354,7 @@ class Cluster():
             description = Description(self.solr_response.results[i], i + 1, self)
             descriptions.append(description)
         self.descriptions = descriptions
-        
+
         # Filter candidates according to hard criteria, e.g. name conlfict
         candidates = []
         for description in self.descriptions:
@@ -437,7 +437,7 @@ class Result():
 
     link = None
     label = None
-    prob = None 
+    prob = None
     reason = None
 
     description = None
@@ -494,9 +494,6 @@ class Description():
     date_match = 0
     type_match = 0
     entity_match = 0
-
-    # Remove
-    cos_sim = 0
 
     prob = 0
 
@@ -704,19 +701,21 @@ class Description():
                     if t == mapping[entity_type]:
                         type_match += 1
                         break
-        if type_match:    
+        if type_match:
             self.type_match = type_match / len(entity_types)
 
 
     def match_entities(self):
         entity_match = 0
         excluded_entities = ['Nederland', 'Nederlandse', 'Amsterdam', 'Amsterdamse']
+        found_entities = []
         abstract = self.document.get('abstract')
         if abstract:
             entity_list = [e.clean for e in self.cluster.entities[0].context.entities
                     if e.valid and self.cluster.entities[0].clean.find(e.clean) == -1 and e.clean not in excluded_entities]
             for entity in entity_list:
-                if abstract.find(entity) > -1:
+                if entity not in found_entities and abstract.find(entity) > -1:
+                    found_entities.append(entity)
                     entity_match += 1
         self.entity_match = entity_match
 
