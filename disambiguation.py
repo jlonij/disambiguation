@@ -520,9 +520,8 @@ class Description():
         self.match_titles()
         self.match_titles_last_part()
 
-        features = ['main_title_exact_match', 'main_title_start_match',
-                'main_title_end_match', 'title_exact_match', 'title_start_match',
-                'title_end_match', 'last_part_match']
+        features = ['main_title_exact_match', 'main_title_end_match',
+                'title_exact_match', 'title_end_match', 'last_part_match']
 
         name_conflict = 1
         for f in features:
