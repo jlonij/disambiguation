@@ -306,10 +306,20 @@ class Entity():
     def is_valid(self):
         if self.valid is not None:
             return self.valid
-        elif len(self.norm) > 2 and self.last_part:
+        elif len(self.norm) > 2 and self.last_part and not self.is_date():
             return True
-        else:
-            return False
+        return False
+
+
+    def is_date(self):
+        months = ['januari', 'februari', 'maart', 'april', 'mei', 'juni',
+                'juli', 'augustus', 'september', 'oktober', 'november',
+                'december']
+        if len(self.norm.split()) > 1:
+            if len([w for w in self.norm.split() if w in months]) > 0:
+                if len([w for w in self.norm.split() if w.isdigit()]):
+                    return True
+        return False
 
 
 class Cluster():
