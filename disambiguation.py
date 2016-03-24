@@ -369,10 +369,10 @@ class Cluster():
         candidates = []
         for description in self.descriptions:
             description.calculate_rule_features()
-            if description.name_conflict == 0:
+            if description.name_conflict == 0 and description.date_match > -1:
                 candidates.append(description)
         if len(candidates) == 0:
-            self.result = Result("Name conflict")
+            self.result = Result("Name or date conflict")
             return self.result
 
         # If any candidates remain, calculate their feature values and probability
@@ -532,13 +532,14 @@ class Description():
 
         features = ['main_title_exact_match', 'main_title_end_match',
                 'title_exact_match', 'title_end_match', 'last_part_match']
-
         name_conflict = 1
         for f in features:
             if getattr(self, f) > 0:
                 name_conflict = 0
                 break
         self.name_conflict = name_conflict
+
+        self.match_date()
 
 
     def calculate_prob_features(self):
@@ -552,7 +553,6 @@ class Description():
         self.disambig = 1 if self.document.get('disambig') == 1 else 0
 
         self.match_titles_levenshtein()
-        self.match_date()
         self.match_type()
         self.match_entities()
 
