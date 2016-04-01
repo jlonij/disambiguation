@@ -215,7 +215,8 @@ class Entity():
 
     start_pos = None
     end_pos = None
-    window = None
+    window_left = None
+    window_right = None
     quotes = None
 
     clean = None
@@ -235,8 +236,8 @@ class Entity():
         # Get position in text, window, quotes
         self.start_pos, self.end_pos = self.get_position(self.context.document.ocr,
                 self.text, self.doc_pos)
-        self.window = self.get_window(self.context.document.ocr,
-                start_pos=self.start_pos, end_pos=self.end_pos, size=10)
+        self.window_left, self.window_right = self.get_window(self.context.document.ocr,
+                start_pos=self.start_pos, end_pos=self.end_pos, size=5)
         self.quotes = self.get_quotes(self.start_pos, self.end_pos)
 
         # Clean and normalize input text
@@ -258,7 +259,7 @@ class Entity():
             return -1, -1
 
 
-    def get_window(self, document, phrase=None, start_pos=None, end_pos=None, size=None, direction=None):
+    def get_window(self, document, phrase=None, start_pos=None, end_pos=None, size=None):
         left_bow = []
         right_bow = []
 
@@ -268,21 +269,21 @@ class Entity():
 
         if start_pos > 0 and end_pos <= len(document):
             left_space_pos = document.rfind(' ', 0, start_pos)
-            if left_space_pos > 0:
-                left_bow = utilities.tokenize(document[:left_space_pos])
+            left_new_line_pos = document.rfind('\n', 0, start_pos)
+            left_pos = max([left_space_pos, left_new_line_pos])
+            if left_pos > 0:
+                left_bow = utilities.tokenize(document[:left_pos])
             right_space_pos = document.find(' ', end_pos)
-            if right_space_pos > 0:
+            right_new_line_pos = document.find('\n', end_pos)
+            right_pos = min([right_space_pos, right_new_line_pos])
+            if right_pos > 0:
                 right_bow = utilities.tokenize(document[right_space_pos:])
 
         if size:
             left_bow = left_bow[-size:]
             right_bow = right_bow[:size]
 
-        if direction == 'left':
-            return left_bow
-        elif direction == 'right':
-            return right_bow
-        return left_bow + right_bow
+        return left_bow, right_bow
 
 
     def get_quotes(self, start_pos, end_pos):
@@ -504,6 +505,7 @@ class Description():
 
     date_match = 0
     type_match = 0
+    role_match = 0
     entity_match = 0
 
     prob = 0
@@ -517,10 +519,11 @@ class Description():
 
 
     def get_labels(self):
-        # Normalize titles here until they become available from the index
         labels = []
         for t in self.document.get('title_str'):
+            # Normalize titles here until they become available from the index
             norm = utilities.normalize(t)
+            # Remove emtpy labels
             if len(norm) > 0:
                 labels.append(norm)
         return labels
@@ -555,11 +558,11 @@ class Description():
 
         self.match_titles_levenshtein()
         self.match_type()
+        self.match_role()
         self.match_entities()
 
 
     def match_id(self):
-        # Use normalized title string list until they are available from the index
         match_label = self.labels[0]
         ne = self.cluster.entities[0].norm
 
@@ -583,7 +586,6 @@ class Description():
         title_end_match = 0
         title_exact_match = 0
 
-        # Use normalized title string list until they are available from the index
         match_label = self.labels[1:]
         ne = self.cluster.entities[0].norm
 
@@ -715,7 +717,7 @@ class Description():
         if schema_types:
             if mapping[tpta_type] in schema_types:
                 type_match = 1
-            # Persons can't be locations or organisations
+            # Persons can't be locations or organizations
             elif tpta_type == 'person':
                 for t in [mapping[t] for t in mapping if t != tpta_type]:
                     if t in schema_types:
@@ -723,6 +725,69 @@ class Description():
                         break
 
         self.type_match = type_match
+
+
+    def match_role(self):
+        roles = {
+            'politics': {
+                'article': ['minister', 'premier', 'kamerlid',
+                    'burgemeester', 'staatssecretaris', 'president',
+                    'wethouder', 'consul', 'ambassadeur', 'gemeenteraadslid'],
+                'abstract': ['regering', 'kabinet'],
+                'types': ['Politician']
+                },
+            'science': {
+                'article': ['prof', 'professor', 'dr'],
+                'abstract': ['wetenschap'],
+                'types': ['Scientist']
+                },
+            'sports': {
+                'article': ['wielrenner', 'voetballer'],
+                'abstract': [],
+                'types': []
+                },
+            'culture': {
+                'article': ['schrijver', 'auteur', 'acteur', 'kunstenaar',
+                    'schilder', 'beeldhouwer'],
+                'abstract': ['kunst'],
+                'types': ['Artist']
+                },
+            'religion': {
+                'article': [],
+                'abstract': [],
+                'types': []
+                },
+            'royalty': {
+                'article': ['koning', 'koningin', 'vorst', 'prins', 'prinses'],
+                'abstract': ['vorstenhuis', 'koningshuis', 'koninklijk huis'],
+                'types': []
+                },
+            'military': {
+                'article': [],
+                'abstract': [],
+                'types': []
+                }
+            }
+
+        role_match = 0
+        words = [e.window_left[-1] for e in self.cluster.entities if
+                len(e.window_left) > 0]
+        abstract = self.document.get('abstract')
+        if not words or not abstract:
+            return
+        else:
+            words = [utilities.normalize(word) for word in words]
+            abstract = utilities.normalize(abstract)
+
+        for word in words:
+            for role in roles:
+                if word in roles[role]['article']:
+                    for w in roles[role]['article'] + roles[role]['abstract']:
+                        if abstract.find(w) > -1:
+                            role_match += 1
+                    break
+
+        self.role_match = role_match
 
 
     def match_entities(self):
