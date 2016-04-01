@@ -730,14 +730,16 @@ class Description():
     def match_role(self):
         roles = {
             'politics': {
-                'article': ['minister', 'premier', 'kamerlid',
+                'article': ['minister', 'premier', 'kamerlid', 'partijleider',
                     'burgemeester', 'staatssecretaris', 'president',
-                    'wethouder', 'consul', 'ambassadeur', 'gemeenteraadslid'],
-                'abstract': ['regering', 'kabinet'],
+                    'wethouder', 'consul', 'ambassadeur', 'gemeenteraadslid',
+                    'fractieleider', 'politicus'],
+                'abstract': ['regering', 'kabinet', 'fractie', 'partij',
+                    'tweede kamer', 'eerste kamer', 'politiek', 'politicus'],
                 'types': ['Politician']
                 },
             'science': {
-                'article': ['prof', 'professor', 'dr'],
+                'article': ['prof', 'professor', 'dr', 'ingenieur', 'ir'],
                 'abstract': ['wetenschap'],
                 'types': ['Scientist']
                 },
@@ -771,7 +773,8 @@ class Description():
 
         role_match = 0
         words = [e.window_left[-1] for e in self.cluster.entities if
-                len(e.window_left) > 0]
+                len(e.window_left) > 0] + [e.window_right[0] for e in
+                self.cluster.entities if len(e.window_right) > 0]
         abstract = self.document.get('abstract')
         if not words or not abstract:
             return
