@@ -701,18 +701,28 @@ class Description():
 
     def match_type(self):
         mapping = {'person': 'Person', 'location': 'Place', 'organisation': 'Organization'}
-        schema_types = self.document.get('schemaorgtype')
         type_match = 0
 
+        tpta_type = self.cluster.entities[0].tpta_type
+        if not tpta_type or tpta_type not in mapping:
+            return
+        # If multiple types in cluster, consider type to be unknown
+        for e in self.cluster.entities[1:]:
+            if e.tpta_type != tpta_type:
+                return
+
+        schema_types = self.document.get('schemaorgtype')
         if schema_types:
-            entity_types = [e.tpta_type for e in self.cluster.entities if e.tpta_type and e.tpta_type in mapping]
-            for entity_type in entity_types:
-                for t in schema_types:
-                    if t == mapping[entity_type]:
-                        type_match += 1
+            if mapping[tpta_type] in schema_types:
+                type_match = 1
+            # Persons can't be locations or organisations
+            elif tpta_type == 'person':
+                for t in [mapping[t] for t in mapping if t != tpta_type]:
+                    if t in schema_types:
+                        type_match = -1
                         break
-        if type_match:
-            self.type_match = type_match / len(entity_types)
+
+        self.type_match = type_match
 
 
     def match_entities(self):
