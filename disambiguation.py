@@ -736,38 +736,67 @@ class Description():
                     'fractieleider', 'politicus'],
                 'abstract': ['regering', 'kabinet', 'fractie', 'partij',
                     'tweede kamer', 'eerste kamer', 'politiek', 'politicus'],
-                'types': ['Politician']
+                'types': ['Politician', 'OfficeHolder', 'Judge',
+                    'MemberOfParliament', 'President', 'PrimeMinister',
+                    'Governor']
                 },
             'science': {
-                'article': ['prof', 'professor', 'dr', 'ingenieur', 'ir'],
-                'abstract': ['wetenschap'],
-                'types': ['Scientist']
+                'article': ['prof', 'professor', 'dr', 'ingenieur', 'ir',
+                    'natuurkundige', 'scheikundige', 'wiskundige', 'bioloog',
+                    'historicus', 'onderzoeker', 'drs', 'ing'],
+                'abstract': ['wetenschap', 'wetenschapper', 'studie',
+                    'onderzoek', 'uitvinding', 'ontdekking'],
+                'types': ['Scientist', 'Historian', 'Entomologist',
+                    'Biologist', 'Philosopher', 'Professor']
                 },
             'sports': {
-                'article': ['wielrenner', 'voetballer'],
-                'abstract': [],
-                'types': []
+                'article': ['atleet', 'sportman', 'sportvrouw', 'sporter',
+                    'wielrenner', 'voetballer', 'tennisser', 'zwemmer'],
+                'abstract': ['sport', 'voetbal', 'wielersport', 'wedstrijd'],
+                'types': ['Athlete', 'SoccerPlayer', 'Cyclist', 'SoccerManager',
+                    'TennisPlayer', 'Wrestler', 'Swimmer', 'Speedskater',
+                    'Skier', 'WinterSportPlayer', 'GolfPlayer', 'RacingDriver',
+                    'MotorsportRacer', 'Canoist', 'Cricketer', 'RugbyPlayer',
+                    'Boxer', 'HorseRider', 'AmericanFootballPlayer', 'Rower',
+                    'Skater', 'BaseballPlayer', 'BasketballPlayer',
+                    'SportsManager', 'IceHockeyPlayer']
                 },
             'culture': {
                 'article': ['schrijver', 'auteur', 'acteur', 'kunstenaar',
-                    'schilder', 'beeldhouwer'],
-                'abstract': ['kunst'],
-                'types': ['Artist']
+                    'schilder', 'beeldhouwer', 'architect', 'musicus',
+                    'schrijver', 'componist', 'fotograaf', 'dichter',
+                    'ontwerper'],
+                'abstract': ['kunst', 'cultuur', 'roman', 'boek', 'gedicht',
+                    'bundel', 'werk', 'schilderij', 'beeld', 'muziek',
+                    'toneel', 'theater', 'film'],
+                'types': ['Artist', 'Actor', 'Writer', 'MusicalArtist',
+                    'Painter', 'Journalist', 'Architect', 'Screenwriter',
+                    'VoiceActor', 'Presenter', 'Photographer',
+                    'ClassicalMusicArtist', 'Poet', 'FashionDesigner',
+                    'Comedian']
                 },
             'religion': {
-                'article': [],
-                'abstract': [],
-                'types': []
+                'article': ['dominee', 'paus', 'kardinaal', 'aartsbisschop',
+                    'bisschop', 'monseigneur', 'mgr', 'kapelaan', 'deken',
+                    'abt', 'prior', 'pastoor', 'pater', 'predikant',
+                    'opperrabbijn', 'rabbijn', 'imam', 'geestelijke'],
+                'abstract': ['kerk', 'parochie', 'geloof', 'religie'],
+                'types': ['Cleric', 'ChristianBishop', 'Cardinal', 'Saint',
+                    'Pope']
                 },
             'royalty': {
-                'article': ['koning', 'koningin', 'vorst', 'prins', 'prinses'],
-                'abstract': ['vorstenhuis', 'koningshuis', 'koninklijk huis'],
-                'types': []
+                'article': ['keizer', 'koning', 'koningin', 'vorst', 'prins',
+		    'prinses'],
+                'abstract': ['vorstenhuis', 'koningshuis', 'koninklijk huis',
+                    'troon', 'rijk', 'keizerrijk', 'monarchie'],
+                'types': ['Royalty', 'Monarch', 'Noble']
                 },
             'military': {
-                'article': [],
-                'abstract': [],
-                'types': []
+                'article': ['generaal', 'gen', 'majoor', 'maj', 'luitenant',
+                    'kolonel', 'kol', 'kapitein', 'bevelhebber'],
+                'abstract': ['leger', 'oorlog', 'troepen', 'gevecht', 'strijd',
+                    'strijdkrachten'],
+                'types': ['MilitaryPerson']
                 }
             }
 
@@ -790,6 +819,7 @@ class Description():
                             role_match += 1
                     break
 
+        role_match = role_match if role_match < 3 else 3
         self.role_match = role_match
 
 
@@ -805,6 +835,7 @@ class Description():
                 if entity not in found_entities and abstract.find(entity) > -1:
                     found_entities.append(entity)
                     entity_match += 1
+        entity_match = entity_match if entity_match < 3 else 3
         self.entity_match = entity_match
 
 
