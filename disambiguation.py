@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import Levenshtein
+import math
 import models
+import re
 import solr
 import sys
 import urllib
@@ -237,7 +239,7 @@ class Entity():
         self.start_pos, self.end_pos = self.get_position(self.context.document.ocr,
                 self.text, self.doc_pos)
         self.window_left, self.window_right = self.get_window(self.context.document.ocr,
-                start_pos=self.start_pos, end_pos=self.end_pos, size=5)
+                start_pos=self.start_pos, end_pos=self.end_pos, size=10)
         self.quotes = self.get_quotes(self.start_pos, self.end_pos)
 
         # Clean and normalize input text
@@ -505,8 +507,10 @@ class Description():
 
     date_match = 0
     type_match = 0
+    alt_type_match = 0
     role_match = 0
     entity_match = 0
+    spec_match = 0
 
     prob = 0
 
@@ -558,8 +562,10 @@ class Description():
 
         self.match_titles_levenshtein()
         self.match_type()
+        self.match_alt_type()
         self.match_role()
         self.match_entities()
+        self.match_spec()
 
 
     def match_id(self):
@@ -727,79 +733,41 @@ class Description():
         self.type_match = type_match
 
 
-    def match_role(self):
-        roles = {
-            'politics': {
-                'article': ['minister', 'premier', 'kamerlid', 'partijleider',
-                    'burgemeester', 'staatssecretaris', 'president',
-                    'wethouder', 'consul', 'ambassadeur', 'gemeenteraadslid',
-                    'fractieleider', 'politicus'],
-                'abstract': ['regering', 'kabinet', 'fractie', 'partij',
-                    'tweede kamer', 'eerste kamer', 'politiek', 'politicus'],
-                'types': ['Politician', 'OfficeHolder', 'Judge',
-                    'MemberOfParliament', 'President', 'PrimeMinister',
-                    'Governor']
-                },
-            'science': {
-                'article': ['prof', 'professor', 'dr', 'ingenieur', 'ir',
-                    'natuurkundige', 'scheikundige', 'wiskundige', 'bioloog',
-                    'historicus', 'onderzoeker', 'drs', 'ing'],
-                'abstract': ['wetenschap', 'wetenschapper', 'studie',
-                    'onderzoek', 'uitvinding', 'ontdekking'],
-                'types': ['Scientist', 'Historian', 'Entomologist',
-                    'Biologist', 'Philosopher', 'Professor']
-                },
-            'sports': {
-                'article': ['atleet', 'sportman', 'sportvrouw', 'sporter',
-                    'wielrenner', 'voetballer', 'tennisser', 'zwemmer'],
-                'abstract': ['sport', 'voetbal', 'wielersport', 'wedstrijd'],
-                'types': ['Athlete', 'SoccerPlayer', 'Cyclist', 'SoccerManager',
-                    'TennisPlayer', 'Wrestler', 'Swimmer', 'Speedskater',
-                    'Skier', 'WinterSportPlayer', 'GolfPlayer', 'RacingDriver',
-                    'MotorsportRacer', 'Canoist', 'Cricketer', 'RugbyPlayer',
-                    'Boxer', 'HorseRider', 'AmericanFootballPlayer', 'Rower',
-                    'Skater', 'BaseballPlayer', 'BasketballPlayer',
-                    'SportsManager', 'IceHockeyPlayer']
-                },
-            'culture': {
-                'article': ['schrijver', 'auteur', 'acteur', 'kunstenaar',
-                    'schilder', 'beeldhouwer', 'architect', 'musicus',
-                    'schrijver', 'componist', 'fotograaf', 'dichter',
-                    'ontwerper'],
-                'abstract': ['kunst', 'cultuur', 'roman', 'boek', 'gedicht',
-                    'bundel', 'werk', 'schilderij', 'beeld', 'muziek',
-                    'toneel', 'theater', 'film'],
-                'types': ['Artist', 'Actor', 'Writer', 'MusicalArtist',
-                    'Painter', 'Journalist', 'Architect', 'Screenwriter',
-                    'VoiceActor', 'Presenter', 'Photographer',
-                    'ClassicalMusicArtist', 'Poet', 'FashionDesigner',
-                    'Comedian']
-                },
-            'religion': {
-                'article': ['dominee', 'paus', 'kardinaal', 'aartsbisschop',
-                    'bisschop', 'monseigneur', 'mgr', 'kapelaan', 'deken',
-                    'abt', 'prior', 'pastoor', 'pater', 'predikant',
-                    'opperrabbijn', 'rabbijn', 'imam', 'geestelijke'],
-                'abstract': ['kerk', 'parochie', 'geloof', 'religie'],
-                'types': ['Cleric', 'ChristianBishop', 'Cardinal', 'Saint',
-                    'Pope']
-                },
-            'royalty': {
-                'article': ['keizer', 'koning', 'koningin', 'vorst', 'prins',
-		    'prinses'],
-                'abstract': ['vorstenhuis', 'koningshuis', 'koninklijk huis',
-                    'troon', 'rijk', 'keizerrijk', 'monarchie'],
-                'types': ['Royalty', 'Monarch', 'Noble']
-                },
-            'military': {
-                'article': ['generaal', 'gen', 'majoor', 'maj', 'luitenant',
-                    'kolonel', 'kol', 'kapitein', 'bevelhebber'],
-                'abstract': ['leger', 'oorlog', 'troepen', 'gevecht', 'strijd',
-                    'strijdkrachten'],
-                'types': ['MilitaryPerson']
-                }
-            }
+    def match_alt_type(self):
+        alt_type_match = 0
+        words = [e.window_left[-1] for e in self.cluster.entities if
+                len(e.window_left) > 0]
+        if not words:
+            return
+        schema_types = self.document.get('schemaorgtype')
+        if not schema_types:
+            return
 
+        # Location clues
+        loc_words = ['te', 'uit', 'in']
+        if len(set(words) & set(loc_words)) > 0:
+            if 'Place' in schema_types:
+                alt_type_match = 1
+            elif 'Person' in schema_types:
+                alt_type_match = -1
+
+        # Person clues
+        person_words = []
+        for gender in self.genders:
+            person_words += self.genders[gender]
+        for role in self.roles:
+            person_words += self.roles[role]['article']
+
+        if len(set(words) & set(person_words)) > 0:
+            if 'Person' in schema_types:
+                alt_type_match = 1
+            elif 'Place' or 'Organization' in schema_types:
+                alt_type_match = -1
+
+        self.alt_type_match = alt_type_match
+
+
+    def match_role(self):
         role_match = 0
         words = [e.window_left[-1] for e in self.cluster.entities if
                 len(e.window_left) > 0] + [e.window_right[0] for e in
@@ -812,9 +780,9 @@ class Description():
             abstract = utilities.normalize(abstract)
 
         for word in words:
-            for role in roles:
-                if word in roles[role]['article']:
-                    for w in roles[role]['article'] + roles[role]['abstract']:
+            for role in self.roles:
+                if word in self.roles[role]['article']:
+                    for w in self.roles[role]['article'] + self.roles[role]['abstract']:
                         if abstract.find(w) > -1:
                             role_match += 1
                     break
@@ -830,13 +798,113 @@ class Description():
         abstract = self.document.get('abstract')
         if abstract:
             entity_list = [e.clean for e in self.cluster.entities[0].context.entities
-                    if e.valid and self.cluster.entities[0].clean.find(e.clean) == -1 and e.clean not in excluded_entities]
+                    if e.valid and self.cluster.entities[0].clean.find(e.clean)
+                    == -1 and e.clean not in excluded_entities]
             for entity in entity_list:
                 if entity not in found_entities and abstract.find(entity) > -1:
                     found_entities.append(entity)
                     entity_match += 1
         entity_match = entity_match if entity_match < 3 else 3
         self.entity_match = entity_match
+
+
+    def match_spec(self):
+        if self.document.get('disambig') == 0 and self.document.get('lang') == 'nl':
+            spec = self.document.get('id').split('(')[-1][:-2]
+            spec_words = [w[:int(math.ceil(len(w) * 0.75))] for w in
+                    filter(None, re.split("[_\- ]+", spec)) if len(w) > 3]
+            if not spec_words:
+                return
+            window = []
+            for e in self.cluster.entities:
+                window += e.window_left + e.window_right
+            if not window:
+                return
+            spec_match = 0
+            for word in spec_words:
+                for w in window:
+                    if w.startswith(word):
+                        spec_match += 1
+                        break
+            self.spec_match = spec_match
+
+
+    genders = {
+        'male': ['heer', 'hr', 'dhr', 'meneer'],
+        'female': ['mevrouw', 'mevr', 'mw', 'mej', 'mejuffrouw']
+        }
+
+    roles = {
+        'politics': {
+            'article': ['minister', 'premier', 'kamerlid', 'partijleider',
+                'burgemeester', 'staatssecretaris', 'president',
+                'wethouder', 'consul', 'ambassadeur', 'gemeenteraadslid',
+                'fractieleider', 'politicus'],
+            'abstract': ['regering', 'kabinet', 'fractie', 'partij',
+                'tweede kamer', 'eerste kamer', 'politiek', 'politicus'],
+            'types': ['Politician', 'OfficeHolder', 'Judge',
+                'MemberOfParliament', 'President', 'PrimeMinister',
+                'Governor']
+            },
+        'science': {
+            'article': ['prof', 'professor', 'dr', 'ingenieur', 'ir',
+                'natuurkundige', 'scheikundige', 'wiskundige', 'bioloog',
+                'historicus', 'onderzoeker', 'drs', 'ing'],
+            'abstract': ['wetenschap', 'wetenschapper', 'studie',
+                'onderzoek', 'uitvinding', 'ontdekking'],
+            'types': ['Scientist', 'Historian', 'Entomologist',
+                'Biologist', 'Philosopher', 'Professor']
+            },
+        'sports': {
+            'article': ['atleet', 'sportman', 'sportvrouw', 'sporter',
+                'wielrenner', 'voetballer', 'tennisser', 'zwemmer'],
+            'abstract': ['sport', 'voetbal', 'wielersport', 'wedstrijd'],
+            'types': ['Athlete', 'SoccerPlayer', 'Cyclist', 'SoccerManager',
+                'TennisPlayer', 'Wrestler', 'Swimmer', 'Speedskater',
+                'Skier', 'WinterSportPlayer', 'GolfPlayer', 'RacingDriver',
+                'MotorsportRacer', 'Canoist', 'Cricketer', 'RugbyPlayer',
+                'Boxer', 'HorseRider', 'AmericanFootballPlayer', 'Rower',
+                'Skater', 'BaseballPlayer', 'BasketballPlayer',
+                'SportsManager', 'IceHockeyPlayer']
+            },
+        'culture': {
+            'article': ['schrijver', 'auteur', 'acteur', 'kunstenaar',
+                'schilder', 'beeldhouwer', 'architect', 'musicus',
+                'schrijver', 'componist', 'fotograaf', 'dichter',
+                'ontwerper'],
+            'abstract': ['kunst', 'cultuur', 'roman', 'boek', 'gedicht',
+                'bundel', 'werk', 'schilderij', 'beeld', 'muziek',
+                'toneel', 'theater', 'film'],
+            'types': ['Artist', 'Actor', 'Writer', 'MusicalArtist',
+                'Painter', 'Journalist', 'Architect', 'Screenwriter',
+                'VoiceActor', 'Presenter', 'Photographer',
+                'ClassicalMusicArtist', 'Poet', 'FashionDesigner',
+                'Comedian']
+            },
+        'religion': {
+            'article': ['dominee', 'paus', 'kardinaal', 'aartsbisschop',
+                'bisschop', 'monseigneur', 'mgr', 'kapelaan', 'deken',
+                'abt', 'prior', 'pastoor', 'pater', 'predikant',
+                'opperrabbijn', 'rabbijn', 'imam', 'geestelijke', 'frater'],
+            'abstract': ['kerk', 'parochie', 'geloof', 'religie'],
+            'types': ['Cleric', 'ChristianBishop', 'Cardinal', 'Saint',
+                'Pope']
+            },
+        'royalty': {
+            'article': ['keizer', 'koning', 'koningin', 'vorst', 'prins',
+                'prinses'],
+            'abstract': ['vorstenhuis', 'koningshuis', 'koninklijk huis',
+                'troon', 'rijk', 'keizerrijk', 'monarchie'],
+            'types': ['Royalty', 'Monarch', 'Noble']
+            },
+        'military': {
+            'article': ['generaal', 'gen', 'majoor', 'maj', 'luitenant',
+                'kolonel', 'kol', 'kapitein', 'bevelhebber'],
+            'abstract': ['leger', 'oorlog', 'troepen', 'gevecht', 'strijd',
+                'strijdkrachten'],
+            'types': ['MilitaryPerson']
+            }
+        }
 
 
 if __name__ == '__main__':
