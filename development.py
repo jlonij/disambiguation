@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import Levenshtein
+import math
 import models
+import re
 import solr
 import sys
 import urllib
@@ -15,7 +17,8 @@ from operator import attrgetter
 class EntityLinker():
 
     TPTA_URL = 'http://145.100.59.224:8080/tpta/analyse?lang=nl&url='
-    SOLR_URL = 'http://linksolr.kbresearch.nl/dbpedia/'
+    SOLR_URL = 'http://linksolr.kbresearch.nl/dbpedia'
+    #SOLR_URL = 'http://145.100.59.224:8081/solr/dbpedia'
 
     SOLR_ROWS = 20
     MIN_PROB = 0.5
@@ -209,12 +212,14 @@ class Entity():
 
     text = None
     tpta_type = None
+    alt_type = None
     context = None
     doc_pos = None
 
     start_pos = None
     end_pos = None
-    window = None
+    window_left = None
+    window_right = None
     quotes = None
 
     clean = None
@@ -234,7 +239,7 @@ class Entity():
         # Get position in text, window, quotes
         self.start_pos, self.end_pos = self.get_position(self.context.document.ocr,
                 self.text, self.doc_pos)
-        self.window = self.get_window(self.context.document.ocr,
+        self.window_left, self.window_right = self.get_window(self.context.document.ocr,
                 start_pos=self.start_pos, end_pos=self.end_pos, size=10)
         self.quotes = self.get_quotes(self.start_pos, self.end_pos)
 
@@ -247,6 +252,9 @@ class Entity():
         # Check and set validity
         self.valid = self.is_valid()
 
+        # Check tpta_type
+        self.alt_type = self.check_type()
+
 
     def get_position(self, document, phrase, doc_pos=None):
         start_pos = document.find(phrase, doc_pos)
@@ -257,7 +265,7 @@ class Entity():
             return -1, -1
 
 
-    def get_window(self, document, phrase=None, start_pos=None, end_pos=None, size=None, direction=None):
+    def get_window(self, document, phrase=None, start_pos=None, end_pos=None, size=None):
         left_bow = []
         right_bow = []
 
@@ -267,21 +275,21 @@ class Entity():
 
         if start_pos > 0 and end_pos <= len(document):
             left_space_pos = document.rfind(' ', 0, start_pos)
-            if left_space_pos > 0:
-                left_bow = utilities.tokenize(document[:left_space_pos])
+            left_new_line_pos = document.rfind('\n', 0, start_pos)
+            left_pos = max([left_space_pos, left_new_line_pos])
+            if left_pos > 0:
+                left_bow = utilities.tokenize(document[:left_pos])
             right_space_pos = document.find(' ', end_pos)
-            if right_space_pos > 0:
+            right_new_line_pos = document.find('\n', end_pos)
+            right_pos = min([right_space_pos, right_new_line_pos])
+            if right_pos > 0:
                 right_bow = utilities.tokenize(document[right_space_pos:])
 
         if size:
             left_bow = left_bow[-size:]
             right_bow = right_bow[:size]
 
-        if direction == 'left':
-            return left_bow
-        elif direction == 'right':
-            return right_bow
-        return left_bow + right_bow
+        return left_bow, right_bow
 
 
     def get_quotes(self, start_pos, end_pos):
@@ -306,10 +314,120 @@ class Entity():
     def is_valid(self):
         if self.valid is not None:
             return self.valid
-        elif len(self.norm) > 2 and self.last_part:
+        elif len(self.norm) > 2 and self.last_part and not self.is_date():
             return True
-        else:
-            return False
+        return False
+
+
+    def is_date(self):
+        months = ['januari', 'februari', 'maart', 'april', 'mei', 'juni',
+                'juli', 'augustus', 'september', 'oktober', 'november',
+                'december']
+        if len(self.norm.split()) > 1:
+            if len([w for w in self.norm.split() if w in months]) > 0:
+                if len([w for w in self.norm.split() if w.isdigit()]):
+                    return True
+        return False
+
+
+    def check_type(self):
+        if self.window_left:
+            prev_word = self.window_left[-1]
+
+            # Location clues
+            loc_words = ['te', 'uit', 'in']
+            if prev_word in loc_words:
+                return 'location'
+
+            # Person clues
+            else:
+                person_words = []
+                for gender in self.genders:
+                    person_words += self.genders[gender]
+                for role in self.roles:
+                    person_words += self.roles[role]['article']
+                if prev_word in person_words:
+                    return 'person'
+
+        return None
+
+
+    genders = {
+        'male': ['heer', 'hr', 'dhr', 'meneer'],
+        'female': ['mevrouw', 'mevr', 'mw', 'mej', 'mejuffrouw']
+        }
+
+    roles = {
+        'politics': {
+            'article': ['minister', 'premier', 'kamerlid', 'partijleider',
+                'burgemeester', 'staatssecretaris', 'president',
+                'wethouder', 'consul', 'ambassadeur', 'gemeenteraadslid',
+                'fractieleider', 'politicus'],
+            'abstract': ['regering', 'kabinet', 'fractie', 'partij',
+                'tweede kamer', 'eerste kamer', 'politiek', 'politicus'],
+            'types': ['Politician', 'OfficeHolder', 'Judge',
+                'MemberOfParliament', 'President', 'PrimeMinister',
+                'Governor']
+            },
+        'science': {
+            'article': ['prof', 'professor', 'dr', 'ingenieur', 'ir',
+                'natuurkundige', 'scheikundige', 'wiskundige', 'bioloog',
+                'historicus', 'onderzoeker', 'drs', 'ing'],
+            'abstract': ['wetenschap', 'wetenschapper', 'studie',
+                'onderzoek', 'uitvinding', 'ontdekking'],
+            'types': ['Scientist', 'Historian', 'Entomologist',
+                'Biologist', 'Philosopher', 'Professor']
+            },
+        'sports': {
+            'article': ['atleet', 'sportman', 'sportvrouw', 'sporter',
+                'wielrenner', 'voetballer', 'tennisser', 'zwemmer'],
+            'abstract': ['sport', 'voetbal', 'wielersport', 'wedstrijd'],
+            'types': ['Athlete', 'SoccerPlayer', 'Cyclist', 'SoccerManager',
+                'TennisPlayer', 'Wrestler', 'Swimmer', 'Speedskater',
+                'Skier', 'WinterSportPlayer', 'GolfPlayer', 'RacingDriver',
+                'MotorsportRacer', 'Canoist', 'Cricketer', 'RugbyPlayer',
+                'Boxer', 'HorseRider', 'AmericanFootballPlayer', 'Rower',
+                'Skater', 'BaseballPlayer', 'BasketballPlayer',
+                'SportsManager', 'IceHockeyPlayer']
+            },
+        'culture': {
+            'article': ['schrijver', 'auteur', 'acteur', 'kunstenaar',
+                'schilder', 'beeldhouwer', 'architect', 'musicus',
+                'schrijver', 'componist', 'fotograaf', 'dichter',
+                'ontwerper'],
+            'abstract': ['kunst', 'cultuur', 'roman', 'boek', 'gedicht',
+                'bundel', 'werk', 'schilderij', 'beeld', 'muziek',
+                'toneel', 'theater', 'film'],
+            'types': ['Artist', 'Actor', 'Writer', 'MusicalArtist',
+                'Painter', 'Journalist', 'Architect', 'Screenwriter',
+                'VoiceActor', 'Presenter', 'Photographer',
+                'ClassicalMusicArtist', 'Poet', 'FashionDesigner',
+                'Comedian']
+            },
+        'religion': {
+            'article': ['dominee', 'paus', 'kardinaal', 'aartsbisschop',
+                'bisschop', 'monseigneur', 'mgr', 'kapelaan', 'deken',
+                'abt', 'prior', 'pastoor', 'pater', 'predikant',
+                'opperrabbijn', 'rabbijn', 'imam', 'geestelijke', 'frater'],
+            'abstract': ['kerk', 'parochie', 'geloof', 'religie'],
+            'types': ['Cleric', 'ChristianBishop', 'Cardinal', 'Saint',
+                'Pope']
+            },
+        'royalty': {
+            'article': ['keizer', 'koning', 'koningin', 'vorst', 'prins',
+                'prinses'],
+            'abstract': ['vorstenhuis', 'koningshuis', 'koninklijk huis',
+                'troon', 'rijk', 'keizerrijk', 'monarchie'],
+            'types': ['Royalty', 'Monarch', 'Noble']
+            },
+        'military': {
+            'article': ['generaal', 'gen', 'majoor', 'maj', 'luitenant',
+                'kolonel', 'kol', 'kapitein', 'bevelhebber'],
+            'abstract': ['leger', 'oorlog', 'troepen', 'gevecht', 'strijd',
+                'strijdkrachten'],
+            'types': ['MilitaryPerson']
+            }
+        }
 
 
 class Cluster():
@@ -318,9 +436,12 @@ class Cluster():
     result = None
 
     solr_rows = None
-    solr_response = None
     solr_result_count = None
+    found_more = None
+
+    solr_response = None
     descriptions = None
+    candidates = None
 
     quotes_total = None
     inlinks_total = None
@@ -351,7 +472,7 @@ class Cluster():
         # If any descriptions were found, initialize list of candidate descriptions
         descriptions = []
         for i in range(self.solr_result_count):
-            description = Description(self.solr_response.results[i], i + 1, self)
+            description = Description(self.solr_response.results[i], i, self)
             descriptions.append(description)
         self.descriptions = descriptions
 
@@ -359,17 +480,20 @@ class Cluster():
         candidates = []
         for description in self.descriptions:
             description.calculate_rule_features()
-            if description.name_conflict == 0:
+            if description.name_conflict == 0 and description.date_match > -1:
                 candidates.append(description)
-        if len(candidates) == 0:
-            self.result = Result("Name conflict")
+        self.candidates = candidates
+
+        if len(self.candidates) == 0:
+            self.result = Result("Name or date conflict")
             return self.result
 
         # If any candidates remain, calculate their feature values and probability
+        self.solr_rows = solr_rows
+        self.found_more = 1 if self.solr_response.numFound > solr_rows else 0
         self.quotes_total = self.get_total_quotes()
         self.inlinks_total = self.get_total_inlinks()
         self.max_score = self.get_max_score()
-        self.solr_rows = solr_rows
 
         best_match = candidates[0]
         for description in candidates:
@@ -413,14 +537,14 @@ class Cluster():
 
     def get_total_inlinks(self):
         inlinks_total = 0
-        for d in self.descriptions:
+        for d in self.candidates:
             inlinks_total += d.document.get('inlinks')
         return inlinks_total
 
 
     def get_max_score(self):
         max_score = 0
-        for d in self.descriptions:
+        for d in self.candidates:
             if d.document.get('score') > max_score:
                 max_score = d.document.get('score')
         return max_score
@@ -483,7 +607,9 @@ class Description():
 
     quotes = 0
 
+    found_more = 0
     solr_pos = 0
+    cand_pos = 0
     solr_score = 0
     inlinks = 0
     lang = 0
@@ -493,7 +619,9 @@ class Description():
 
     date_match = 0
     type_match = 0
+    role_match = 0
     entity_match = 0
+    spec_match = 0
 
     prob = 0
 
@@ -506,10 +634,11 @@ class Description():
 
 
     def get_labels(self):
-        # Normalize titles here until they become available from the index
         labels = []
         for t in self.document.get('title_str'):
+            # Normalize titles here until they become available from the index
             norm = utilities.normalize(t)
+            # Remove emtpy labels
             if len(norm) > 0:
                 labels.append(norm)
         return labels
@@ -520,10 +649,8 @@ class Description():
         self.match_titles()
         self.match_titles_last_part()
 
-        features = ['main_title_exact_match', 'main_title_start_match',
-                'main_title_end_match', 'title_exact_match', 'title_start_match',
-                'title_end_match', 'last_part_match']
-
+        features = ['main_title_exact_match', 'main_title_end_match',
+                'title_exact_match', 'title_end_match', 'last_part_match']
         name_conflict = 1
         for f in features:
             if getattr(self, f) > 0:
@@ -531,10 +658,14 @@ class Description():
                 break
         self.name_conflict = name_conflict
 
+        self.match_date()
+
 
     def calculate_prob_features(self):
         self.quotes = self.cluster.quotes_total
+        self.found_more = self.cluster.found_more
         self.solr_pos = self.position / float(self.cluster.solr_rows)
+        self.cand_pos = self.cluster.candidates.index(self) / float(self.cluster.solr_rows)
         if self.cluster.max_score > 0:
             self.solr_score = self.document.get('score') / float(self.cluster.max_score)
         if self.cluster.inlinks_total > 0:
@@ -543,13 +674,13 @@ class Description():
         self.disambig = 1 if self.document.get('disambig') == 1 else 0
 
         self.match_titles_levenshtein()
-        self.match_date()
         self.match_type()
+        self.match_role()
         self.match_entities()
+        self.match_spec()
 
 
     def match_id(self):
-        # Use normalized title string list until they are available from the index
         match_label = self.labels[0]
         ne = self.cluster.entities[0].norm
 
@@ -573,7 +704,6 @@ class Description():
         title_end_match = 0
         title_exact_match = 0
 
-        # Use normalized title string list until they are available from the index
         match_label = self.labels[1:]
         ne = self.cluster.entities[0].norm
 
@@ -691,18 +821,57 @@ class Description():
 
     def match_type(self):
         mapping = {'person': 'Person', 'location': 'Place', 'organisation': 'Organization'}
-        schema_types = self.document.get('schemaorgtype')
-        type_match = 0
 
+        tpta_type = None
+        if self.cluster.entities[0].alt_type:
+            tpta_type = self.cluster.entities[0].alt_type
+        elif self.cluster.entities[0].tpta_type:
+            tpta_type = self.cluster.entities[0].tpta_type
+
+        if not tpta_type or tpta_type not in mapping:
+            return
+
+        type_match = 0
+        schema_types = self.document.get('schemaorgtype')
         if schema_types:
-            entity_types = [e.tpta_type for e in self.cluster.entities if e.tpta_type and e.tpta_type in mapping]
-            for entity_type in entity_types:
-                for t in schema_types:
-                    if t == mapping[entity_type]:
-                        type_match += 1
+            if mapping[tpta_type] in schema_types:
+                type_match = 1
+            # Persons can't be locations or organizations
+            elif tpta_type == 'person':
+                for t in [mapping[t] for t in mapping if t != tpta_type]:
+                    if t in schema_types:
+                        type_match = -1
                         break
-        if type_match:
-            self.type_match = type_match / len(entity_types)
+            # Locations and organizations can't be persons
+            elif 'Person' in schema_types:
+                type_match = -1
+
+        self.type_match = type_match
+
+
+    def match_role(self):
+        role_match = 0
+        words = [e.window_left[-1] for e in self.cluster.entities if
+                len(e.window_left) > 0] + [e.window_right[0] for e in
+                self.cluster.entities if len(e.window_right) > 0]
+        abstract = self.document.get('abstract')
+        if not words or not abstract:
+            return
+        else:
+            words = [utilities.normalize(word) for word in words]
+            abstract = utilities.normalize(abstract)
+            roles = self.cluster.entities[0].roles
+
+        for word in words:
+            for role in roles:
+                if word in roles[role]['article']:
+                    for w in (roles[role]['article'] + roles[role]['abstract']):
+                        if abstract.find(w) > -1:
+                            role_match += 1
+                    break
+
+        role_match = role_match if role_match < 3 else 3
+        self.role_match = role_match
 
 
     def match_entities(self):
@@ -712,12 +881,35 @@ class Description():
         abstract = self.document.get('abstract')
         if abstract:
             entity_list = [e.clean for e in self.cluster.entities[0].context.entities
-                    if e.valid and self.cluster.entities[0].clean.find(e.clean) == -1 and e.clean not in excluded_entities]
+                    if e.valid and self.cluster.entities[0].clean.find(e.clean)
+                    == -1 and e.clean not in excluded_entities]
             for entity in entity_list:
                 if entity not in found_entities and abstract.find(entity) > -1:
                     found_entities.append(entity)
                     entity_match += 1
+        entity_match = entity_match if entity_match < 3 else 3
         self.entity_match = entity_match
+
+
+    def match_spec(self):
+        if self.document.get('disambig') == 0 and self.document.get('lang') == 'nl':
+            spec = self.document.get('id').split('(')[-1][:-2]
+            spec_words = [w[:int(math.ceil(len(w) * 0.75))] for w in
+                    filter(None, re.split("[_\- ]+", spec)) if len(w) > 3]
+            if not spec_words:
+                return
+            window = []
+            for e in self.cluster.entities:
+                window += e.window_left + e.window_right
+            if not window:
+                return
+            spec_match = 0
+            for word in spec_words:
+                for w in window:
+                    if w.startswith(word):
+                        spec_match += 1
+                        break
+            self.spec_match = spec_match
 
 
 if __name__ == '__main__':
