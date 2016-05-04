@@ -87,6 +87,14 @@ class EntityLinker():
                         if self.ne:
                             for j in range(len(self.model.features)):
                                 print self.model.features[j], getattr(description, self.model.features[j])
+                            print description.solr_pos
+                            print description.cand_pos
+                            print description.solr_fraction
+                            print description.cand_fraction
+                            print description.solr_inlinks
+                            print description.cand_inlinks
+                            print description.solr_score
+                            print description.cand_score
                             print '\n'
 
         # Return the result for each enitity
@@ -191,6 +199,25 @@ class Document():
 
     def get_metadata(self, url):
         publ_date, publ_place = None, None
+        jsru_url = 'http://jsru.kb.nl/sru/sru?'
+        jsru_url += 'operation=searchRetrieve&x-collection=DDD_artikel'
+        jsru_url += '&query=uniqueKey=' + url[url.find('ddd:'):-4]
+        try:
+            data = urllib.urlopen(jsru_url).read()
+            xml = etree.fromstring(data)
+        except:
+            return None, None
+
+        path = '{http://www.loc.gov/zing/srw/}records/'
+        path += '{http://www.loc.gov/zing/srw/}record/'
+        path += '{http://www.loc.gov/zing/srw/}recordData/'
+        path += '{http://purl.org/dc/elements/1.1/}date'
+
+        date = xml.find(path)
+        if date is not None:
+            publ_date = date.text
+
+        '''
         url = url[:url.find('mpeg21') + 6]
         try:
             data = urllib.urlopen(url).read()
@@ -205,6 +232,8 @@ class Document():
                 for sp in dcx.iter('{http://purl.org/dc/terms/}spatial'):
                     if '{http://www.w3.org/2001/XMLSchema-instance}type' in sp.attrib:
                         publ_place = sp.text
+        '''
+
         return publ_date, publ_place
 
 
@@ -437,15 +466,16 @@ class Cluster():
 
     solr_rows = None
     solr_result_count = None
-    found_more = None
 
     solr_response = None
     descriptions = None
     candidates = None
 
     quotes_total = None
-    inlinks_total = None
-    max_score = None
+    solr_inlinks_total = None
+    cand_inlinks_total = None
+    solr_max_score = None
+    cand_max_score = None
 
 
     def __init__(self, entities):
@@ -453,6 +483,8 @@ class Cluster():
 
 
     def resolve(self, solr_connection, solr_rows, model, min_prob):
+        self.solr_rows = solr_rows
+        self.model = model
 
         # Check validity of the representative entity
         if not self.entities[0].is_valid():
@@ -489,11 +521,9 @@ class Cluster():
             return self.result
 
         # If any candidates remain, calculate their feature values and probability
-        self.solr_rows = solr_rows
-        self.found_more = 1 if self.solr_response.numFound > solr_rows else 0
         self.quotes_total = self.get_total_quotes()
-        self.inlinks_total = self.get_total_inlinks()
-        self.max_score = self.get_max_score()
+        self.solr_inlinks_total, self.cand_inlinks_total = self.get_total_inlinks()
+        self.solr_max_score, self.cand_max_score = self.get_max_score()
 
         best_match = candidates[0]
         for description in candidates:
@@ -536,18 +566,25 @@ class Cluster():
 
 
     def get_total_inlinks(self):
-        inlinks_total = 0
+        solr_inlinks_total = 0
+        for d in self.descriptions:
+            solr_inlinks_total += d.document.get('inlinks')
+        cand_inlinks_total = 0
         for d in self.candidates:
-            inlinks_total += d.document.get('inlinks')
-        return inlinks_total
+            cand_inlinks_total += d.document.get('inlinks')
+        return solr_inlinks_total, cand_inlinks_total
 
 
     def get_max_score(self):
-        max_score = 0
+        solr_max_score = 0
+        for d in self.descriptions:
+            if d.document.get('score') > solr_max_score:
+                solr_max_score = d.document.get('score')
+        cand_max_score = 0
         for d in self.candidates:
-            if d.document.get('score') > max_score:
-                max_score = d.document.get('score')
-        return max_score
+            if d.document.get('score') > cand_max_score:
+                cand_max_score = d.document.get('score')
+        return solr_max_score, cand_max_score
 
 
     def get_total_quotes(self):
@@ -564,6 +601,8 @@ class Result():
     prob = None
     reason = None
 
+    features = None
+
     description = None
 
 
@@ -575,6 +614,12 @@ class Result():
             self.link = description.document.get('id')[1:-1]
             self.label = description.document.get('title')[0]
 
+            features = {}
+            for j in range(len(description.cluster.model.features)):
+                features[description.cluster.model.features[j]] = float(getattr(description,
+                        description.cluster.model.features[j]))
+            self.features = features
+
 
     def get_dict(self):
         result = {}
@@ -582,6 +627,7 @@ class Result():
         result['label'] = self.label
         result['prob'] = self.prob
         result['reason'] = self.reason
+        result['features'] = self.features
         return result
 
 
@@ -608,10 +654,18 @@ class Description():
     quotes = 0
 
     found_more = 0
+
     solr_pos = 0
     cand_pos = 0
+    solr_fraction = 0
+    cand_fraction = 0
     solr_score = 0
+    cand_score = 0
+
     inlinks = 0
+
+    solr_inlinks = 0
+    cand_inlinks = 0
     lang = 0
     disambig = 0
 
@@ -662,14 +716,24 @@ class Description():
 
 
     def calculate_prob_features(self):
+        # Position
+        self.solr_pos = (self.position + 1) / float(self.cluster.solr_rows)
+        self.cand_pos = (self.cluster.candidates.index(self) + 1) / float(self.cluster.solr_rows)
+        # Fraction
+        self.solr_fraction = 1 / float(len(self.cluster.descriptions))
+        self.cand_fraction = 1 / float(len(self.cluster.candidates))
+        # Score
+        if self.cluster.solr_max_score > 0:
+            self.solr_score = self.document.get('score') / float(self.cluster.solr_max_score)
+        if self.cluster.cand_max_score > 0:
+            self.cand_score = self.document.get('score') / float(self.cluster.cand_max_score)
+        # Inlinks
+        if self.cluster.solr_inlinks_total > 0:
+            self.solr_inlinks = self.document.get('inlinks') / float(self.cluster.solr_inlinks_total)
+        if self.cluster.cand_inlinks_total > 0:
+            self.cand_inlinks = self.document.get('inlinks') / float(self.cluster.cand_inlinks_total)
+
         self.quotes = self.cluster.quotes_total
-        self.found_more = self.cluster.found_more
-        self.solr_pos = self.position / float(self.cluster.solr_rows)
-        self.cand_pos = self.cluster.candidates.index(self) / float(self.cluster.solr_rows)
-        if self.cluster.max_score > 0:
-            self.solr_score = self.document.get('score') / float(self.cluster.max_score)
-        if self.cluster.inlinks_total > 0:
-            self.inlinks = self.document.get('inlinks') / float(self.cluster.inlinks_total)
         self.lang = 1 if self.document.get('lang') == 'nl' else 0
         self.disambig = 1 if self.document.get('disambig') == 1 else 0
 

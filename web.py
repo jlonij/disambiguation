@@ -41,6 +41,7 @@ def index():
     ne = request.params.get('ne')
     callback = request.params.get('callback')
     debug = request.params.get('debug')
+    features = request.params.get('features')
 
     if not url:
         abort(400, "No fitting argument (\"url=...\") given.")
@@ -57,6 +58,8 @@ def index():
                 r['reason'] = result['reason'].encode('utf-8')
                 if result['prob'] > 0:
                     r['prob'] = result['prob']
+                    if features:
+                        r['features'] = result['features']
             if result['link']:
                 r['link'] = result['link'].encode('utf-8')
                 r['label'] = result['label'].encode('utf-8')
