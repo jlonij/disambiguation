@@ -60,6 +60,7 @@ def index():
                     r['prob'] = result['prob']
                     if features:
                         r['features'] = result['features']
+                        #r['features'] = {key.encode('utf-8'):value for key,value in result['features'].items()}
             if result['link']:
                 r['link'] = result['link'].encode('utf-8')
                 r['label'] = result['label'].encode('utf-8')

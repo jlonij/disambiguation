@@ -423,7 +423,8 @@ class Entity():
             'article': ['schrijver', 'auteur', 'acteur', 'kunstenaar',
                 'schilder', 'beeldhouwer', 'architect', 'musicus',
                 'schrijver', 'componist', 'fotograaf', 'dichter',
-                'ontwerper'],
+                'ontwerper', 'toneelspeler', 'filmregisseur', 'regisseur',
+                'zanger', 'zangeres', 'actrice', 'trompetspeler', 'orkestleider'],
             'abstract': ['kunst', 'cultuur', 'roman', 'boek', 'gedicht',
                 'bundel', 'werk', 'schilderij', 'beeld', 'muziek',
                 'toneel', 'theater', 'film'],
@@ -651,24 +652,15 @@ class Description():
     last_part_match = 0
     name_conflict = 0
 
-    quotes = 0
-
-    found_more = 0
-
     solr_pos = 0
     cand_pos = 0
-    solr_fraction = 0
-    cand_fraction = 0
     solr_score = 0
     cand_score = 0
-
-    inlinks = 0
-
     solr_inlinks = 0
     cand_inlinks = 0
-    lang = 0
-    disambig = 0
 
+    lang = 0
+    quotes = 0
     mean_levenshtein_ratio = 0
 
     date_match = 0
@@ -719,9 +711,6 @@ class Description():
         # Position
         self.solr_pos = (self.position + 1) / float(self.cluster.solr_rows)
         self.cand_pos = (self.cluster.candidates.index(self) + 1) / float(self.cluster.solr_rows)
-        # Fraction
-        self.solr_fraction = 1 / float(len(self.cluster.descriptions))
-        self.cand_fraction = 1 / float(len(self.cluster.candidates))
         # Score
         if self.cluster.solr_max_score > 0:
             self.solr_score = self.document.get('score') / float(self.cluster.solr_max_score)
@@ -735,7 +724,7 @@ class Description():
 
         self.quotes = self.cluster.quotes_total
         self.lang = 1 if self.document.get('lang') == 'nl' else 0
-        self.disambig = 1 if self.document.get('disambig') == 1 else 0
+        # self.disambig = 1 if self.document.get('disambig') == 1 else 0
 
         self.match_titles_levenshtein()
         self.match_type()
