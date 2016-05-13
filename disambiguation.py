@@ -87,14 +87,6 @@ class EntityLinker():
                         if self.ne:
                             for j in range(len(self.model.features)):
                                 print self.model.features[j], getattr(description, self.model.features[j])
-                            print description.solr_pos
-                            print description.cand_pos
-                            print description.solr_fraction
-                            print description.cand_fraction
-                            print description.solr_inlinks
-                            print description.cand_inlinks
-                            print description.solr_score
-                            print description.cand_score
                             print '\n'
 
         # Return the result for each enitity
@@ -134,9 +126,10 @@ class EntityLinker():
             for e in cluster.entities:
                 if len(entity.norm) > 0 and len(e.norm) > 0:
                     if entity.norm.split()[-1] == e.norm.split()[-1]:
-                        if len(e.norm.split()) > len(entity.norm.split()):
-                            candidates.append(cluster)
-                            break
+                        if e.norm.endswith(entity.norm):
+                            if len(e.norm.split()) > len(entity.norm.split()):
+                                candidates.append(cluster)
+                                break
         if len(candidates) == 1:
             candidates[0].entities.append(entity)
         else:
@@ -472,11 +465,12 @@ class Cluster():
     descriptions = None
     candidates = None
 
-    quotes_total = None
-    solr_inlinks_total = None
-    cand_inlinks_total = None
     solr_max_score = None
     cand_max_score = None
+    solr_inlinks_total = None
+    cand_inlinks_total = None
+    titles_total = None
+    quotes_total = None
 
 
     def __init__(self, entities):
@@ -522,9 +516,10 @@ class Cluster():
             return self.result
 
         # If any candidates remain, calculate their feature values and probability
-        self.quotes_total = self.get_total_quotes()
-        self.solr_inlinks_total, self.cand_inlinks_total = self.get_total_inlinks()
         self.solr_max_score, self.cand_max_score = self.get_max_score()
+        self.solr_inlinks_total, self.cand_inlinks_total = self.get_total_inlinks()
+        self.titles_total = self.get_total_titles()
+        self.quotes_total = self.get_total_quotes()
 
         best_match = candidates[0]
         for description in candidates:
@@ -566,16 +561,6 @@ class Cluster():
         return solr_response, solr_result_count
 
 
-    def get_total_inlinks(self):
-        solr_inlinks_total = 0
-        for d in self.descriptions:
-            solr_inlinks_total += d.document.get('inlinks')
-        cand_inlinks_total = 0
-        for d in self.candidates:
-            cand_inlinks_total += d.document.get('inlinks')
-        return solr_inlinks_total, cand_inlinks_total
-
-
     def get_max_score(self):
         solr_max_score = 0
         for d in self.descriptions:
@@ -586,6 +571,23 @@ class Cluster():
             if d.document.get('score') > cand_max_score:
                 cand_max_score = d.document.get('score')
         return solr_max_score, cand_max_score
+
+
+    def get_total_inlinks(self):
+        solr_inlinks_total = 0
+        for d in self.descriptions:
+            solr_inlinks_total += d.document.get('inlinks')
+        cand_inlinks_total = 0
+        for d in self.candidates:
+            cand_inlinks_total += d.document.get('inlinks')
+        return solr_inlinks_total, cand_inlinks_total
+
+
+    def get_total_titles(self):
+        titles_total = 0
+        for d in self.candidates:
+            titles_total += len(d.labels)
+        return titles_total
 
 
     def get_total_quotes(self):
@@ -645,11 +647,26 @@ class Description():
     main_title_start_match = 0
     main_title_end_match = 0
     main_title_exact_match = 0
+
     title_match = 0
     title_start_match = 0
     title_end_match = 0
     title_exact_match = 0
+
+    title_match_fraction = 0
+    title_start_match_fraction = 0
+    title_end_match_fraction = 0
+    title_exact_match_fraction = 0
+
+    title_match_rel_fraction = 0
+    title_start_match_rel_fraction = 0
+    title_end_match_rel_fraction = 0
+    title_exact_match_rel_fraction = 0
+
     last_part_match = 0
+    last_part_match_fraction = 0
+    last_part_match_rel_fraction = 0
+
     name_conflict = 0
 
     solr_pos = 0
@@ -724,8 +741,8 @@ class Description():
 
         self.quotes = self.cluster.quotes_total
         self.lang = 1 if self.document.get('lang') == 'nl' else 0
-        # self.disambig = 1 if self.document.get('disambig') == 1 else 0
 
+        self.match_titles_rel_fractions()
         self.match_titles_levenshtein()
         self.match_type()
         self.match_role()
@@ -762,15 +779,14 @@ class Description():
 
         non_matching_labels = []
         for label in match_label:
-            fraction = 1 / float(len(match_label))
             if label == ne:
-                title_exact_match += fraction
+                title_exact_match += 1
             elif label.endswith(ne):
-                title_end_match += fraction
+                title_end_match += 1
             elif label.startswith(ne):
-                title_start_match += fraction
+                title_start_match += 1
             elif label.find(ne) > -1:
-                title_match += fraction
+                title_match += 1
             else:
                 non_matching_labels.append(label)
 
@@ -778,6 +794,13 @@ class Description():
         self.title_start_match = title_start_match
         self.title_end_match = title_end_match
         self.title_exact_match = title_exact_match
+
+        if len(match_label) > 0:
+            self.title_match_fraction = title_match / float(len(match_label))
+            self.title_start_match_fraction = title_start_match / float(len(match_label))
+            self.title_end_match_fraction = title_end_match / float(len(match_label))
+            self.title_exact_match_fraction = title_exact_match / float(len(match_label))
+
         self.non_matching_labels += non_matching_labels
 
 
@@ -849,7 +872,18 @@ class Description():
 
                 last_part_match += 1
 
-        self.last_part_match = last_part_match / float(len(self.labels))
+        self.last_part_match = last_part_match
+        if len(self.labels) > 0:
+            self.last_part_match_fraction = last_part_match / float(len(self.labels))
+
+
+    def match_titles_rel_fractions(self):
+        if self.cluster.titles_total > 0:
+            self.title_match_rel_fraction = self.title_match / float(self.cluster.titles_total)
+            self.title_start_match_rel_fraction = self.title_start_match / float(self.cluster.titles_total)
+            self.title_end_match_rel_fraction = self.title_end_match / float(self.cluster.titles_total)
+            self.title_exact_match_rel_fraction = self.title_exact_match / float(self.cluster.titles_total)
+            self.last_part_match_rel_fraction = self.last_part_match / float(self.cluster.titles_total)
 
 
     def match_titles_levenshtein(self):
@@ -912,14 +946,14 @@ class Description():
             return
         else:
             words = [utilities.normalize(word) for word in words]
-            abstract = utilities.normalize(abstract)
+            abstract = utilities.tokenize(utilities.normalize(abstract))
             roles = self.cluster.entities[0].roles
 
         for word in words:
             for role in roles:
                 if word in roles[role]['article']:
                     for w in (roles[role]['article'] + roles[role]['abstract']):
-                        if abstract.find(w) > -1:
+                        if w in abstract:
                             role_match += 1
                     break
 
