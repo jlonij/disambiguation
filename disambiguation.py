@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import dictionary
 import Levenshtein
 import math
 import models
@@ -51,6 +52,7 @@ class EntityLinker():
             for entity in self.context.entities:
                 if self.ne == entity.text:
                     entity_to_link = entity
+            # If not found, create new one
             if not entity_to_link:
                 entity_to_link = Entity(self.ne, None, self.context)
                 self.context.entities.append(entity_to_link)
@@ -64,10 +66,15 @@ class EntityLinker():
             cluster = clusters_to_link.pop()
             result = cluster.resolve(self.solr_connection, self.SOLR_ROWS, self.model, self.MIN_PROB)
             dependencies = [e for e in cluster.entities if e.norm != cluster.entities[0].norm]
+            # If cluster consists of multiple entities and could not be linked
+            # or is not linked to a person split it up and return the parts to
+            # the queue
             if dependencies and (not result.description or (result.description.document.get('schemaorgtype')
                     and 'Person' not in result.description.document.get('schemaorgtype'))):
                 new_clusters = [Cluster([e for e in cluster.entities if e not in dependencies])]
                 new_clusters.extend(self.get_clusters(dependencies))
+                # If linking a specific ne, only return the new cluster containing
+                # that ne to the queue
                 if self.ne:
                     clusters_to_link.extend([c for c in new_clusters if entity_to_link in c.entities])
                 else:
@@ -209,24 +216,6 @@ class Document():
         date = xml.find(path)
         if date is not None:
             publ_date = date.text
-
-        '''
-        url = url[:url.find('mpeg21') + 6]
-        try:
-            data = urllib.urlopen(url).read()
-            xml = etree.fromstring(data)
-        except:
-            return None, None
-        md_id = url[url.find('ddd:'):] + ':metadata'
-        for node in xml.iter('{urn:mpeg:mpeg21:2002:02-DIDL-NS}Component'):
-            if node.attrib['{http://purl.org/dc/elements/1.1/}identifier'] == md_id:
-                dcx = node.find('{urn:mpeg:mpeg21:2002:02-DIDL-NS}Resource/{info:srw/schema/1/dc-v1.1}dcx')
-                publ_date = dcx.findtext('{http://purl.org/dc/elements/1.1/}date')
-                for sp in dcx.iter('{http://purl.org/dc/terms/}spatial'):
-                    if '{http://www.w3.org/2001/XMLSchema-instance}type' in sp.attrib:
-                        publ_place = sp.text
-        '''
-
         return publ_date, publ_place
 
 
@@ -234,7 +223,6 @@ class Entity():
 
     text = None
     tpta_type = None
-    alt_type = None
     context = None
     doc_pos = None
 
@@ -250,6 +238,11 @@ class Entity():
     last_part = None
 
     valid = None
+
+    gender = None
+    alt_type = None
+    sub_type = None
+    subject = None
 
 
     def __init__(self, text, tpta_type, context, doc_pos=0):
@@ -274,8 +267,10 @@ class Entity():
         # Check and set validity
         self.valid = self.is_valid()
 
-        # Check tpta_type
-        self.alt_type = self.check_type()
+        # Get gender, type, subject
+        self.gender = self.get_gender()
+        self.alt_type, self.sub_type = self.get_type()
+        self.subject = self.get_subject()
 
 
     def get_position(self, document, phrase, doc_pos=None):
@@ -342,42 +337,48 @@ class Entity():
 
 
     def is_date(self):
-        months = ['januari', 'februari', 'maart', 'april', 'mei', 'juni',
-                'juli', 'augustus', 'september', 'oktober', 'november',
-                'december']
         if len(self.norm.split()) > 1:
-            if len([w for w in self.norm.split() if w in months]) > 0:
+            if len([w for w in self.norm.split() if w in dictionary.months]):
                 if len([w for w in self.norm.split() if w.isdigit()]):
                     return True
         return False
 
 
-    def check_type(self):
+    def get_gender(self):
         if self.window_left:
-            prev_word = self.window_left[-1]
+            prev_word = utilities.normalize(self.window_left[-1])
+            for gender in dictionary.genders:
+                if prev_word in dictionary.genders[gender]:
+                    return gender
+        return None
+
+
+    def get_type(self):
+
+        if self.window_left:
+            prev_word = utilities.normalize(self.window_left[-1])
 
             # Location clues
             loc_words = ['te', 'uit', 'in']
             if prev_word in loc_words:
-                return 'location'
+                return 'location', None
 
             # Person clues
             else:
                 person_words = []
-                for gender in self.genders:
-                    person_words += self.genders[gender]
+                for gender in dictionary.genders:
+                    person_words += dictionary.genders[gender]
                 for role in self.roles:
                     person_words += self.roles[role]['article']
                 if prev_word in person_words:
-                    return 'person'
+                    return 'person', None
 
-        return None
+        return None, None
 
 
-    genders = {
-        'male': ['heer', 'hr', 'dhr', 'meneer'],
-        'female': ['mevrouw', 'mevr', 'mw', 'mej', 'mejuffrouw']
-        }
+    def get_subject(self):
+        return True
+
 
     roles = {
         'politics': {
