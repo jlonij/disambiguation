@@ -85,8 +85,8 @@ class EntityLinker():
 
         if self.debug:
             for cluster in linked:
-                print '\n'
                 print [e.text for e in cluster.entities]
+                print [e.subjects for e in cluster.entities]
                 if cluster.descriptions:
                     for description in cluster.descriptions:
                         print description.document.get('id')
@@ -94,6 +94,7 @@ class EntityLinker():
                         if self.ne:
                             for j in range(len(self.model.features)):
                                 print self.model.features[j], getattr(description, self.model.features[j])
+                            print 'subject_match', description.subject_match
                             print '\n'
 
         # Return the result for each enitity
@@ -240,9 +241,9 @@ class Entity():
     valid = None
 
     gender = None
+    role = None
+    subjects = []
     alt_type = None
-    sub_type = None
-    subject = None
 
 
     def __init__(self, text, tpta_type, context, doc_pos=0):
@@ -255,7 +256,7 @@ class Entity():
         self.start_pos, self.end_pos = self.get_position(self.context.document.ocr,
                 self.text, self.doc_pos)
         self.window_left, self.window_right = self.get_window(self.context.document.ocr,
-                start_pos=self.start_pos, end_pos=self.end_pos, size=10)
+                start_pos=self.start_pos, end_pos=self.end_pos, size=50)
         self.quotes = self.get_quotes(self.start_pos, self.end_pos)
 
         # Clean and normalize input text
@@ -267,10 +268,12 @@ class Entity():
         # Check and set validity
         self.valid = self.is_valid()
 
-        # Get gender, type, subject
-        self.gender = self.get_gender()
-        self.alt_type, self.sub_type = self.get_type()
-        self.subject = self.get_subject()
+        # Get gender, role, subjects and check tpta_type
+        if self.valid:
+            self.gender = self.get_gender()
+            self.role = self.get_role()
+            self.subjects = self.get_subjects()
+            self.alt_type = self.get_alt_type()
 
 
     def get_position(self, document, phrase, doc_pos=None):
@@ -345,113 +348,59 @@ class Entity():
 
 
     def get_gender(self):
+        words = [self.norm.split()[0]]
         if self.window_left:
-            prev_word = utilities.normalize(self.window_left[-1])
+            words.append(utilities.normalize(self.window_left[-1]))
+        for word in words:
             for gender in dictionary.genders:
-                if prev_word in dictionary.genders[gender]:
+                if word in dictionary.genders[gender]:
                     return gender
         return None
 
 
-    def get_type(self):
+    def get_role(self):
+        words = [self.norm.split()[0]]
+        if self.window_left:
+            words.append(utilities.normalize(self.window_left[-1]))
+        #if self.window_right:
+            #words.append(utilities.normalize(self.window_right[0]))
+        for word in words:
+            for role in dictionary.roles:
+                if word in dictionary.roles[role]['words']:
+                    return role
+        return None
+
+
+    def get_subjects(self):
+        subjects = []
+        if self.role:
+            subjects += dictionary.roles[self.role]['subjects']
+        for subject in dictionary.subjects:
+            if subject not in subjects:
+                words = dictionary.subjects[subject]
+                for role in dictionary.roles:
+                    if subject in dictionary.roles[role]['subjects']:
+                        words += dictionary.roles[role]['words']
+                if len(set(words) & set(self.window_left + self.window_right)) > 0:
+                    subjects.append(subject)
+        return subjects
+
+
+    def get_alt_type(self):
+
+        if self.gender:
+            return 'person'
+
+        if self.role:
+            if len(dictionary.roles[self.role]['types']) == 1:
+                return dictionary.roles[self.role]['types'][0]
 
         if self.window_left:
             prev_word = utilities.normalize(self.window_left[-1])
+            if prev_word in ['te', 'uit', 'in']:
+                return 'location'
 
-            # Location clues
-            loc_words = ['te', 'uit', 'in']
-            if prev_word in loc_words:
-                return 'location', None
-
-            # Person clues
-            else:
-                person_words = []
-                for gender in dictionary.genders:
-                    person_words += dictionary.genders[gender]
-                for role in self.roles:
-                    person_words += self.roles[role]['article']
-                if prev_word in person_words:
-                    return 'person', None
-
-        return None, None
-
-
-    def get_subject(self):
-        return True
-
-
-    roles = {
-        'politics': {
-            'article': ['minister', 'premier', 'kamerlid', 'partijleider',
-                'burgemeester', 'staatssecretaris', 'president',
-                'wethouder', 'consul', 'ambassadeur', 'gemeenteraadslid',
-                'fractieleider', 'politicus'],
-            'abstract': ['regering', 'kabinet', 'fractie', 'partij',
-                'tweede kamer', 'eerste kamer', 'politiek', 'politicus'],
-            'types': ['Politician', 'OfficeHolder', 'Judge',
-                'MemberOfParliament', 'President', 'PrimeMinister',
-                'Governor']
-            },
-        'science': {
-            'article': ['prof', 'professor', 'dr', 'ingenieur', 'ir',
-                'natuurkundige', 'scheikundige', 'wiskundige', 'bioloog',
-                'historicus', 'onderzoeker', 'drs', 'ing'],
-            'abstract': ['wetenschap', 'wetenschapper', 'studie',
-                'onderzoek', 'uitvinding', 'ontdekking'],
-            'types': ['Scientist', 'Historian', 'Entomologist',
-                'Biologist', 'Philosopher', 'Professor']
-            },
-        'sports': {
-            'article': ['atleet', 'sportman', 'sportvrouw', 'sporter',
-                'wielrenner', 'voetballer', 'tennisser', 'zwemmer'],
-            'abstract': ['sport', 'voetbal', 'wielersport', 'wedstrijd'],
-            'types': ['Athlete', 'SoccerPlayer', 'Cyclist', 'SoccerManager',
-                'TennisPlayer', 'Wrestler', 'Swimmer', 'Speedskater',
-                'Skier', 'WinterSportPlayer', 'GolfPlayer', 'RacingDriver',
-                'MotorsportRacer', 'Canoist', 'Cricketer', 'RugbyPlayer',
-                'Boxer', 'HorseRider', 'AmericanFootballPlayer', 'Rower',
-                'Skater', 'BaseballPlayer', 'BasketballPlayer',
-                'SportsManager', 'IceHockeyPlayer']
-            },
-        'culture': {
-            'article': ['schrijver', 'auteur', 'acteur', 'kunstenaar',
-                'schilder', 'beeldhouwer', 'architect', 'musicus',
-                'schrijver', 'componist', 'fotograaf', 'dichter',
-                'ontwerper', 'toneelspeler', 'filmregisseur', 'regisseur',
-                'zanger', 'zangeres', 'actrice', 'trompetspeler', 'orkestleider'],
-            'abstract': ['kunst', 'cultuur', 'roman', 'boek', 'gedicht',
-                'bundel', 'werk', 'schilderij', 'beeld', 'muziek',
-                'toneel', 'theater', 'film'],
-            'types': ['Artist', 'Actor', 'Writer', 'MusicalArtist',
-                'Painter', 'Journalist', 'Architect', 'Screenwriter',
-                'VoiceActor', 'Presenter', 'Photographer',
-                'ClassicalMusicArtist', 'Poet', 'FashionDesigner',
-                'Comedian']
-            },
-        'religion': {
-            'article': ['dominee', 'paus', 'kardinaal', 'aartsbisschop',
-                'bisschop', 'monseigneur', 'mgr', 'kapelaan', 'deken',
-                'abt', 'prior', 'pastoor', 'pater', 'predikant',
-                'opperrabbijn', 'rabbijn', 'imam', 'geestelijke', 'frater'],
-            'abstract': ['kerk', 'parochie', 'geloof', 'religie'],
-            'types': ['Cleric', 'ChristianBishop', 'Cardinal', 'Saint',
-                'Pope']
-            },
-        'royalty': {
-            'article': ['keizer', 'koning', 'koningin', 'vorst', 'prins',
-                'prinses'],
-            'abstract': ['vorstenhuis', 'koningshuis', 'koninklijk huis',
-                'troon', 'rijk', 'keizerrijk', 'monarchie'],
-            'types': ['Royalty', 'Monarch', 'Noble']
-            },
-        'military': {
-            'article': ['generaal', 'gen', 'majoor', 'maj', 'luitenant',
-                'kolonel', 'kol', 'kapitein', 'bevelhebber'],
-            'abstract': ['leger', 'oorlog', 'troepen', 'gevecht', 'strijd',
-                'strijdkrachten'],
-            'types': ['MilitaryPerson']
-            }
-        }
+        return None
 
 
 class Cluster():
@@ -684,6 +633,7 @@ class Description():
     date_match = 0
     type_match = 0
     role_match = 0
+    subject_match = 0
     entity_match = 0
     spec_match = 0
 
@@ -747,6 +697,7 @@ class Description():
         self.match_titles_levenshtein()
         self.match_type()
         self.match_role()
+        self.match_subjects()
         self.match_entities()
         self.match_spec()
 
@@ -908,58 +859,88 @@ class Description():
 
 
     def match_type(self):
-        mapping = {'person': 'Person', 'location': 'Place', 'organisation': 'Organization'}
-
         tpta_type = None
         if self.cluster.entities[0].alt_type:
             tpta_type = self.cluster.entities[0].alt_type
         elif self.cluster.entities[0].tpta_type:
             tpta_type = self.cluster.entities[0].tpta_type
 
-        if not tpta_type or tpta_type not in mapping:
+        if not tpta_type or tpta_type not in dictionary.types:
             return
 
-        type_match = 0
         schema_types = self.document.get('schemaorgtype')
-        if schema_types:
-            if mapping[tpta_type] in schema_types:
-                type_match = 1
-            # Persons can't be locations or organizations
-            elif tpta_type == 'person':
-                for t in [mapping[t] for t in mapping if t != tpta_type]:
-                    if t in schema_types:
-                        type_match = -1
-                        break
-            # Locations and organizations can't be persons
-            elif 'Person' in schema_types:
-                type_match = -1
+        if not schema_types:
+            return
 
-        self.type_match = type_match
+        # Matching type
+        for t in dictionary.types[tpta_type]:
+            if t in schema_types:
+                self.type_match = 1
+                return
+
+        # Non-matching: persons can't be locations or organizations
+        if tpta_type == 'person':
+            for d in [d for d in dictionary.types if d != tpta_type]:
+                for t in dictionary.types[d]:
+                    if t in schema_types:
+                        self.type_match = -1
+
+        # Non-matching: locations and organizations can't be persons
+        elif 'Person' in schema_types:
+            self.type_match = -1
 
 
     def match_role(self):
-        role_match = 0
-        words = [e.window_left[-1] for e in self.cluster.entities if
-                len(e.window_left) > 0] + [e.window_right[0] for e in
-                self.cluster.entities if len(e.window_right) > 0]
-        abstract = self.document.get('abstract')
-        if not words or not abstract:
+        roles = {e.role for e in self.cluster.entities if e.role}
+        if not roles:
             return
-        else:
-            words = [utilities.normalize(word) for word in words]
-            abstract = utilities.tokenize(utilities.normalize(abstract))
-            roles = self.cluster.entities[0].roles
 
-        for word in words:
+        role_match = 0
+
+        # Match schema.org types
+        schema_types = self.document.get('schemaorgtype')
+        if schema_types:
             for role in roles:
-                if word in roles[role]['article']:
-                    for w in (roles[role]['article'] + roles[role]['abstract']):
-                        if w in abstract:
-                            role_match += 1
-                    break
+                for t in dictionary.roles[role]['schema_types']:
+                    if t in schema_types:
+                        role_match += 1
 
-        role_match = role_match if role_match < 3 else 3
-        self.role_match = role_match
+        # Match first sentence abstract
+        abstract = self.document.get('abstract')
+        if abstract:
+            sentence = abstract[:abstract.find('. ')]
+            bow = utilities.tokenize(utilities.normalize(sentence))
+            for role in roles:
+                if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
+                    role_match += 1
+
+        # Check for conflict
+
+        self.role_match = role_match if role_match < 3 else 3
+
+
+    def match_subjects(self):
+        subjects = []
+        for e in self.cluster.entities:
+            for s in e.subjects:
+                if s not in subjects:
+                    subjects.append(s)
+        if not subjects:
+            return
+
+        subject_match = 0
+        abstract = self.document.get('abstract')
+        if abstract:
+            bow = utilities.tokenize(utilities.normalize(abstract))
+            for subject in subjects:
+                words = dictionary.subjects[subject]
+                for role in dictionary.roles:
+                    if subject in dictionary.roles[role]['subjects']:
+                        words += dictionary.roles[role]['words']
+                if len(set(words) & set(bow)) > 0:
+                    subject_match += 1
+
+        self.subject_match = subject_match if subject_match < 3 else 3
 
 
     def match_entities(self):

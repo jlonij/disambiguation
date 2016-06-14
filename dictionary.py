@@ -57,7 +57,7 @@ roles = {
         'types': ['person']
         },
     'artist': {
-        'words': ['schrijver', 'auteur', 'acteur', 'kunstenaar',
+        'words': ['auteur', 'acteur', 'kunstenaar',
             'schilder', 'beeldhouwer', 'architect', 'musicus',
             'schrijver', 'componist', 'fotograaf', 'dichter',
             'ontwerper', 'toneelspeler', 'filmregisseur', 'regisseur',
@@ -74,7 +74,7 @@ roles = {
         'schema_types': [],
         'subjects': ['business'],
         'types': ['person']
-    },
+        },
     'scientist': {
         'words': ['prof', 'professor', 'dr', 'ingenieur', 'ir',
             'natuurkundige', 'scheikundige', 'wiskundige', 'bioloog',
@@ -133,14 +133,14 @@ roles = {
         },
     # Organizations
     'company': {
-        'words': ['bedrijf', 'bank', 'luchtvaartmaatschappij', 'onderneming', 
+        'words': ['bedrijf', 'bank', 'luchtvaartmaatschappij', 'onderneming',
             'hotel'],
         'schema_types': ['Company', 'Bank', 'Airline', 'Hotel'],
         'subjects': ['business'],
         'types': ['organisation']
         },
     'school': {
-        'words': ['basisschool', 'school', 'hogeschool', 'universiteit', 
+        'words': ['basisschool', 'school', 'hogeschool', 'universiteit',
             'onderzoeksinstituut', 'faculteit'],
         'schema_types': ['School', 'University'],
         'subjects': ['science'],
@@ -182,7 +182,7 @@ roles = {
     # Other
     'creative_work': {
         'words': ['film', 'album', 'plaat', 'nummer', 'single', 'boek', 'roman',
-            'novelle', 'bundel', 'dichtbundel', 'script', 'serie', 'televisieserie', 
+            'novelle', 'bundel', 'dichtbundel', 'script', 'serie', 'televisieserie',
             'opera', 'toneelstuk', 'gedicht', 'schilderij', 'beeld'],
         'schema_types': ['CreativeWork', 'Film', 'Album', 'Single', 'Book',
             'TelevisionShow', 'TelevisionEpisode', 'Song', 'MusicalWork',
@@ -213,14 +213,15 @@ roles = {
 
 subjects = {
     'politics': ['regering', 'kabinet', 'fractie', 'tweede kamer',
-        'eerste kamer', 'politiek', 'vorstenhuis', 
+        'eerste kamer', 'politiek', 'vorstenhuis',
         'koningshuis', 'koninklijk huis', 'troon', 'rijk',
         'keizerrijk', 'monarchie', 'leger', 'oorlog', 'troepen',
         'strijdkrachten'],
     'sports': ['sport', 'voetbal', 'wielersport', 'speler', 'spelers'],
-    'culture': ['kunst', 'cultuur', 'muziek', 'toneel', 'theater', 'film'],
-    'business': ['economie', 'beurs', 'aandelen', 'bedrijfsleven', 
-        'management', 'werknemer', 'werknemers', 'salaris', 'staking', 
+    'culture': ['kunst', 'cultuur', 'muziek', 'toneel', 'theater', 'cinema',
+        'romans', 'verhalen', 'schrijvers'],
+    'business': ['economie', 'beurs', 'aandelen', 'bedrijfsleven',
+        'management', 'werknemer', 'werknemers', 'salaris', 'staking',
         'personeel'],
     'science': ['wetenschap', 'studie', 'onderzoek', 'uitvinding', 'ontdekking'],
     'religion': ['geloof', 'religie']
