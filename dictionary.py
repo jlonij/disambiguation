@@ -56,16 +56,32 @@ roles = {
         'subjects': ['sports'],
         'types': ['person']
         },
-    'artist': {
-        'words': ['auteur', 'acteur', 'kunstenaar',
-            'schilder', 'beeldhouwer', 'architect', 'musicus',
-            'schrijver', 'componist', 'fotograaf', 'dichter',
-            'ontwerper', 'toneelspeler', 'filmregisseur', 'regisseur',
-            'zanger', 'zangeres', 'actrice', 'trompetspeler', 'orkestleider'],
-        'schema_types': ['MusicalArtist', 'Artist', 'Writer', 'Actor',
-            'Painter', 'Journalist', 'Architect', 'Screenwriter',
-            'VoiceActor', 'Presenter', 'Photographer', 'Comedian',
-            'ClassicalMusicArtist', 'Poet', 'FashionDesigner'],
+    'performing_artist': {
+        'words': ['acteur', 'toneelspeler', 'filmregisseur', 'regisseur',
+            'actrice'],
+        'schema_types': ['Actor', 'VoiceActor', 'Presenter', 'Comedian'],
+        'subjects': ['culture'],
+        'types': ['person']
+        },
+    'musical_artist': {
+         'words': ['musicus', 'componist', 'zanger', 'zangeres',
+             'trompetspeler', 'orkestleider'],
+        'schema_types': ['MusicalArtist', 'ClassicalMusicArtist'],
+        'subjects': ['culture'],
+        'types': ['person']
+        },
+    'visual_artist': {
+         'words': ['kunstenaar', 'schilder', 'beeldhouwer', 'architect',
+            'fotograaf', 'ontwerper'],
+        'schema_types': ['Painter', 'Architect', 'Photographer',
+            'FashionDesigner'],
+        'subjects': ['culture'],
+        'types': ['person']
+        },
+    'writer': {
+        'words': ['detective', 'auteur', 'schrijver', 'dichter', 'journalist'],
+        'schema_types': ['Writer', 'Journalist', 'Screenwriter',
+            'Poet'],
         'subjects': ['culture'],
         'types': ['person']
         },
@@ -196,6 +212,13 @@ roles = {
         'subjects': ['business'],
         'types': []
         },
+    'ship' : {
+        'words': ['ss', 'stoomschip', 'passagiersschip', 'cruiseschip',
+            'schip', 'vlaggeschip', 'zeilschip', 'jacht'],
+        'schema_types': ['Ship'],
+        'subjects': ['business'],
+        'types': []
+    },
     'sports_event': {
         'words': ['wedstrijd'],
         'schema_types': ['OlympicEvent', 'SoccerTournament', 'GrandPrix'

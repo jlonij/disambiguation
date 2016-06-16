@@ -608,14 +608,8 @@ class Description():
     title_end_match_fraction = 0
     title_exact_match_fraction = 0
 
-    title_match_rel_fraction = 0
-    title_start_match_rel_fraction = 0
-    title_end_match_rel_fraction = 0
-    title_exact_match_rel_fraction = 0
-
     last_part_match = 0
     last_part_match_fraction = 0
-    last_part_match_rel_fraction = 0
 
     name_conflict = 0
 
@@ -693,7 +687,6 @@ class Description():
         self.quotes = self.cluster.quotes_total
         self.lang = 1 if self.document.get('lang') == 'nl' else 0
 
-        self.match_titles_rel_fractions()
         self.match_titles_levenshtein()
         self.match_type()
         self.match_role()
@@ -829,15 +822,6 @@ class Description():
             self.last_part_match_fraction = last_part_match / float(len(self.labels))
 
 
-    def match_titles_rel_fractions(self):
-        if self.cluster.titles_total > 0:
-            self.title_match_rel_fraction = self.title_match / float(self.cluster.titles_total)
-            self.title_start_match_rel_fraction = self.title_start_match / float(self.cluster.titles_total)
-            self.title_end_match_rel_fraction = self.title_end_match / float(self.cluster.titles_total)
-            self.title_exact_match_rel_fraction = self.title_exact_match / float(self.cluster.titles_total)
-            self.last_part_match_rel_fraction = self.last_part_match / float(self.cluster.titles_total)
-
-
     def match_titles_levenshtein(self):
         ne = self.cluster.entities[0].norm
         sum = 0
@@ -915,8 +899,19 @@ class Description():
                     role_match += 1
 
         # Check for conflict
+        if role_match == 0:
+            if schema_types:
+                for role in [r for r in dictionary.roles if r not in roles]:
+                    for t in dictionary.roles[role]['schema_types']:
+                        if t in schema_types:
+                            role_match -= 1
 
-        self.role_match = role_match if role_match < 3 else 3
+            if abstract:
+                for role in [r for r in dictionary.roles if r not in roles]:
+                    if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
+                        role_match -= 1
+
+        self.role_match = role_match
 
 
     def match_subjects(self):
@@ -940,7 +935,18 @@ class Description():
                 if len(set(words) & set(bow)) > 0:
                     subject_match += 1
 
-        self.subject_match = subject_match if subject_match < 3 else 3
+            # Check for conflict
+            if subject_match == 0:
+                for subject in [s for s in dictionary.subjects if s not in
+                        subjects]:
+                    words = dictionary.subjects[subject]
+                    for role in dictionary.roles:
+                        if subject in dictionary.roles[role]['subjects']:
+                            words += dictionary.roles[role]['words']
+                    if len(set(words) & set(bow)) > 0:
+                        subject_match -= 1
+
+        self.subject_match = subject_match
 
 
     def match_entities(self):
