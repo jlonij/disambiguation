@@ -79,7 +79,7 @@ roles = {
         'types': ['person']
         },
     'writer': {
-        'words': ['detective', 'auteur', 'schrijver', 'dichter', 'journalist'],
+        'words': ['auteur', 'schrijver', 'dichter', 'journalist'],
         'schema_types': ['Writer', 'Journalist', 'Screenwriter',
             'Poet'],
         'subjects': ['culture'],
