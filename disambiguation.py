@@ -310,7 +310,7 @@ class Entity():
         if size:
             left_bow = left_bow[-size:]
             right_bow = right_bow[:size]
-
+	print left_bow, right_bow
         return left_bow, right_bow
 
 
@@ -374,8 +374,8 @@ class Entity():
         words = [self.norm.split()[0]]
         if self.window_left:
             words.append(utilities.normalize(self.window_left[-1]))
-        #if self.window_right:
-            #words.append(utilities.normalize(self.window_right[0]))
+        if self.window_right and self.context.document.ocr[self.end_pos] == ',':
+            words.append(utilities.normalize(self.window_right[0]))
         for word in words:
             for role in dictionary.roles:
                 if word in dictionary.roles[role]['words']:
@@ -636,6 +636,8 @@ class Description():
 
     lang = 0
     quotes = 0
+    disambig = 0
+
     mean_levenshtein_ratio = 0
 
     date_match = 0
@@ -663,9 +665,8 @@ class Description():
             # Remove emtpy labels
             if len(norm) > 0 and norm not in labels:
                 labels.append(norm)
-        selected_labels = [l for l in labels if l.find(',') < 0]
-        if selected_labels:
-            labels = selected_labels
+        if labels[0].find(',') < 0:
+            labels = [l for l in labels if l.find(',') < 0]
         return labels
 
 
@@ -703,6 +704,7 @@ class Description():
 
         self.quotes = self.cluster.quotes_total
         self.lang = 1 if self.document.get('lang') == 'nl' else 0
+        self.disambig = 1 if self.document.get('disambig') == 1 else 0
 
         self.match_titles_levenshtein()
         self.match_type()
@@ -788,10 +790,10 @@ class Description():
                 if len(ne.split()) == len(l.split()) and ne.split()[-1] == l.split()[-1]:
                     match = True
                     for part in ne.split()[:-1]:
-                        if len(ne.split()[0]) > 2 and part != l.split()[ne.split().index(part)]:
+                        if len(ne.split()[0]) > 1 and part != l.split()[ne.split().index(part)]:
                             match = False
                             break
-                        elif len(ne.split()[0]) <= 2 and part[0] != l.split()[ne.split().index(part)][0]:
+                        elif len(ne.split()[0]) <= 1 and part[0] != l.split()[ne.split().index(part)][0]:
                             match = False
                             break
                     if match:
@@ -822,15 +824,15 @@ class Description():
                 target_pos = 0
                 for part in source[:-1]:
                     if target_pos < len(target[:-1]):
-                        if len(part) > 2 and part in target[target_pos:-1]:
+                        if len(part) > 1 and part in target[target_pos:-1]:
                             target_pos = target.index(part) + 1
-                        elif len(part) > 2 and len([p for p in
+                        elif len(part) > 1 and len([p for p in
                             target[target_pos:-1] if Levenshtein.distance(p, part) <= 1]) > 0:
                             for p in target[target_pos:-1]:
                                 if Levenshtein.distance(p, part) <= 1:
                                     target_pos = target.index(p) + 1
                                     break
-                        elif len(part) <= 2 and part[0] in [p[0] for p in target[target_pos:-1]]:
+                        elif len(part) <= 1 and part[0] in [p[0] for p in target[target_pos:-1]]:
                             target_pos = [p[0] for p in target[target_pos:-1]].index(part[0]) + 1
                         else:
                             skip = True
@@ -965,11 +967,14 @@ class Description():
                     subjects.append(s)
         if not subjects:
             return
+	print subjects
 
         subject_match = 0
         abstract = self.document.get('abstract')
         if abstract:
+            print abstract
             bow = utilities.tokenize(utilities.normalize(abstract))
+            print bow
             for subject in subjects:
                 words = dictionary.subjects[subject]
                 for role in dictionary.roles:
@@ -989,6 +994,7 @@ class Description():
                                     set(subjects)) == 0:
                                 words += dictionary.roles[role]['words']
                     if len(set(words) & set(bow)) > 0:
+			print set(words) & set(bow)
                         subject_match = -1
                         break
 

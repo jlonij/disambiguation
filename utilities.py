@@ -31,6 +31,6 @@ def normalize(ne):
 
 
 def tokenize(document):
-    document = re.split('\W+', document)
+    document = re.split('\W+', document, flags=re.UNICODE)
     return [t for t in document if t]
 

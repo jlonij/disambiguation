@@ -275,6 +275,8 @@ subjects = {
     'business': ['economie', 'beurs', 'aandelen', 'bedrijfsleven',
         'management', 'werknemer', 'werknemers', 'salaris', 'staking',
         'personeel', 'beleggers'],
-    'science': ['wetenschap', 'studie', 'onderzoek', 'uitvinding', 'ontdekking'],
+    'science': ['wetenschap', 'studie', 'onderzoek', 'uitvinding',
+        'ontdekking', 'gezondheid', 'wiskunde', 'natuurkunde', 'biologie',
+        'scheikunde', 'astronomie'],
     'religion': ['geloof', 'religie']
     }
