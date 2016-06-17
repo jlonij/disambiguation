@@ -660,13 +660,13 @@ class Description():
     def get_labels(self):
         labels = []
         for t in self.document.get('title_str'):
+            if t.find(',') >= 0 and self.document.get('title_str')[0].find(',') < 0:
+                continue
             # Normalize titles here until they become available from the index
-            norm = utilities.normalize(t)
+            norm = utilities.normalize(utilities.clean(t))
             # Remove emtpy labels
             if len(norm) > 0 and norm not in labels:
                 labels.append(norm)
-        if labels[0].find(',') < 0:
-            labels = [l for l in labels if l.find(',') < 0]
         return labels
 
 
