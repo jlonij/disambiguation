@@ -85,8 +85,6 @@ class EntityLinker():
 
         if self.debug:
             for cluster in linked:
-                print [e.text for e in cluster.entities]
-                print [e.subjects for e in cluster.entities]
                 if cluster.descriptions:
                     for description in cluster.descriptions:
                         print description.document.get('id')
@@ -94,8 +92,6 @@ class EntityLinker():
                         if self.ne:
                             for j in range(len(self.model.features)):
                                 print self.model.features[j], getattr(description, self.model.features[j])
-                            print 'subject_match', description.subject_match
-                            print '\n'
 
         # Return the result for each enitity
         results = []
@@ -240,8 +236,13 @@ class Entity():
 
     valid = None
 
+    title = None
+    title_form = None
     gender = None
+    gender_form = None
     role = None
+    role_form = None
+
     subjects = []
     alt_type = None
 
@@ -256,7 +257,7 @@ class Entity():
         self.start_pos, self.end_pos = self.get_position(self.context.document.ocr,
                 self.text, self.doc_pos)
         self.window_left, self.window_right = self.get_window(self.context.document.ocr,
-                start_pos=self.start_pos, end_pos=self.end_pos, size=50)
+                start_pos=self.start_pos, end_pos=self.end_pos, size=75)
         self.quotes = self.get_quotes(self.start_pos, self.end_pos)
 
         # Clean and normalize input text
@@ -270,8 +271,9 @@ class Entity():
 
         # Get gender, role, subjects and check tpta_type
         if self.valid:
-            self.gender = self.get_gender()
-            self.role = self.get_role()
+            self.title, self.title_form = self.get_title()
+            self.gender, self.gender_form = self.get_gender()
+            self.role, self.role_form = self.get_role()
             self.subjects = self.get_subjects()
             self.alt_type = self.get_alt_type()
 
@@ -347,6 +349,16 @@ class Entity():
         return False
 
 
+    def get_title(self):
+        words = [self.norm.split()[0]]
+        if self.window_left:
+            words.append(utilities.normalize(self.window_left[-1]))
+        for word in words:
+            if word in dictionary.titles:
+                return True, word
+        return None, None
+
+
     def get_gender(self):
         words = [self.norm.split()[0]]
         if self.window_left:
@@ -354,8 +366,8 @@ class Entity():
         for word in words:
             for gender in dictionary.genders:
                 if word in dictionary.genders[gender]:
-                    return gender
-        return None
+                    return gender, word
+        return None, None
 
 
     def get_role(self):
@@ -367,8 +379,8 @@ class Entity():
         for word in words:
             for role in dictionary.roles:
                 if word in dictionary.roles[role]['words']:
-                    return role
-        return None
+                    return role, word
+        return None, None
 
 
     def get_subjects(self):
@@ -381,14 +393,16 @@ class Entity():
                 for role in dictionary.roles:
                     if subject in dictionary.roles[role]['subjects']:
                         words += dictionary.roles[role]['words']
-                if len(set(words) & set(self.window_left + self.window_right)) > 0:
+                window = [utilities.normalize(w) for w in (self.window_left +
+                        self.window_right)]
+                if len(set(words) & set(window)) > 0:
                     subjects.append(subject)
         return subjects
 
 
     def get_alt_type(self):
 
-        if self.gender:
+        if self.gender or self.title:
             return 'person'
 
         if self.role:
@@ -397,7 +411,7 @@ class Entity():
 
         if self.window_left:
             prev_word = utilities.normalize(self.window_left[-1])
-            if prev_word in ['te', 'uit', 'in']:
+            if prev_word in ['te', 'uit']:
                 return 'location'
 
         return None
@@ -647,8 +661,11 @@ class Description():
             # Normalize titles here until they become available from the index
             norm = utilities.normalize(t)
             # Remove emtpy labels
-            if len(norm) > 0:
+            if len(norm) > 0 and norm not in labels:
                 labels.append(norm)
+        selected_labels = [l for l in labels if l.find(',') < 0]
+        if selected_labels:
+            labels = selected_labels
         return labels
 
 
@@ -751,6 +768,14 @@ class Description():
 
     def match_titles_last_part(self):
         ne = self.cluster.entities[0].norm
+        if ((self.cluster.entities[0].gender and ne.split()[0] ==
+            self.cluster.entities[0].gender_form) or (self.cluster.entities[0].role
+            and ne.split()[0] == self.cluster.entities[0].role_form) or
+            (self.cluster.entities[0].title and ne.split()[0] ==
+                self.cluster.entities[0].title_form)):
+            ne = ' '.join(ne.split()[1:])
+            if not ne:
+                return
 
         # Preliminary check for ne's that are longer than the main label:
         # There has to be at least one alternative label that matches the
@@ -843,31 +868,49 @@ class Description():
 
 
     def match_type(self):
+        # Alt_type preferred over original tpta_type
         tpta_type = None
         if self.cluster.entities[0].alt_type:
             tpta_type = self.cluster.entities[0].alt_type
         elif self.cluster.entities[0].tpta_type:
             tpta_type = self.cluster.entities[0].tpta_type
-
         if not tpta_type or tpta_type not in dictionary.types:
             return
 
         schema_types = self.document.get('schemaorgtype')
+        # If no types available, try to deduce type from first sentence
+        # of the abstract
         if not schema_types:
-            return
+            abstract = self.document.get('abstract')
+            if not abstract:
+                return
+            sentence = abstract[:abstract.find('. ')]
+            bow = utilities.tokenize(utilities.normalize(sentence))
+            cand_types = []
+            for role in [r for r in dictionary.roles if len(dictionary.roles[r]['types']) == 1]:
+                if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
+                    cand_types.append(dictionary.roles[role]['types'][0])
+            for t in dictionary.types:
+                if len(set(bow) & set(dictionary.types[t]['words'])) > 0:
+                    cand_types.append(t)
+            if len(set(cand_types)) == 1:
+                schema_types = dictionary.types[cand_types[0]]['schema_types']
+            else:
+                return
 
         # Matching type
-        for t in dictionary.types[tpta_type]:
+        for t in dictionary.types[tpta_type]['schema_types']:
             if t in schema_types:
                 self.type_match = 1
                 return
 
         # Non-matching: persons can't be locations or organizations
         if tpta_type == 'person':
-            for d in [d for d in dictionary.types if d != tpta_type]:
-                for t in dictionary.types[d]:
+            for confl in [d for d in dictionary.types if d != tpta_type]:
+                for t in dictionary.types[confl]['schema_types']:
                     if t in schema_types:
                         self.type_match = -1
+                        return
 
         # Non-matching: locations and organizations can't be persons
         elif 'Person' in schema_types:
@@ -887,7 +930,8 @@ class Description():
             for role in roles:
                 for t in dictionary.roles[role]['schema_types']:
                     if t in schema_types:
-                        role_match += 1
+                        self.role_match = 1
+                        return
 
         # Match first sentence abstract
         abstract = self.document.get('abstract')
@@ -896,22 +940,21 @@ class Description():
             bow = utilities.tokenize(utilities.normalize(sentence))
             for role in roles:
                 if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
-                    role_match += 1
+                    self.role_match = 1
+                    return
 
         # Check for conflict
-        if role_match == 0:
-            if schema_types:
-                for role in [r for r in dictionary.roles if r not in roles]:
-                    for t in dictionary.roles[role]['schema_types']:
-                        if t in schema_types:
-                            role_match -= 1
-
-            if abstract:
-                for role in [r for r in dictionary.roles if r not in roles]:
-                    if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
-                        role_match -= 1
-
-        self.role_match = role_match
+        if schema_types:
+            for role in [r for r in dictionary.roles if r not in roles]:
+                for t in dictionary.roles[role]['schema_types']:
+                    if t in schema_types:
+                        self.role_match = -1
+                        return
+        if abstract:
+            for role in [r for r in dictionary.roles if r not in roles]:
+                if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
+                    self.role_match = -1
+                    return
 
 
     def match_subjects(self):
@@ -942,9 +985,12 @@ class Description():
                     words = dictionary.subjects[subject]
                     for role in dictionary.roles:
                         if subject in dictionary.roles[role]['subjects']:
-                            words += dictionary.roles[role]['words']
+                            if len(set(dictionary.roles[role]['subjects']) &
+                                    set(subjects)) == 0:
+                                words += dictionary.roles[role]['words']
                     if len(set(words) & set(bow)) > 0:
-                        subject_match -= 1
+                        subject_match = -1
+                        break
 
         self.subject_match = subject_match
 

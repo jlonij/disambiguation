@@ -4,15 +4,29 @@ days = ['maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag',
 months = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli',
 'augustus', 'september', 'oktober', 'november', 'december']
 
+titles = ['drs', 'ing', 'ir', 'dr']
+
 genders = {
     'male': ['heer', 'hr', 'dhr', 'meneer'],
     'female': ['mevrouw', 'mevr', 'mw', 'mej', 'mejuffrouw']
     }
 
 types = {
-    'person': ['Person', 'Agent'],
-    'location': ['Place', 'Location'],
-    'organisation': ['Organization', 'Organisation']
+    'person': {
+        'schema_types': ['Person', 'Agent'],
+        'words': ['familie', 'zoon', 'dochter', 'persoon', 'geboren',
+            'overleden', 'dood', 'man', 'vrouw', 'leven']
+        },
+    'location': {
+        'schema_types': ['Place', 'Location'],
+        'words': ['inwoners', 'oppervlakte', 'gelegen', 'noorden', 'zuiden',
+            'oosten', 'westen', 'noordoosten', 'noordwesten', 'zuidoosten',
+            'zuidwesten', 'grens', 'eilanden', 'eilandengroep']
+        },
+    'organisation': {
+        'schema_types': ['Organization', 'Organisation'],
+        'words': ['organisatie']
+        }
     }
 
 roles = {
@@ -21,7 +35,7 @@ roles = {
         'words': ['minister', 'premier', 'kamerlid', 'partijleider',
             'burgemeester', 'staatssecretaris', 'president',
             'wethouder', 'consul', 'ambassadeur', 'gemeenteraadslid',
-            'fractieleider', 'politicus'],
+            'fractieleider', 'politicus', 'politica', 'staatsman'],
         'schema_types': ['Politician', 'OfficeHolder', 'Judge',
             'MemberOfParliament', 'President', 'PrimeMinister',
             'Governor', 'Congressman', 'Mayor'],
@@ -45,7 +59,8 @@ roles = {
     'sports_person': {
         'words': ['atleet', 'sportman', 'sportvrouw', 'sporter',
             'wielrenner', 'voetballer', 'tennisser', 'zwemmer', 'spits',
-            'keeper', 'scheidsrechter'],
+            'keeper', 'scheidsrechter', 'profvoetballer', 'schaatser', 'spits',
+            'langebaanschaatser', 'schaker'],
         'schema_types': ['Athlete', 'SoccerPlayer', 'Cyclist', 'SoccerManager',
             'TennisPlayer', 'Swimmer', 'Boxer', 'Wrestler', 'Speedskater',
             'Skier', 'WinterSportPlayer', 'GolfPlayer', 'RacingDriver',
@@ -65,14 +80,15 @@ roles = {
         },
     'musical_artist': {
          'words': ['musicus', 'componist', 'zanger', 'zangeres',
-             'trompetspeler', 'orkestleider'],
+             'trompetspeler', 'orkestleider', 'gitarist', 'pianist'],
         'schema_types': ['MusicalArtist', 'ClassicalMusicArtist'],
         'subjects': ['culture'],
         'types': ['person']
         },
     'visual_artist': {
          'words': ['kunstenaar', 'schilder', 'beeldhouwer', 'architect',
-            'fotograaf', 'ontwerper'],
+            'fotograaf', 'ontwerper', 'kunstschilder', 'striptekenaar',
+            'illustrator'],
         'schema_types': ['Painter', 'Architect', 'Photographer',
             'FashionDesigner'],
         'subjects': ['culture'],
@@ -85,17 +101,24 @@ roles = {
         'subjects': ['culture'],
         'types': ['person']
         },
+    'fictional_character': {
+        'words': ['personage', 'stripfiguur'],
+        'schema_types': ['FictionalCharacter', 'SoapCharacter'],
+        'subjects': ['culture'],
+        'types': ['person']
+        },
     'business_person': {
         'words': ['manager', 'teamleider', 'directeur', 'bedrijfsleider', 'ondernemer'],
-        'schema_types': [],
+        'schema_types': ['BusinessPerson'],
         'subjects': ['business'],
         'types': ['person']
         },
     'scientist': {
-        'words': ['prof', 'professor', 'dr', 'ingenieur', 'ir',
-            'natuurkundige', 'scheikundige', 'wiskundige', 'bioloog',
-            'historicus', 'onderzoeker', 'drs', 'ing', 'wetenschapper'],
-        'schema_types': ['Scientist'],
+        'words': ['prof', 'professor', 'natuurkundige', 'scheikundige',
+            'wiskundige', 'bioloog', 'historicus', 'onderzoeker', 'wetenschapper',
+            'filosoof', 'docent'],
+        'schema_types': ['Scientist', 'Historian', 'Biologist', 'Philosopher',
+            'Professor'],
         'subjects': ['science'],
         'types': ['person']
         },
@@ -110,8 +133,10 @@ roles = {
         },
     # Locations
     'settlement': {
-        'words': ['gemeente', 'provincie', 'stad', 'dorp', 'regio', 'wijk',
-            'gebied', 'stadsdeel', 'waterschap', 'straat'],
+        'words': ['plaats', 'gemeente', 'provincie', 'stad', 'dorp', 'regio', 'wijk',
+            'gebied', 'stadsdeel', 'waterschap', 'straat', 'staat', 'district',
+            'deelstaat', 'departement', 'county', 'kanton', 'hoofdstad',
+            'graafschap', 'land', 'arrondissement', 'streek', 'landgoed'],
         'schema_types': ['Settlement', 'Village', 'Municipality', 'Town',
             'AdministrativeRegion', 'City', 'HistoricPlace', 'PopulatedPlace',
             'ProtectedArea', 'CityDistrict', 'Country', 'SubMunicipality', 'Street'
@@ -120,7 +145,8 @@ roles = {
         'types': ['location']
         },
     'infrastructure': {
-        'words': ['station', 'metrostation', 'vliegveld', 'gebouw', 'brug', 'monument'],
+        'words': ['station', 'metrostation', 'vliegveld', 'gebouw', 'brug',
+            'monument', 'metro', 'luchthaven'],
         'schema_types': ['Building', 'Road', 'Station', 'RailwayStation',
             'Airport', 'HistoricBuilding', 'Bridge', 'Dam', 'ArchitecturalStructure',
             'Monument', 'Castle', 'WorldHeritageSite', 'MetroStation'],
@@ -170,7 +196,7 @@ roles = {
         },
     'sports_organisation': {
         'words': ['club', 'voetbalclub'],
-        'schema_types': ['SoccerClub', 'RugbyClub', 'SportsTeam', 'SoccerLeague',
+        'schema_types': ['SoccerClub', 'RugbyClub', 'SportsTeam',
             'HockeyTeam'],
         'subjects': ['sports'],
         'types': ['organisation']
@@ -199,7 +225,7 @@ roles = {
     'creative_work': {
         'words': ['film', 'album', 'plaat', 'nummer', 'single', 'boek', 'roman',
             'novelle', 'bundel', 'dichtbundel', 'script', 'serie', 'televisieserie',
-            'opera', 'toneelstuk', 'gedicht', 'schilderij', 'beeld'],
+            'opera', 'toneelstuk', 'gedicht', 'schilderij', 'beeld', 'strip'],
         'schema_types': ['CreativeWork', 'Film', 'Album', 'Single', 'Book',
             'TelevisionShow', 'TelevisionEpisode', 'Song', 'MusicalWork',
             'ArtWork', 'WrittenWork', 'Play'],
@@ -220,14 +246,14 @@ roles = {
         'types': []
     },
     'sports_event': {
-        'words': ['wedstrijd'],
-        'schema_types': ['OlympicEvent', 'SoccerTournament', 'GrandPrix'
+        'words': ['wedstrijd', 'voetbalcompetitie', 'toernooi'],
+        'schema_types': ['SoccerLeague', 'OlympicEvent', 'SoccerTournament', 'GrandPrix'
             'TennisTournament', 'FootballMatch', 'CyclingRace', 'SportsEvent'],
         'subjects': ['sports'],
         'types': []
         },
     'military_event': {
-        'words': ['oorlog', 'conflict'],
+        'words': ['oorlog'],
         'schema_types': ['MilitaryConflict'],
         'subjects': ['politics'],
         'types': []
@@ -236,13 +262,16 @@ roles = {
 
 subjects = {
     'politics': ['regering', 'kabinet', 'fractie', 'tweede kamer',
-        'eerste kamer', 'politiek', 'vorstenhuis',
+        'eerste kamer', 'politiek', 'politieke', 'vorstenhuis',
         'koningshuis', 'koninklijk huis', 'troon', 'rijk',
         'keizerrijk', 'monarchie', 'leger', 'oorlog', 'troepen',
-        'strijdkrachten'],
-    'sports': ['sport', 'voetbal', 'wielersport', 'speler', 'spelers'],
+        'strijdkrachten', 'militair', 'partij', 'ministers', 'politie'],
+    'sports': ['sport', 'voetbal', 'wielersport', 'speler', 'spelers',
+        'sporten', 'wedstrijden'],
     'culture': ['kunst', 'cultuur', 'muziek', 'toneel', 'theater', 'cinema',
-        'romans', 'verhalen', 'schrijvers'],
+        'romans', 'verhalen', 'schrijvers', 'fictief', 'fictieve', 'rock',
+        'jazz', 'geregisseerd', 'strips', 'kunstveiling', 'kunstveilingen',
+        'piano', 'gitaar', 'pianisten', 'recital'],
     'business': ['economie', 'beurs', 'aandelen', 'bedrijfsleven',
         'management', 'werknemer', 'werknemers', 'salaris', 'staking',
         'personeel'],
