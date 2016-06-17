@@ -176,7 +176,7 @@ roles = {
     # Organizations
     'company': {
         'words': ['bedrijf', 'bank', 'luchtvaartmaatschappij', 'onderneming',
-            'hotel'],
+            'hotel', 'uitvoerder'],
         'schema_types': ['Company', 'Bank', 'Airline', 'Hotel'],
         'subjects': ['business'],
         'types': ['organisation']
@@ -215,7 +215,7 @@ roles = {
         },
     'media_organisation': {
         'words': ['krant', 'tijdschrift', 'zender', 'televisiezender',
-            'radiozender'],
+            'radiozender', 'dagblad', 'weekblad', 'radiostation'],
         'schema_types': ['Newspaper', 'Magazine', 'RadioStation', 'Publisher',
             'TelevisionStation', 'AcademicJournal', 'PeriodicalLiterature'],
         'subjects': [],
@@ -274,7 +274,7 @@ subjects = {
         'piano', 'gitaar', 'pianisten', 'recital'],
     'business': ['economie', 'beurs', 'aandelen', 'bedrijfsleven',
         'management', 'werknemer', 'werknemers', 'salaris', 'staking',
-        'personeel'],
+        'personeel', 'beleggers'],
     'science': ['wetenschap', 'studie', 'onderzoek', 'uitvinding', 'ontdekking'],
     'religion': ['geloof', 'religie']
     }

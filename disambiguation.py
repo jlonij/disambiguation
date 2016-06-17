@@ -411,7 +411,7 @@ class Entity():
 
         if self.window_left:
             prev_word = utilities.normalize(self.window_left[-1])
-            if prev_word in ['te', 'uit']:
+            if prev_word in ['in', 'te', 'uit']:
                 return 'location'
 
         return None
