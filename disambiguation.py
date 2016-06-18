@@ -180,11 +180,14 @@ class Document():
     publ_date = None
     publ_place = None
 
+    subjects = []
+
 
     def __init__(self, url):
         self.url = url
         self.ocr = self.get_ocr(self.url)
         self.publ_date, self.publ_place = self.get_metadata(self.url)
+        self.subjects = self.get_subjects()
 
 
     def get_ocr(self, url):
@@ -216,6 +219,19 @@ class Document():
         return publ_date, publ_place
 
 
+    def get_subjects(self):
+        subjects = []
+        for subject in dictionary.subjects:
+            words = dictionary.subjects[subject]
+            for role in dictionary.roles:
+                if subject in dictionary.roles[role]['subjects']:
+                    words += dictionary.roles[role]['words']
+            window = [utilities.normalize(w) for w in utilities.tokenize(self.ocr)]
+            if len(set(words) & set(window)) > 0:
+                subjects.append(subject)
+        return subjects
+
+
 class Entity():
 
     text = None
@@ -243,7 +259,6 @@ class Entity():
     role = None
     role_form = None
 
-    subjects = []
     alt_type = None
 
 
@@ -257,7 +272,7 @@ class Entity():
         self.start_pos, self.end_pos = self.get_position(self.context.document.ocr,
                 self.text, self.doc_pos)
         self.window_left, self.window_right = self.get_window(self.context.document.ocr,
-                start_pos=self.start_pos, end_pos=self.end_pos, size=75)
+                start_pos=self.start_pos, end_pos=self.end_pos, size=30)
         self.quotes = self.get_quotes(self.start_pos, self.end_pos)
 
         # Clean and normalize input text
@@ -269,12 +284,11 @@ class Entity():
         # Check and set validity
         self.valid = self.is_valid()
 
-        # Get gender, role, subjects and check tpta_type
+        # Get title, gender, role, check tpta_type
         if self.valid:
             self.title, self.title_form = self.get_title()
             self.gender, self.gender_form = self.get_gender()
             self.role, self.role_form = self.get_role()
-            self.subjects = self.get_subjects()
             self.alt_type = self.get_alt_type()
 
 
@@ -310,7 +324,6 @@ class Entity():
         if size:
             left_bow = left_bow[-size:]
             right_bow = right_bow[:size]
-	print left_bow, right_bow
         return left_bow, right_bow
 
 
@@ -381,23 +394,6 @@ class Entity():
                 if word in dictionary.roles[role]['words']:
                     return role, word
         return None, None
-
-
-    def get_subjects(self):
-        subjects = []
-        if self.role:
-            subjects += dictionary.roles[self.role]['subjects']
-        for subject in dictionary.subjects:
-            if subject not in subjects:
-                words = dictionary.subjects[subject]
-                for role in dictionary.roles:
-                    if subject in dictionary.roles[role]['subjects']:
-                        words += dictionary.roles[role]['words']
-                window = [utilities.normalize(w) for w in (self.window_left +
-                        self.window_right)]
-                if len(set(words) & set(window)) > 0:
-                    subjects.append(subject)
-        return subjects
 
 
     def get_alt_type(self):
@@ -960,21 +956,14 @@ class Description():
 
 
     def match_subjects(self):
-        subjects = []
-        for e in self.cluster.entities:
-            for s in e.subjects:
-                if s not in subjects:
-                    subjects.append(s)
+        subjects = self.cluster.entities[0].context.document.subjects
         if not subjects:
             return
-	print subjects
 
         subject_match = 0
         abstract = self.document.get('abstract')
         if abstract:
-            print abstract
             bow = utilities.tokenize(utilities.normalize(abstract))
-            print bow
             for subject in subjects:
                 words = dictionary.subjects[subject]
                 for role in dictionary.roles:
@@ -982,7 +971,7 @@ class Description():
                         words += dictionary.roles[role]['words']
                 if len(set(words) & set(bow)) > 0:
                     subject_match += 1
-
+            
             # Check for conflict
             if subject_match == 0:
                 for subject in [s for s in dictionary.subjects if s not in
@@ -994,10 +983,9 @@ class Description():
                                     set(subjects)) == 0:
                                 words += dictionary.roles[role]['words']
                     if len(set(words) & set(bow)) > 0:
-			print set(words) & set(bow)
                         subject_match = -1
                         break
-
+            
         self.subject_match = subject_match
 
 
