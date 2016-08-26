@@ -18,8 +18,9 @@ from operator import attrgetter
 class EntityLinker():
 
     TPTA_URL = 'http://145.100.59.224:8080/tpta/analyse?lang=nl&url='
-    SOLR_URL = 'http://linksolr.kbresearch.nl/dbpedia'
-    #SOLR_URL = 'http://145.100.59.224:8081/solr/dbpedia'
+
+    #SOLR_URL = 'http://linksolr.kbresearch.nl/dbpedia'
+    SOLR_URL = 'http://145.100.59.224:8081/solr/dbpedia'
 
     SOLR_ROWS = 20
     MIN_PROB = 0.5
@@ -971,7 +972,7 @@ class Description():
                         words += dictionary.roles[role]['words']
                 if len(set(words) & set(bow)) > 0:
                     subject_match += 1
-            
+
             # Check for conflict
             if subject_match == 0:
                 for subject in [s for s in dictionary.subjects if s not in
@@ -985,7 +986,7 @@ class Description():
                     if len(set(words) & set(bow)) > 0:
                         subject_match = -1
                         break
-            
+
         self.subject_match = subject_match
 
 
