@@ -17,10 +17,11 @@ from operator import attrgetter
 
 class EntityLinker():
 
-    TPTA_URL = 'http://145.100.59.224:8080/tpta/analyse?lang=nl&url='
-
+    #TPTA_URL = 'http://145.100.59.224:8080/tpta/analyse?lang=nl&url='
+    TPTA_URL = 'http://192.87.165.5:8080/tpta/analyse?lang=nl&url='
     #SOLR_URL = 'http://linksolr.kbresearch.nl/dbpedia'
-    SOLR_URL = 'http://145.100.59.224:8081/solr/dbpedia'
+    #SOLR_URL = 'http://145.100.59.224:8081/solr/dbpedia'
+    SOLR_URL = 'http://192.87.165.5:8081/solr/dbpedia'
 
     SOLR_ROWS = 20
     MIN_PROB = 0.5
