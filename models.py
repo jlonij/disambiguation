@@ -4,6 +4,9 @@
 import os
 import csv
 import math
+
+import numpy as np
+import tensorflow as tf
 import xml.etree.ElementTree as etree
 
 
@@ -140,14 +143,81 @@ class RadialSVM:
         return result
 
 
-class DecisionTree:
-    def __init__(self):
-        stub = True
-
-
 class NeuralNet:
+
     def __init__(self):
-        stub = True
+
+        self.features = [
+                'solr_pos',
+                'cand_pos',
+                'solr_score',
+                'cand_score',
+                'solr_inlinks',
+                'cand_inlinks',
+                'quotes',
+                'lang',
+                'disambig',
+                'main_title_exact_match',
+                'main_title_start_match',
+                'main_title_end_match',
+                'main_title_match',
+                'title_exact_match_fraction',
+                'title_start_match_fraction',
+                'title_end_match_fraction',
+                'title_match_fraction',
+                'last_part_match_fraction',
+                'mean_levenshtein_ratio',
+                'name_conflict',
+                'date_match',
+                'type_match',
+                'role_match',
+                'subject_match',
+                'entity_match',
+                'spec_match'
+                ]
+
+
+    def predict(self, example):
+
+        num_hidden_nodes1 = 26
+        num_hidden_nodes2 = 26
+        num_features = 26
+        num_labels = 2
+
+        curr_dir = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-1]) + os.sep
+        model_file = curr_dir + "models" + os.sep + "model.ckpt"
+
+        graph = tf.Graph()
+
+        with tf.Session(graph=graph) as session:
+
+            global_step = tf.Variable(0)
+
+            # Weights and biases for each network layer
+            weights1 = tf.Variable(tf.truncated_normal([num_features,
+                    num_hidden_nodes1], stddev=np.sqrt(2.0 / num_features)))
+            biases1 = tf.Variable(tf.zeros([num_hidden_nodes1]))
+            weights2 = tf.Variable(tf.truncated_normal([num_hidden_nodes1,
+                    num_hidden_nodes2], stddev=np.sqrt(2.0 / num_hidden_nodes1)))
+            biases2 = tf.Variable(tf.zeros([num_hidden_nodes2]))
+            weights3 = tf.Variable(tf.truncated_normal([num_hidden_nodes2,
+                    num_labels], stddev=np.sqrt(2.0 / num_hidden_nodes2)))
+            biases3 = tf.Variable(tf.zeros([num_labels]))
+
+            # Saver
+            self.saver = tf.train.Saver()
+            self.saver.restore(session, model_file)
+
+            # Prediction for new examples
+            x = tf.placeholder(tf.float32, shape=(1, num_features))
+            lay1_y = tf.nn.relu(tf.matmul(x, weights1) + biases1)
+            lay2_y = tf.nn.relu(tf.matmul(lay1_y, weights2) + biases2)
+            y = tf.nn.softmax(tf.matmul(lay2_y, weights3) + biases3)
+
+            ex = np.ndarray(shape=(1, len(example)), dtype=np.float32)
+            ex[0] = example
+
+            return float(session.run(y, feed_dict={x: ex})[0,1])
 
 
 if __name__ == '__main__':

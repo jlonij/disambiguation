@@ -38,8 +38,9 @@ class EntityLinker():
 
 
     def __init__(self, debug=None):
+
         self.debug = debug
-        self.model = models.LinearSVM()
+        self.model = models.NeuralNet()
         self.solr_connection = solr.SolrConnection(self.SOLR_URL)
 
 
