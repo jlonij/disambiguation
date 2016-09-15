@@ -37,11 +37,20 @@ class EntityLinker():
     linked = []
 
 
-    def __init__(self, debug=None):
+    def __init__(self, debug=None, model=None):
 
         self.debug = debug
-        self.model = models.NeuralNet()
+
+        # Init Solr connection
         self.solr_connection = solr.SolrConnection(self.SOLR_URL)
+
+        # Init prediction model
+        if model == 'svm':
+            self.model = models.LinearSVM()
+        elif model == 'nn':
+            self.model = models.NeuralNet()
+        else:
+            self.model = models.NeuralNet()
 
 
     def link(self, url, ne=None):

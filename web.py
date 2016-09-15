@@ -42,11 +42,12 @@ def index():
     callback = request.params.get('callback')
     debug = request.params.get('debug')
     features = request.params.get('features')
+    model = request.params.get('model')
 
     if not url:
         abort(400, "No fitting argument (\"url=...\") given.")
 
-    linker = disambiguation.EntityLinker()
+    linker = disambiguation.EntityLinker(model=model)
     results = linker.link(url, ne)
 
     resp = []
