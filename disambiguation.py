@@ -19,7 +19,9 @@ class EntityLinker():
 
     #TPTA_URL = 'http://145.100.59.224:8080/tpta/analyse?lang=nl&url='
     TPTA_URL = 'http://192.87.165.5:8080/tpta/analyse?lang=nl&url='
+
     #SOLR_URL = 'http://linksolr.kbresearch.nl/dbpedia'
+    #SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
     #SOLR_URL = 'http://145.100.59.224:8081/solr/dbpedia'
     SOLR_URL = 'http://192.87.165.5:8081/solr/dbpedia'
 
@@ -50,7 +52,7 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         else:
-            self.model = models.NeuralNet()
+            self.model = models.LinearSVM()
 
 
     def link(self, url, ne=None):
@@ -431,9 +433,12 @@ class Cluster():
     result = None
 
     solr_rows = None
-    solr_result_count = None
+    model = None
 
+    solr_iteration = None
+    solr_result_count = None
     solr_response = None
+
     descriptions = None
     candidates = None
 
@@ -460,11 +465,13 @@ class Cluster():
 
         # If entity is valid, query Solr for candidate DBpedia descriptions
         try:
-            self.solr_response, self.solr_result_count = self.query_solr(solr_connection, solr_rows)
+            self.solr_iteration, self.solr_response, self.solr_result_count = self.query_solr(solr_connection, solr_rows)
         except Exception as error_msg:
             self.result = Result("Failed to query solr: " + str(error_msg), -1.0)
             return self.result
-        if self.solr_response is not None and self.solr_response.numFound == 0:
+
+        # If nothing found, return
+        if self.solr_result_count == 0:
             self.result = Result("Nothing found")
             return self.result
 
@@ -504,7 +511,7 @@ class Cluster():
                 best_match = description
 
         if best_match.prob >= min_prob:
-            self.result = Result("SVM classifier best probability", best_match.prob, best_match)
+            self.result = Result("Predicted link", best_match.prob, best_match)
         else:
             self.result= Result("Probability too low for: " + best_match.document.get('title')[0], best_match.prob)
         return self.result
@@ -520,17 +527,35 @@ class Cluster():
                 last_part = part
                 break
 
+        queries = []
+
+        # Query #1: full match
         query = 'title:"' + self.entities[0].norm + '"'
         query += ' OR title_str:"' + self.entities[0].clean + '"'
-        query += ' OR lastpart_str:"' + last_part + '"'
+        queries.append(query)
 
-        solr_response = solr_connection.query(
-	        q=query, rows=solr_rows, indent='on',
-	        sort='lang,inlinks', sort_order='desc')
-        numfound = solr_response.numFound
-        solr_result_count = numfound if numfound <= solr_rows else solr_rows
+        # Query #2: last part match
+        query = 'lastpart_str:"' + last_part + '"'
+        queries.append(query)
 
-        return solr_response, solr_result_count
+        # Query #3: stem match
+        # Query #4: fuzzy match
+
+        solr_iteration = None
+        solr_response = None
+        solr_result_count = None
+
+        for i, query in enumerate(queries):
+            solr_iteration = i
+            solr_response = solr_connection.query(
+	            q=query, rows=solr_rows, indent='on',
+	            sort='lang,inlinks', sort_order='desc')
+            solr_result_count = (solr_response.numFound if
+                    solr_response.numFound <= solr_rows else solr_rows)
+            if solr_result_count > 0:
+                break
+
+        return solr_iteration, solr_response, solr_result_count
 
 
     def get_max_score(self):
@@ -635,6 +660,7 @@ class Description():
 
     name_conflict = 0
 
+    solr_iteration = 0
     solr_pos = 0
     cand_pos = 0
     solr_score = 0
@@ -696,6 +722,8 @@ class Description():
 
 
     def calculate_prob_features(self):
+        self.solr_iteration = self.cluster.solr_iteration
+
         # Position
         self.solr_pos = (self.position + 1) / float(self.cluster.solr_rows)
         self.cand_pos = (self.cluster.candidates.index(self) + 1) / float(self.cluster.solr_rows)
