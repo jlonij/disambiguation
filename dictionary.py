@@ -124,7 +124,7 @@ roles = {
     'scientist': {
         'words': ['prof', 'professor', 'natuurkundige', 'scheikundige',
             'wiskundige', 'bioloog', 'historicus', 'onderzoeker', 'wetenschapper',
-            'filosoof', 'docent', 'arts', 'astronoom'],
+            'filosoof', 'docent', 'astronoom'],
         'schema_types': ['Scientist', 'Historian', 'Biologist', 'Philosopher',
             'Professor'],
         'subjects': ['science'],
@@ -290,7 +290,7 @@ subjects = {
         'fictief', 'fictieve', 'rock', 'jazz', 'geregisseerd', 'kunstveiling',
         'kunstveilingen', 'piano', 'gitaar', 'pianisten', 'recital',
         'televisie', 'sciencefiction', 'metal', 'hoofdrol', 'genre',
-        'afleveringen'],
+        'afleveringen', 'cultureel', 'culturele'],
     'business': ['economie', 'beurs', 'aandelen', 'bedrijfsleven',
         'management', 'werknemer', 'werknemers', 'salaris', 'staking',
         'personeel', 'beleggers', 'rente'],

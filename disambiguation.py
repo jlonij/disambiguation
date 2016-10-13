@@ -17,13 +17,14 @@ from operator import attrgetter
 
 class EntityLinker():
 
+    TPTA_URL = 'http://tomcat.kbresearch.nl/tpta/analyse?lang=nl&url='
     #TPTA_URL = 'http://145.100.59.224:8080/tpta/analyse?lang=nl&url='
-    TPTA_URL = 'http://192.87.165.5:8080/tpta/analyse?lang=nl&url='
+    #TPTA_URL = 'http://192.87.165.5:8080/tpta/analyse?lang=nl&url='
 
-    #SOLR_URL = 'http://linksolr.kbresearch.nl/dbpedia'
+    SOLR_URL = 'http://linksolr.kbresearch.nl/dbpedia'
     #SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
     #SOLR_URL = 'http://145.100.59.224:8081/solr/dbpedia'
-    SOLR_URL = 'http://192.87.165.5:8081/solr/dbpedia'
+    #SOLR_URL = 'http://192.87.165.5:8081/solr/dbpedia'
 
     SOLR_ROWS = 20
     MIN_PROB = 0.5
@@ -529,14 +530,26 @@ class Cluster():
 
         queries = []
 
-        # Query #1: full match
-        query = 'title:"' + self.entities[0].norm + '"'
-        query += ' OR title_str:"' + self.entities[0].clean + '"'
-        queries.append(query)
+        if self.entities[0].last_part == self.entities[0].norm.split()[0]:
+            # Query #1: exact match
+            query = 'title_str:"' + self.entities[0].clean + '"'
+            query += ' OR lastpart_str:"' + last_part + '"'
+            query += ' OR lastpart_str:"' + self.entities[0].last_part.capitalize() + '"'
+            queries.append(query)
 
-        # Query #2: last part match
-        query = 'lastpart_str:"' + last_part + '"'
-        queries.append(query)
+            # Query #2: normalized match
+            query = 'title:"' + self.entities[0].norm + '"'
+            queries.append(query)
+        else:
+            # Query #1: exact match
+            query = 'title:"' + self.entities[0].norm + '"'
+            query += ' OR title_str:"' + self.entities[0].clean + '"'
+            queries.append(query)
+
+            # Query #2: last part match
+            query = 'lastpart_str:"' + last_part + '"'
+            query += ' OR lastpart_str:"' + self.entities[0].last_part.capitalize() + '"'
+            queries.append(query)
 
         # Query #3: stem match
         # Query #4: fuzzy match
@@ -923,18 +936,23 @@ class Description():
             if not abstract:
                 return
             sentence = abstract[:abstract.find('. ')]
+            print sentence
             bow = utilities.tokenize(utilities.normalize(sentence))
             cand_types = []
             for role in [r for r in dictionary.roles if len(dictionary.roles[r]['types']) == 1]:
                 if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
                     cand_types.append(dictionary.roles[role]['types'][0])
+                    print role
             for t in dictionary.types:
                 if len(set(bow) & set(dictionary.types[t]['words'])) > 0:
                     cand_types.append(t)
+                    print t
             if len(set(cand_types)) == 1:
                 schema_types = dictionary.types[cand_types[0]]['schema_types']
             else:
                 return
+
+        print schema_types
 
         # Matching type
         for t in dictionary.types[tpta_type]['schema_types']:
