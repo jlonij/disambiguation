@@ -148,6 +148,7 @@ class NeuralNet:
     def __init__(self):
 
         self.features = [
+                'solr_iteration',
                 'solr_pos',
                 'cand_pos',
                 'solr_score',
@@ -179,11 +180,6 @@ class NeuralNet:
 
     def predict(self, example):
 
-        num_hidden_nodes1 = 26
-        num_hidden_nodes2 = 26
-        num_features = 26
-        num_labels = 2
-
         curr_dir = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-1]) + os.sep
         model_file = curr_dir + "models" + os.sep + "model.ckpt"
 
@@ -191,20 +187,24 @@ class NeuralNet:
 
         with tf.Session(graph=graph) as session:
 
-            global_step = tf.Variable(0)
+            num_hidden_nodes1 = 27
+            num_hidden_nodes2 = 27
+            num_features = 27
+            num_labels = 2
+            #global_step = tf.Variable(0)
 
             # Weights and biases for each network layer
             weights1 = tf.Variable(tf.truncated_normal([num_features,
-                    num_hidden_nodes1], stddev=np.sqrt(2.0 / num_features)))
-            biases1 = tf.Variable(tf.zeros([num_hidden_nodes1]))
+                    num_hidden_nodes1], stddev=np.sqrt(2.0 / num_features)), name='weights1')
+            biases1 = tf.Variable(tf.zeros([num_hidden_nodes1]), name='biases1')
             weights2 = tf.Variable(tf.truncated_normal([num_hidden_nodes1,
-                    num_hidden_nodes2], stddev=np.sqrt(2.0 / num_hidden_nodes1)))
-            biases2 = tf.Variable(tf.zeros([num_hidden_nodes2]))
+                    num_hidden_nodes2], stddev=np.sqrt(2.0 / num_hidden_nodes1)), name='weights2')
+            biases2 = tf.Variable(tf.zeros([num_hidden_nodes2]), name='biases2')
             weights3 = tf.Variable(tf.truncated_normal([num_hidden_nodes2,
-                    num_labels], stddev=np.sqrt(2.0 / num_hidden_nodes2)))
-            biases3 = tf.Variable(tf.zeros([num_labels]))
+                    num_labels], stddev=np.sqrt(2.0 / num_hidden_nodes2)), name='weights3')
+            biases3 = tf.Variable(tf.zeros([num_labels]), name='biases3')
 
-            # Saver
+            # Load saved values for weights and biases
             self.saver = tf.train.Saver()
             self.saver.restore(session, model_file)
 
