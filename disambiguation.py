@@ -7,6 +7,7 @@ import math
 import models
 import re
 import solr
+import sparql
 import sys
 import urllib
 import utilities
@@ -55,7 +56,7 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         else:
-            self.model = models.LinearSVM()
+            self.model = models.NeuralNet()
 
 
     def link(self, url, ne=None):
@@ -104,7 +105,7 @@ class EntityLinker():
             for cluster in linked:
                 if cluster.descriptions:
                     for description in cluster.descriptions:
-                        print description.document.get('id')
+                        print description.document.get('id').encode('utf-8')
                         print description.prob
                         if self.ne:
                             for j in range(len(self.model.features)):
@@ -703,6 +704,7 @@ class Description():
     subject_match = 0
     entity_match = 0
     spec_match = 0
+    cat_match = 0
 
     prob = 0
 
@@ -712,6 +714,7 @@ class Description():
         self.position = position
         self.cluster = cluster
         self.labels = self.get_labels()
+        self.add_sparql_results()
 
 
     def get_labels(self):
@@ -725,6 +728,19 @@ class Description():
             if len(norm) > 0 and norm not in labels:
                 labels.append(norm)
         return labels
+
+
+    def add_sparql_results(self):
+        types, categories, yob = sparql.query_sparql(self.document.get('id'))
+        if types:
+            if 'schemaorgtype' in self.document:
+                self.document['schemaorgtype'] = list(set(types + self.document['schemaorgtype']))
+            else:
+                self.document['schemaorgtype'] = types
+        if categories:
+            self.document['categories'] = categories
+        if yob:
+            self.document['yob'] = yob
 
 
     def calculate_rule_features(self):
@@ -771,6 +787,7 @@ class Description():
         self.match_subjects()
         self.match_entities()
         self.match_spec()
+        self.match_cat()
 
 
     def match_id(self):
@@ -921,9 +938,15 @@ class Description():
         if publ_date:
             year_of_publ = int(publ_date[:4])
             year_of_birth = self.document.get('yob')
-            if year_of_birth is not None:
-                if year_of_publ < year_of_birth:
+            if year_of_birth:
+                age = year_of_publ - year_of_birth
+                #print age
+                if age <= 0:
                     self.date_match = -1
+                elif age < 20:
+                    self.date_match = 0
+                elif age < 100:
+                    self.date_match = 2
                 else:
                     self.date_match = 1
 
@@ -985,6 +1008,7 @@ class Description():
 
     def match_role(self):
         roles = {e.role for e in self.cluster.entities if e.role}
+        #print roles
         if not roles:
             return
 
@@ -1093,6 +1117,16 @@ class Description():
                         spec_match += 1
                         break
             self.spec_match = spec_match
+
+
+    def match_cat(self):
+        categories = self.document.get('categories')
+        if not categories:
+            return
+        ocr = self.cluster.entities[0].context.document.ocr
+        tokens = utilities.tokenize(utilities.normalize(ocr))
+        self.cat_match = len(set(categories) & set(tokens))
+        #print self.cat_match
 
 
 if __name__ == '__main__':
