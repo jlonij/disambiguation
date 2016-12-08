@@ -56,7 +56,7 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         else:
-            self.model = models.NeuralNet()
+            self.model = models.LinearSVM()
 
 
     def link(self, url, ne=None):
