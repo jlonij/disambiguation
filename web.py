@@ -24,13 +24,82 @@
 # entity in the text can be specified with the ne parameter.
 #
 
-from bottle import abort, route, run, template, request, response, default_app
+import os
+import sys
 
-import os, sys
-os.chdir(os.path.dirname(__file__))
-sys.path.insert(0, os.path.dirname(__file__))
+from bottle import abort
+from bottle import default_app
+from bottle import request
+from bottle import response
+from bottle import route
+from bottle import run
+from bottle import template
+
+# Fix all path related stuff in one go ;)
+# Don't do this at home kids!
+ABS_PATH = '/var/www/dac/'
+os.environ['PATH_INFO'] = ABS_PATH
+os.chdir(os.path.dirname(ABS_PATH))
+sys.path.insert(0, os.path.dirname(ABS_PATH))
 
 import disambiguation
+
+# md5sums for all file, keeps things in sync
+FIND = "find . -type f -not -path \*.pyc -not -path \*.swp -exec md5sum '{}' ';'"
+
+# Path to doctests output (from cron)
+DOCTEST_OUTPUT = '/tmp/dac_test_results'
+DOCTEST_OUTPUT_ERROR_PREFIX = 'dac_error_'
+
+global stats
+stats = {}
+stats['urls_total'] = 0
+stats['links_total'] = 0
+
+
+def mk_md5sums():
+    with os.popen(FIND) as fh:
+        sums = fh.read()
+    sums = [[f for f in l.split(' ') if f.strip()] for l in sums.split('\n')]
+    sums1 = {}
+    for i in sums:
+        if i:
+            sums1[i[0]] = i[1][2:]
+    return sums1
+
+
+def test_errors():
+    nr = 0
+    for fname in os.listdir('/tmp/'):
+        if fname.startswith(DOCTEST_OUTPUT_ERROR_PREFIX):
+            nr += 1
+    return nr
+
+
+@route('/info')
+def info():
+
+    try:
+        test_report_stamp = time.ctime(
+                                os.path.getctime(DOCTEST_OUTPUT))
+    except:
+        test_report_stamp = ''
+
+    try:
+        with open('/tmp/dac_test_results') as fh:
+            test_report = fh.read()
+    except:
+        test_report = ''
+
+    resp = {'sums': mk_md5sums(),
+            'solr': SOLR_URL,
+            'tpta': TPTA_URL,
+            'test_errors': test_errors(),
+            'test_report': test_report,
+            'test_report_stamp': test_report_stamp,
+            'stats': stats}
+    response.set_header('Content-Type', 'application/json')
+    return resp
 
 
 @route('/')

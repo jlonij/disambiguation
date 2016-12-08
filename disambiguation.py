@@ -43,9 +43,16 @@ class EntityLinker():
     linked = []
 
 
-    def __init__(self, debug=None, model=None):
+    def __init__(self, debug=None, model=None, tpta_url=None, solr_url=None):
 
         self.debug = debug
+
+        # Init URL's
+        if tpta_url not is None:
+            self.TPTA_URL = tpta_url
+
+        if solr_url not is None:
+            self.SOLR_URL = solr_url
 
         # Init Solr connection
         self.solr_connection = solr.SolrConnection(self.SOLR_URL)
