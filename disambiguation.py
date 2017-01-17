@@ -48,10 +48,10 @@ class EntityLinker():
         self.debug = debug
 
         # Init URL's
-        if tpta_url not is None:
+        if tpta_url is not None:
             self.TPTA_URL = tpta_url
 
-        if solr_url not is None:
+        if solr_url is not None:
             self.SOLR_URL = solr_url
 
         # Init Solr connection
