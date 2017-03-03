@@ -7,7 +7,6 @@ import math
 import models
 import re
 import solr
-import sparql
 import sys
 import urllib
 import utilities
@@ -15,19 +14,10 @@ import utilities
 from lxml import etree
 from operator import attrgetter
 
-
 class EntityLinker():
 
     TPTA_URL = 'http://tpta.kbresearch.nl/analyse?lang=nl&url='
-    #TPTA_URL = 'http://192.87.165.3:8080/tpta2/analyse?lang=nl&url='
-    #TPTA_URL = 'http://tomcat.kbresearch.nl/tpta/analyse?lang=nl&url='
-    #TPTA_URL = 'http://145.100.59.224:8080/tpta/analyse?lang=nl&url='
-    #TPTA_URL = 'http://192.87.165.5:8080/tpta/analyse?lang=nl&url='
-
-    SOLR_URL = 'http://linksolr.kbresearch.nl/dbpedia'
-    #SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
-    #SOLR_URL = 'http://145.100.59.224:8081/solr/dbpedia'
-    #SOLR_URL = 'http://192.87.165.5:8081/solr/dbpedia'
+    SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
 
     SOLR_ROWS = 20
     MIN_PROB = 0.5
@@ -41,7 +31,6 @@ class EntityLinker():
     context = None
 
     linked = []
-
 
     def __init__(self, debug=None, model=None, tpta_url=None, solr_url=None):
 
@@ -524,25 +513,17 @@ class Cluster():
         if best_match.prob >= min_prob:
             self.result = Result("Predicted link", best_match.prob, best_match)
         else:
-            self.result= Result("Probability too low for: " + best_match.document.get('title')[0], best_match.prob)
+            self.result= Result("Probability too low for: " + best_match.document.get('label'), best_match.prob)
         return self.result
 
 
     def query_solr(self, solr_connection, solr_rows):
 
-        # Temporary until normalization in index
-        ne_parts = self.entities[0].clean.split()
-        last_part = None
-        for part in reversed(ne_parts):
-            if not part.isdigit():
-                last_part = part
-                break
-
         queries = []
 
-        query = 'title:"' + self.entities[0].norm + '"'
-        query += ' OR title_str:"' + self.entities[0].clean + '"'
-        query += ' OR lastpart_str:"' + self.entities[0].last_part.capitalize() + '"'
+        query = 'pref_label:"' + self.entities[0].norm + '"'
+        query += ' OR alt_label:"' + self.entities[0].norm + '"'
+        query += ' OR last_part:"' + self.entities[0].last_part + '"'
 
         queries.append(query)
 
@@ -642,8 +623,8 @@ class Result():
         self.prob = prob
         if description:
             self.description = description
-            self.link = description.document.get('id')[1:-1]
-            self.label = description.document.get('title')[0]
+            self.link = description.document.get('id')
+            self.label = description.document.get('label')
 
             features = {}
             for j in range(len(description.cluster.model.features)):
@@ -721,33 +702,13 @@ class Description():
         self.position = position
         self.cluster = cluster
         self.labels = self.get_labels()
-        self.add_sparql_results()
 
 
     def get_labels(self):
-        labels = []
-        for t in self.document.get('title_str'):
-            if t.find(',') >= 0 and self.document.get('title_str')[0].find(',') < 0:
-                continue
-            # Normalize titles here until they become available from the index
-            norm = utilities.normalize(utilities.clean(t))
-            # Remove emtpy labels
-            if len(norm) > 0 and norm not in labels:
-                labels.append(norm)
+        labels = [self.document.get('pref_label')]
+        if self.document.get('alt_label'):
+            labels += self.document.get('alt_label')
         return labels
-
-
-    def add_sparql_results(self):
-        types, categories, yob = sparql.query_sparql(self.document.get('id'))
-        if types:
-            if 'schemaorgtype' in self.document:
-                self.document['schemaorgtype'] = list(set(types + self.document['schemaorgtype']))
-            else:
-                self.document['schemaorgtype'] = types
-        if categories:
-            self.document['categories'] = categories
-        if yob:
-            self.document['yob'] = yob
 
 
     def calculate_rule_features(self):
@@ -786,7 +747,7 @@ class Description():
 
         self.quotes = self.cluster.quotes_total
         self.lang = 1 if self.document.get('lang') == 'nl' else 0
-        self.disambig = 1 if self.document.get('disambig') == 1 else 0
+        self.disambig = 1 if self.document.get('ambig') == 0 else 1
 
         self.match_titles_levenshtein()
         self.match_type()
@@ -944,7 +905,7 @@ class Description():
         publ_date = self.cluster.entities[0].context.document.publ_date
         if publ_date:
             year_of_publ = int(publ_date[:4])
-            year_of_birth = self.document.get('yob')
+            year_of_birth = self.document.get('birth_year')
             if year_of_birth:
                 age = year_of_publ - year_of_birth
                 #print age
@@ -968,7 +929,11 @@ class Description():
         if not tpta_type or tpta_type not in dictionary.types:
             return
 
-        schema_types = self.document.get('schemaorgtype')
+        schema_types = []
+        if self.document.get('schema_type'):
+            schema_types += self.document.get('schema_type')
+        if self.document.get('dbo_type'):
+            schema_types += self.document.get('dbo_type')
         # If no types available, try to deduce type from first sentence
         # of the abstract
         if not schema_types:
@@ -1022,7 +987,12 @@ class Description():
         role_match = 0
 
         # Match schema.org types
-        schema_types = self.document.get('schemaorgtype')
+        schema_types = []
+        if self.document.get('schema_type'):
+            schema_types += self.document.get('schema_type')
+        if self.document.get('dbo_type'):
+            schema_types += self.document.get('dbo_type')
+
         if schema_types:
             for role in roles:
                 for t in dictionary.roles[role]['schema_types']:
@@ -1106,8 +1076,8 @@ class Description():
 
 
     def match_spec(self):
-        if self.document.get('disambig') == 0 and self.document.get('lang') == 'nl':
-            spec = self.document.get('id').split('(')[-1][:-2]
+        if self.document.get('spec'):
+            spec = self.document.get('spec')
             spec_words = [w[:int(math.ceil(len(w) * 0.75))] for w in
                     filter(None, re.split("[_\- ]+", spec)) if len(w) > 3]
             if not spec_words:
@@ -1127,7 +1097,7 @@ class Description():
 
 
     def match_cat(self):
-        categories = self.document.get('categories')
+        categories = self.document.get('keyword')
         if not categories:
             return
         ocr = self.cluster.entities[0].context.document.ocr
@@ -1137,12 +1107,13 @@ class Description():
 
 
 if __name__ == '__main__':
+    import pprint
     if not len(sys.argv) > 1:
         print("Usage: ./disambiguation.py [url (string)]")
     else:
-        linker = EntityLinker(debug=True)
+        linker = EntityLinker(debug=True,)
         if len(sys.argv) > 2:
-            print(linker.link(sys.argv[1], sys.argv[2]))
+            pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
-            print(linker.link(sys.argv[1]))
+            pprint.pprint(linker.link(sys.argv[1]))
 
