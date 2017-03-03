@@ -42,7 +42,7 @@ os.environ['PATH_INFO'] = ABS_PATH
 os.chdir(os.path.dirname(ABS_PATH))
 sys.path.insert(0, os.path.dirname(ABS_PATH))
 
-import disambiguation
+import dac
 
 # md5sums for all file, keeps things in sync
 FIND = "find . -type f -not -path \*.pyc -not -path \*.swp -exec md5sum '{}' ';'"
@@ -116,7 +116,7 @@ def index():
     if not url:
         abort(400, "No fitting argument (\"url=...\") given.")
 
-    linker = disambiguation.EntityLinker(model=model)
+    linker = dac.EntityLinker(model=model)
     results = linker.link(url, ne)
 
     resp = []

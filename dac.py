@@ -522,8 +522,9 @@ class Cluster():
         queries = []
 
         query = 'pref_label:"' + self.entities[0].norm + '"'
-        query += ' OR alt_label:"' + self.entities[0].norm + '"'
-        query += ' OR last_part:"' + self.entities[0].last_part + '"'
+        query += ' OR pref_label_str:"' + self.entities[0].norm + '"'
+        query += ' OR alt_label_str:"' + self.entities[0].norm + '"'
+        query += ' OR last_part_str:"' + self.entities[0].last_part + '"'
 
         queries.append(query)
 
