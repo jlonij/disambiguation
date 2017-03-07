@@ -1,5 +1,10 @@
 #!/usr/bin/env python
-
+# -*- coding: utf-8 -*-
+#
+# DAC Entity Linker
+#
+# Copyright (C) 2017 Koninklijke Bibliotheek, National Library of
+# the Netherlands
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,16 +18,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
-#
 
-#
-# Link service
-#
-# Expects ocr-text from supplied url parameter,
-# reads data from url and calls named entity recognizer with the data,
-# subsequently calls the disambiguation service. A particular named
-# entity in the text can be specified with the ne parameter.
-#
 
 import os
 import sys
