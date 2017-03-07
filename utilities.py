@@ -49,7 +49,7 @@ def normalize(s):
     s = u' '.join(s.split())
     return s
 
-def get_last_name(s):
+def get_last_name(s, exclude_first_part=False):
     '''
     Extract probable last name from a string, excluding numbers, Roman numerals
     and some well-known suffixes.
@@ -65,6 +65,9 @@ def get_last_name(s):
     parts = s.split()
 
     for part in reversed(parts):
+        if exclude_first_part:
+            if parts.index(part) == 0:
+                continue
         if part.isdigit():
             continue
         if part in suffixes:
