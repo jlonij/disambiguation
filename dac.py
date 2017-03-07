@@ -311,7 +311,7 @@ class Entity():
         self.clean = utilities.clean(self.text)
         self.norm = utilities.normalize(self.clean)
         self.word_length = len(self.norm.split())
-        self.last_part = self.get_last_part(self.norm)
+        self.last_part = utilities.get_last_name(self.norm)
 
         # Check and set validity
         self.valid = self.is_valid()
@@ -366,16 +366,6 @@ class Entity():
             if self.context.document.ocr[pos] in quote_chars:
                 quotes += 1
         return quotes
-
-
-    def get_last_part(self, ne):
-        ne_parts = ne.split()
-        last_part = None
-        for part in reversed(ne_parts):
-            if not part.isdigit():
-                last_part = part
-                break
-        return last_part
 
 
     def is_valid(self):

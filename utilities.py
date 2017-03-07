@@ -21,34 +21,66 @@
 
 import re
 
+from segtok.segmenter import split_multi
+from segtok.tokenizer import word_tokenizer
+from unidecode import unidecode
 
-def clean(ne):
-    remove_char = ["+", "&&", "||", "!", "(", ")", "{", u'„',
-                   "}", "[", "]", "^", "\"", "~", "*", "?", ":"]
+def clean(s):
+    '''
+    Clean string by removing unwanted characters.
+    '''
+    chars = ['(', ')', '[', ']', '{', '}', '<', '>', '"', '`', u'„']
+    chars = ['||', '&&', u'§', '+', '=', '^', '*', '~', '#', '_', '\\']
+    for c in chars:
+        s = s.replace(c, u'')
+    s = u' '.join(s.split())
+    return s
 
-    for char in remove_char:
-        if ne.find(char) > -1:
-            ne = ne.replace(char, u'')
+def normalize(s):
+    '''
+    Normalize string by removing punctuation, capitalization, diacritics.
+    '''
+    chars = ['/', '.', ',', ':', '?', '!', ';', '-', '\u2013']
+    for c in chars:
+        s = s.replace(c, u' ')
+    s = s.replace("'", u'')
+    s = unidecode(s)
+    s = s.lower()
+    s = u' '.join(s.split())
+    return s
 
-    ne = ne.strip()
-    return ne
+def get_last_name(s):
+    '''
+    Extract probable last name from a string, excluding numbers, Roman numerals
+    and some well-known suffixes.
+    '''
+    last_name = None
 
+    # Some suffixes that shouldn't qualify as last names
+    suffixes = ['jr', 'sr', 'z', 'zn', 'fils']
 
-def normalize(ne):
-    if ne.find('.') > -1:
-        ne = ne.replace('.', ' ')
-    if ne.find('-') > -1:
-        ne = ne.replace('-', ' ')
-    if ne.find(u'\u2013') > -1:
-        ne = ne.replace(u'\u2013', ' ')
-    while ne.find('  ') > -1:
-        ne = ne.replace('  ', ' ')
-    ne = ne.strip()
-    ne = ne.lower()
-    return ne
+    # Regex to match Roman numerals
+    pattern = '^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$'
 
+    parts = s.split()
 
-def tokenize(document):
-    document = re.split('\W+', document, flags=re.UNICODE)
-    return [t for t in document if t]
+    for part in reversed(parts):
+        if part.isdigit():
+            continue
+        if part in suffixes:
+            continue
+        if re.match(pattern, part, flags=re.IGNORECASE):
+            continue
+        last_name = part
+        break
 
+    return last_name
+
+def tokenize(text):
+    '''
+    Tokenize text using SegTok segmenter and tokenizer.
+    '''
+    tokens = []
+    for sentence in split_multi(text):
+        tokens += [t for t in word_tokenizer(sentence) if len(t) > 1]
+    return tokens
