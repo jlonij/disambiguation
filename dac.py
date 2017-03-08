@@ -34,7 +34,6 @@ from operator import attrgetter
 
 TPTA_URL = 'http://tpta.kbresearch.nl/analyse?lang=nl&url='
 SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
-
 SOLR_ROWS = 20
 MIN_PROB = 0.5
 
@@ -135,7 +134,6 @@ class EntityLinker():
                         results.append(result)
         return results
 
-
     def get_clusters(self, entities):
         '''
         Group related entities into clusters.
@@ -147,7 +145,6 @@ class EntityLinker():
         for entity in sorted_entities:
             clusters = self.cluster(entity, clusters)
         return clusters
-
 
     def cluster(self, entity, clusters):
         '''
@@ -179,91 +176,108 @@ class EntityLinker():
 
 
 class Context():
-
-    url = None
-    tpta_url = None
-    document = None
-    entities = None
-
+    '''
+    The context information for an entity, consisting of the document in which
+    it appears and the entities recognized in the document.
+    '''
 
     def __init__(self, url, tpta_url):
-        self.url = url
-        self.tpta_url = tpta_url
-        self.document = Document(self.url)
-        self.entities = self.get_entities(self.url, self.tpta_url)
-
+        '''
+        Instantiate the document and (a list of) entity objects.
+        '''
+        self.document = Document(url)
+        self.entities = self.get_entities(url, tpta_url)
 
     def get_entities(self, url, tpta_url):
+        '''
+        Retrieve the list of entities from the NER service and instantiate an
+        entity object for each one.
+        '''
         entities = []
         try:
             data = urllib.urlopen(tpta_url + url).read()
             xml = etree.fromstring(data)
         except:
             return entities
+
+        # Keep track of the position of each entity in the document so that
+        # entity mentions with identical surface forms can be kept apart
         doc_pos = 0
         for node in xml.iter():
             if node.text and len(node.text) > 1:
-                unicode_text = node.text if isinstance(node.text, unicode) else node.text.decode('utf-8')
-                entity = Entity(unicode_text, node.tag, self, doc_pos)
+                entity = Entity(node.text.decode('utf-8'), node.tag,
+                        self, doc_pos)
                 doc_pos = entity.end_pos if entity.end_pos > -1 else doc_pos
                 entities.append(entity)
         return entities
 
 
 class Document():
-
-    url = None
-    ocr = None
-    publ_date = None
-    publ_place = None
-
-    subjects = []
-
+    '''
+    The document in which the entity appears.
+    '''
 
     def __init__(self, url):
-        self.url = url
-        self.ocr = self.get_ocr(self.url)
-        self.publ_date, self.publ_place = self.get_metadata(self.url)
-        self.subjects = self.get_subjects()
-
+        '''
+        Retrieve document ocr, metadata and subjects.
+        '''
+        self.ocr = self.get_ocr(url)
+        self.publ_date = self.get_metadata(url)
+        self.subjects = self.get_subjects(self.ocr)
 
     def get_ocr(self, url):
-        data = urllib.urlopen(url).read()
-        xml = etree.fromstring(data)
-        return etree.tostring(xml, encoding='utf8',
-                method='text').decode('utf-8')
-
+        '''
+        Retrieve document ocr from url.
+        '''
+        ocr = None
+        try:
+            data = urllib.urlopen(url).read()
+            xml = etree.fromstring(data)
+            ocr = etree.tostring(xml, encoding='utf8',
+                    method='text').decode('utf-8')
+        except:
+            return ocr
+        return ocr
 
     def get_metadata(self, url):
-        publ_date, publ_place = None, None
+        '''
+        Retrieve document metadata (currently just publication date) from
+        sru service.
+        '''
+        publ_date = None
+
         jsru_url = 'http://jsru.kb.nl/sru/sru?'
         jsru_url += 'operation=searchRetrieve&x-collection=DDD_artikel'
         jsru_url += '&query=uniqueKey=' + url[url.find('ddd:'):-4]
+
         try:
             data = urllib.urlopen(jsru_url).read()
             xml = etree.fromstring(data)
         except:
-            return None, None
+            return publ_date
 
         path = '{http://www.loc.gov/zing/srw/}records/'
         path += '{http://www.loc.gov/zing/srw/}record/'
         path += '{http://www.loc.gov/zing/srw/}recordData/'
         path += '{http://purl.org/dc/elements/1.1/}date'
 
-        date = xml.find(path)
-        if date is not None:
-            publ_date = date.text
-        return publ_date, publ_place
+        date_element = xml.find(path)
+        if date_element is not None:
+            publ_date = date_element.text
 
+        return publ_date
 
-    def get_subjects(self):
+    def get_subjects(self, ocr):
+        '''
+        Extract subjects from document ocr based on dictionary.
+        '''
         subjects = []
         for subject in dictionary.subjects:
             words = dictionary.subjects[subject]
             for role in dictionary.roles:
                 if subject in dictionary.roles[role]['subjects']:
                     words += dictionary.roles[role]['words']
-            window = [utilities.normalize(w) for w in utilities.tokenize(self.ocr)]
+            window = [utilities.normalize(w) for w in utilities.tokenize(ocr)]
             if len(set(words) & set(window)) > 0:
                 subjects.append(subject)
         return subjects
