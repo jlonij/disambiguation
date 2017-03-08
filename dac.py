@@ -32,39 +32,23 @@ import utilities
 from lxml import etree
 from operator import attrgetter
 
+TPTA_URL = 'http://tpta.kbresearch.nl/analyse?lang=nl&url='
+SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
+
+SOLR_ROWS = 20
+MIN_PROB = 0.5
+
 class EntityLinker():
-
-    TPTA_URL = 'http://tpta.kbresearch.nl/analyse?lang=nl&url='
-    SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
-
-    SOLR_ROWS = 20
-    MIN_PROB = 0.5
-
-    debug = None
-    model = None
-    solr_connection = None
-
-    url = None
-    ne = None
-    context = None
-
-    linked = []
+    '''
+    Link named entity mention(s) in an article to a DBpedia description.
+    '''
 
     def __init__(self, debug=None, model=None, tpta_url=None, solr_url=None):
-
+        '''
+        Initialize the disambiguation model and Solr connection.
+        '''
         self.debug = debug
 
-        # Init URL's
-        if tpta_url is not None:
-            self.TPTA_URL = tpta_url
-
-        if solr_url is not None:
-            self.SOLR_URL = solr_url
-
-        # Init Solr connection
-        self.solr_connection = solr.SolrConnection(self.SOLR_URL)
-
-        # Init prediction model
         if model == 'svm':
             self.model = models.LinearSVM()
         elif model == 'nn':
@@ -72,62 +56,76 @@ class EntityLinker():
         else:
             self.model = models.LinearSVM()
 
+        self.tpta_url = tpta_url if tpta_url else TPTA_URL
+        self.solr_url = solr_url if solr_url else SOLR_URL
+
+        self.solr_connection = solr.SolrConnection(self.solr_url)
 
     def link(self, url, ne=None):
-        self.url = url
-        self.context = Context(self.url, self.TPTA_URL)
-        self.ne = ne.decode('utf-8') if ne else None
+        '''
+        Link named entity mention(s) in an article to a DBpedia description.
+        '''
+        # Get context information (article ocr and recognized entities)
+        self.context = Context(url, self.tpta_url)
 
-        # If a specific ne was requested, search for a corresponding known entity
-        if self.ne:
+        # Group related entities into clusters
+        clusters_to_link = self.get_clusters(self.context.entities)
+
+        # If a specific ne was requested, search for a corresponding entity in
+        # the list of recognized entities
+        if ne:
+            ne = ne.decode('utf-8')
             entity_to_link = None
             for entity in self.context.entities:
-                if self.ne == entity.text:
+                if ne == entity.text:
                     entity_to_link = entity
             # If not found, create new one
             if not entity_to_link:
-                entity_to_link = Entity(self.ne, None, self.context)
+                entity_to_link = Entity(ne, None, self.context)
                 self.context.entities.append(entity_to_link)
+            # Link only the cluster to which the entity belongs
+            clusters_to_link = [c for c in clusters_to_link if entity_to_link
+                    in c.entities]
 
-        # Group related entities into clusters and try to link relevant clusters
-        clusters = self.get_clusters(self.context.entities)
-        clusters_to_link = [c for c in clusters if entity_to_link in c.entities] if self.ne else clusters
-
+        # Process all clusters to be linked
         linked = []
+
         while clusters_to_link:
             cluster = clusters_to_link.pop()
-            result = cluster.resolve(self.solr_connection, self.SOLR_ROWS, self.model, self.MIN_PROB)
-            dependencies = [e for e in cluster.entities if e.norm != cluster.entities[0].norm]
-            # If cluster consists of multiple entities and could not be linked
-            # or is not linked to a person split it up and return the parts to
-            # the queue
-            if dependencies and (not result.description or (result.description.document.get('schemaorgtype')
-                    and 'Person' not in result.description.document.get('schemaorgtype'))):
-                new_clusters = [Cluster([e for e in cluster.entities if e not in dependencies])]
-                new_clusters.extend(self.get_clusters(dependencies))
-                # If linking a specific ne, only return the new cluster containing
-                # that ne to the queue
-                if self.ne:
-                    clusters_to_link.extend([c for c in new_clusters if entity_to_link in c.entities])
-                else:
-                    clusters_to_link.extend(new_clusters)
+            result = cluster.resolve(self.solr_connection, SOLR_ROWS,
+                    self.model, MIN_PROB)
+
+            # If a cluster consists of multiple entities and could not be linked
+            # or was not linked to a person, split it up and return the parts to
+            # the queue. If not, add the cluster to the linked list.
+            dependencies = [e for e in cluster.entities if e.norm !=
+                    cluster.entities[0].norm]
+
+            if dependencies:
+                types = []
+                if result.description:
+                    if result.description.document.get('schema_type'):
+                        types += result.description.document.get('schema_type')
+                    if result.description.document.get('dbo_type'):
+                        types += result.description.document.get('dbo_type')
+                if not result.description or 'Person' not in types:
+                    new_clusters = [Cluster([e for e in cluster.entities if e
+                            not in dependencies])]
+                    new_clusters.extend(self.get_clusters(dependencies))
+
+                    # If linking a specific ne, only return the new cluster
+                    # containing that ne to the queue
+                    if ne:
+                        clusters_to_link.extend([c for c in new_clusters if
+                                entity_to_link in c.entities])
+                    else:
+                        clusters_to_link.extend(new_clusters)
             else:
                 linked.append(cluster)
-        self.linked = linked
 
-        if self.debug:
-            for cluster in linked:
-                if cluster.descriptions:
-                    for description in cluster.descriptions:
-                        print description.document.get('id').encode('utf-8')
-                        print description.prob
-                        if self.ne:
-                            for j in range(len(self.model.features)):
-                                print self.model.features[j], getattr(description, self.model.features[j])
-
-        # Return the result for each enitity
+        # Return the result for each (unique) enitity
         results = []
-        to_return = [entity_to_link] if self.ne else self.context.entities
+        to_return = [entity_to_link] if ne else self.context.entities
         for entity in to_return:
             if entity.text not in [result['text'] for result in results]:
                 for cluster in linked:
@@ -139,15 +137,22 @@ class EntityLinker():
 
 
     def get_clusters(self, entities):
+        '''
+        Group related entities into clusters.
+        '''
         clusters = []
         sorted_entities = sorted(entities, key=attrgetter('norm'), reverse=True)
-        sorted_entities = sorted(sorted_entities, key=attrgetter('word_length'), reverse=True)
+        sorted_entities = sorted(sorted_entities, key=attrgetter('word_length'),
+                reverse=True)
         for entity in sorted_entities:
             clusters = self.cluster(entity, clusters)
         return clusters
 
 
     def cluster(self, entity, clusters):
+        '''
+        Either add entity to an existing cluster or create a new one.
+        '''
         for cluster in clusters:
             for e in cluster.entities:
                 if entity.text == e.text:
@@ -1118,9 +1123,9 @@ class Description():
 if __name__ == '__main__':
     import pprint
     if not len(sys.argv) > 1:
-        print("Usage: ./disambiguation.py [url (string)]")
+        print("Usage: ./dac.py [url (string)]")
     else:
-        linker = EntityLinker(debug=True,)
+        linker = EntityLinker(debug=True)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
