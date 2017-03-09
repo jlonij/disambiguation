@@ -122,7 +122,7 @@ class EntityLinker():
             else:
                 linked.append(cluster)
 
-        # Return the result for each (unique) enitity
+        # Return the result for each (unique) entity
         results = []
         to_return = [entity_to_link] if ne else self.context.entities
         for entity in to_return:
@@ -182,7 +182,7 @@ class Context():
 
     def __init__(self, url, tpta_url):
         '''
-        Retrieve document ocr, metadata, subjects and entities.
+        Retrieve ocr, metadata, subjects and entities.
         '''
         self.ocr = self.get_ocr(url)
         self.publ_date = self.get_metadata(url)
@@ -191,7 +191,7 @@ class Context():
 
     def get_ocr(self, url):
         '''
-        Retrieve document ocr from url.
+        Retrieve ocr from resolver url.
         '''
         ocr = None
         try:
@@ -205,8 +205,7 @@ class Context():
 
     def get_metadata(self, url):
         '''
-        Retrieve document metadata (currently just publication date) from
-        sru service.
+        Retrieve metadata (currently just publication date) with sru.
         '''
         publ_date = None
 
@@ -233,7 +232,7 @@ class Context():
 
     def get_subjects(self, ocr):
         '''
-        Extract subjects from document ocr based on dictionary.
+        Extract subjects from ocr (based on dictionary for now).
         '''
         subjects = []
         for subject in dictionary.subjects:
@@ -271,81 +270,61 @@ class Context():
 
 
 class Entity():
-
-    text = None
-    tpta_type = None
-    context = None
-    doc_pos = None
-
-    start_pos = None
-    end_pos = None
-    window_left = None
-    window_right = None
-    quotes = None
-
-    norm = None
-    word_length = None
-    last_part = None
-
-    valid = None
-
-    title = None
-    title_form = None
-    gender = None
-    gender_form = None
-    role = None
-    role_form = None
-
-    alt_type = None
-
+    '''
+    An entity mention occuring in an article.
+    '''
 
     def __init__(self, text, tpta_type, context, doc_pos=0):
+        '''
+        Gather necessary info for an entity: position in the article,
+        normalized surface form and immediate context (e.g. punctuation, modifiers).
+        '''
         self.text = text
         self.tpta_type = tpta_type
         self.context = context
         self.doc_pos = doc_pos
 
-        # Get position in text, window, quotes
+        # Get position in text
         self.start_pos, self.end_pos = self.get_position(self.context.ocr,
                 self.text, self.doc_pos)
-        self.window_left, self.window_right = self.get_window(self.context.ocr,
-                start_pos=self.start_pos, end_pos=self.end_pos, size=30)
-        self.quotes = self.get_quotes(self.start_pos, self.end_pos)
 
-        # Clean and normalize input text
+        # Normalize and check validity
         self.norm = utilities.normalize(self.text)
-        self.word_length = len(self.norm.split())
         self.last_part = utilities.get_last_name(self.norm)
-
-        # Check and set validity
+        self.word_length = len(self.norm.split())
         self.valid = self.is_valid()
 
-        # Get title, gender, role, check tpta_type
+        # Check immediate surroundings
         if self.valid:
+            self.window_left, self.window_right = self.get_window(self.context.ocr,
+                start_pos=self.start_pos, end_pos=self.end_pos, size=30)
+            self.quotes = self.get_quotes(self.start_pos, self.end_pos)
+
             self.title, self.title_form = self.get_title()
             self.gender, self.gender_form = self.get_gender()
             self.role, self.role_form = self.get_role()
             self.alt_type = self.get_alt_type()
 
-
     def get_position(self, document, phrase, doc_pos=None):
+        '''
+        Find the start and end position of the mention in the article.
+        '''
         start_pos = document.find(phrase, doc_pos)
         end_pos = start_pos + len(phrase)
-        if start_pos > 0 and end_pos <= len(document):
+        if start_pos >= 0 and end_pos <= len(document):
             return start_pos, end_pos
         else:
             return -1, -1
 
-
-    def get_window(self, document, phrase=None, start_pos=None, end_pos=None, size=None):
+    def get_window(self, document, start_pos=None, end_pos=None, size=None):
+        '''
+        Get the words appearing immediately to the left and right of the entity
+        in the article.
+        '''
         left_bow = []
         right_bow = []
 
-        if not start_pos or not end_pos:
-            start_pos = document.find(phrase)
-            end_pos = start_pos + len(phrase)
-
-        if start_pos > 0 and end_pos <= len(document):
+        if start_pos >= 0 and end_pos <= len(document):
             left_space_pos = document.rfind(' ', 0, start_pos)
             left_new_line_pos = document.rfind('\n', 0, start_pos)
             left_pos = max([left_space_pos, left_new_line_pos])
@@ -360,6 +339,7 @@ class Entity():
         if size:
             left_bow = left_bow[-size:]
             right_bow = right_bow[:size]
+
         return left_bow, right_bow
 
 
@@ -373,7 +353,7 @@ class Entity():
 
 
     def is_valid(self):
-        if self.valid is not None:
+        if hasattr(self, 'valid'):
             return self.valid
         elif len(self.norm) > 2 and self.last_part and not self.is_date():
             return True
