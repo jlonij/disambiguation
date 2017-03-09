@@ -177,53 +177,17 @@ class EntityLinker():
 
 class Context():
     '''
-    The context information for an entity, consisting of the document in which
-    it appears and the entities recognized in the document.
+    The context information for an entity.
     '''
 
     def __init__(self, url, tpta_url):
         '''
-        Instantiate the document and (a list of) entity objects.
-        '''
-        self.document = Document(url)
-        self.entities = self.get_entities(url, tpta_url)
-
-    def get_entities(self, url, tpta_url):
-        '''
-        Retrieve the list of entities from the NER service and instantiate an
-        entity object for each one.
-        '''
-        entities = []
-        try:
-            data = urllib.urlopen(tpta_url + url).read()
-            xml = etree.fromstring(data)
-        except:
-            return entities
-
-        # Keep track of the position of each entity in the document so that
-        # entity mentions with identical surface forms can be kept apart
-        doc_pos = 0
-        for node in xml.iter():
-            if node.text and len(node.text) > 1:
-                entity = Entity(node.text.decode('utf-8'), node.tag,
-                        self, doc_pos)
-                doc_pos = entity.end_pos if entity.end_pos > -1 else doc_pos
-                entities.append(entity)
-        return entities
-
-
-class Document():
-    '''
-    The document in which the entity appears.
-    '''
-
-    def __init__(self, url):
-        '''
-        Retrieve document ocr, metadata and subjects.
+        Retrieve document ocr, metadata, subjects and entities.
         '''
         self.ocr = self.get_ocr(url)
         self.publ_date = self.get_metadata(url)
         self.subjects = self.get_subjects(self.ocr)
+        self.entities = self.get_entities(url, tpta_url)
 
     def get_ocr(self, url):
         '''
@@ -282,6 +246,29 @@ class Document():
                 subjects.append(subject)
         return subjects
 
+    def get_entities(self, url, tpta_url):
+        '''
+        Retrieve the list of entities from the NER service and instantiate an
+        entity object for each one.
+        '''
+        entities = []
+        try:
+            data = urllib.urlopen(tpta_url + url).read()
+            xml = etree.fromstring(data)
+        except:
+            return entities
+
+        # Keep track of the position of each entity in the document so that
+        # entity mentions with identical surface forms can be kept apart
+        doc_pos = 0
+        for node in xml.iter():
+            if node.text and len(node.text) > 1:
+                entity = Entity(node.text.decode('utf-8'), node.tag,
+                        self, doc_pos)
+                doc_pos = entity.end_pos if entity.end_pos > -1 else doc_pos
+                entities.append(entity)
+        return entities
+
 
 class Entity():
 
@@ -319,9 +306,9 @@ class Entity():
         self.doc_pos = doc_pos
 
         # Get position in text, window, quotes
-        self.start_pos, self.end_pos = self.get_position(self.context.document.ocr,
+        self.start_pos, self.end_pos = self.get_position(self.context.ocr,
                 self.text, self.doc_pos)
-        self.window_left, self.window_right = self.get_window(self.context.document.ocr,
+        self.window_left, self.window_right = self.get_window(self.context.ocr,
                 start_pos=self.start_pos, end_pos=self.end_pos, size=30)
         self.quotes = self.get_quotes(self.start_pos, self.end_pos)
 
@@ -380,7 +367,7 @@ class Entity():
         quotes = 0
         quote_chars = [u'"', u"'", u'„', u'”', u'‚', u'’']
         for pos in [start_pos - 1, end_pos]:
-            if self.context.document.ocr[pos] in quote_chars:
+            if self.context.ocr[pos] in quote_chars:
                 quotes += 1
         return quotes
 
@@ -426,7 +413,7 @@ class Entity():
         words = [self.norm.split()[0]]
         if self.window_left:
             words.append(utilities.normalize(self.window_left[-1]))
-        if self.window_right and self.context.document.ocr[self.end_pos] == ',':
+        if self.window_right and self.context.ocr[self.end_pos] == ',':
             words.append(utilities.normalize(self.window_right[0]))
         for word in words:
             for role in dictionary.roles:
@@ -928,7 +915,7 @@ class Description():
 
 
     def match_date(self):
-        publ_date = self.cluster.entities[0].context.document.publ_date
+        publ_date = self.cluster.entities[0].context.publ_date
         if publ_date:
             year_of_publ = int(publ_date[:4])
             year_of_birth = self.document.get('birth_year')
@@ -1051,7 +1038,7 @@ class Description():
 
 
     def match_subjects(self):
-        subjects = self.cluster.entities[0].context.document.subjects
+        subjects = self.cluster.entities[0].context.subjects
         if not subjects:
             return
 
@@ -1126,7 +1113,7 @@ class Description():
         categories = self.document.get('keyword')
         if not categories:
             return
-        ocr = self.cluster.entities[0].context.document.ocr
+        ocr = self.cluster.entities[0].context.ocr
         tokens = utilities.tokenize(utilities.normalize(ocr))
         self.cat_match = len(set(categories) & set(tokens))
         #print self.cat_match
