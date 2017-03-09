@@ -29,8 +29,9 @@ def clean(s):
     '''
     Clean string by removing unwanted characters.
     '''
-    chars = ['(', ')', '[', ']', '{', '}', '<', '>', '"', '`', u'„']
-    chars = ['||', '&&', u'§', '+', '=', '^', '*', '~', '#', '_', '\\']
+    chars = ['+', '=', '^', '*', '~', '#', '_', '\\']
+    chars += ['(', ')', '[', ']', '{', '}', '<', '>']
+    chars += ['\'', '"', '`', u'„']
     for c in chars:
         s = s.replace(c, u'')
     s = u' '.join(s.split())
@@ -40,12 +41,16 @@ def normalize(s):
     '''
     Normalize string by removing punctuation, capitalization, diacritics.
     '''
-    chars = ['/', '.', ',', ':', '?', '!', ';', '-', '\u2013']
+    # Remove unwanted characters
+    s = clean(s)
+    # Remove diactritics
+    s = unidecode(s)
+    # Remove capitalization
+    s = s.lower()
+    # Replace regular punctuation by spaces
+    chars = ['.', ',', ':', '?', '!', ';', '-', '\u2013', '/', '|', '&']
     for c in chars:
         s = s.replace(c, u' ')
-    s = s.replace("'", u'')
-    s = unidecode(s)
-    s = s.lower()
     s = u' '.join(s.split())
     return s
 

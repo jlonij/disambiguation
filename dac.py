@@ -296,7 +296,6 @@ class Entity():
     window_right = None
     quotes = None
 
-    clean = None
     norm = None
     word_length = None
     last_part = None
@@ -327,8 +326,7 @@ class Entity():
         self.quotes = self.get_quotes(self.start_pos, self.end_pos)
 
         # Clean and normalize input text
-        self.clean = utilities.clean(self.text)
-        self.norm = utilities.normalize(self.clean)
+        self.norm = utilities.normalize(self.text)
         self.word_length = len(self.norm.split())
         self.last_part = utilities.get_last_name(self.norm)
 
@@ -1092,9 +1090,9 @@ class Description():
         found_entities = []
         abstract = self.document.get('abstract')
         if abstract:
-            entity_list = [e.clean for e in self.cluster.entities[0].context.entities
-                    if e.valid and self.cluster.entities[0].clean.find(e.clean)
-                    == -1 and e.clean not in excluded_entities]
+            entity_list = [e.text for e in self.cluster.entities[0].context.entities
+                    if e.valid and self.cluster.entities[0].text.find(e.text)
+                    == -1 and e.text not in excluded_entities]
             for entity in entity_list:
                 if entity not in found_entities and abstract.find(entity) > -1:
                     found_entities.append(entity)
