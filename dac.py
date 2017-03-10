@@ -297,7 +297,7 @@ class Entity():
     An entity mention occuring in an article.
     '''
 
-    def __init__(self, text, tpta_type, context, doc_pos=0):
+    def __init__(self, text, tpta_type=None, context, doc_pos=0):
         '''
         Gather information about the entity and its immediate surroundings.
         '''
@@ -455,6 +455,7 @@ class Cluster():
         '''
         self.entities = entities
         self.quotes_total = self.get_total_quotes()
+        self.type_ratios = self.get_type_ratios()
 
     def link(self, solr_connection, solr_rows, model, min_prob):
         '''
@@ -504,6 +505,22 @@ class Cluster():
         for e in self.entities:
             total_quotes += e.quotes
         return total_quotes
+
+    def get_type_ratios(self):
+        '''
+        Get the type ratios for the cluster.
+        '''
+        types = [e.tpta_type for e in self.entities if e.tpta_type]
+        types += [e.alt_type for e in self.entities if e.alt_type]
+        if not types:
+            return None
+
+        type_ratios = {}
+        for t in list(set(types[:])):
+            type_ratios[t] = types.count(t) / float(len(types))
+
+        print type_ratios
+        return type_ratios
 
 
 class CandidateList():
