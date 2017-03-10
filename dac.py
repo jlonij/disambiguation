@@ -91,7 +91,7 @@ class EntityLinker():
 
         while clusters_to_link:
             cluster = clusters_to_link.pop()
-            result = cluster.resolve(self.solr_connection, SOLR_ROWS,
+            result = cluster.link(self.solr_connection, SOLR_ROWS,
                 self.model, MIN_PROB)
 
             # If a cluster consists of multiple entities and could not be linked
@@ -422,183 +422,175 @@ class Entity():
 
 
 class Cluster():
-
-    entities = None
-    result = None
-
-    solr_rows = None
-    model = None
-
-    solr_iteration = None
-    solr_result_count = None
-    solr_response = None
-
-    descriptions = None
-    candidates = None
-
-    solr_max_score = None
-    cand_max_score = None
-    solr_inlinks_total = None
-    cand_inlinks_total = None
-    titles_total = None
-    quotes_total = None
-
+    '''
+    Group of related entity mentions, presumed to refer to the same entity.
+    '''
 
     def __init__(self, entities):
+        '''
+        Initialize cluster.
+        '''
         self.entities = entities
+        self.quotes_total = self.get_total_quotes()
 
-
-    def resolve(self, solr_connection, solr_rows, model, min_prob):
-        self.solr_rows = solr_rows
-        self.model = model
-
-        # Check validity of the representative entity
-        if not self.entities[0].is_valid():
+    def link(self, solr_connection, solr_rows, model, min_prob):
+        '''
+        Get the link result for the cluster.
+        '''
+        # Check validity of the main entity
+        if not self.entities[0].valid:
             self.result = Result("Invalid entity")
             return self.result
 
-        # If entity is valid, query Solr for candidate DBpedia descriptions
+        # If entity is valid, try to query Solr for candidate descriptions
         try:
-            self.solr_iteration, self.solr_response, self.solr_result_count = self.query_solr(solr_connection, solr_rows)
-        except Exception as error_msg:
-            self.result = Result("Failed to query solr: " + str(error_msg), -1.0)
+            cand_list = CandidateList(solr_connection, solr_rows,
+                self.entities[0].norm, self.entities[0].last_part)
+        except Exception as msg:
+            self.result = Result("Failed to query solr: " + str(msg), -1.0)
             return self.result
 
-        # If nothing found, return
-        if self.solr_result_count == 0:
+        # Check the number of descriptions found
+        cand_list.generate(self)
+        if len(cand_list.candidates) == 0:
             self.result = Result("Nothing found")
             return self.result
 
-        # If any descriptions were found, initialize list of candidate descriptions
-        descriptions = []
-        for i in range(self.solr_result_count):
-            description = Description(self.solr_response.results[i], i, self)
-            descriptions.append(description)
-        self.descriptions = descriptions
-
-        # Filter candidates according to hard criteria, e.g. name conlfict
-        candidates = []
-        for description in self.descriptions:
-            description.calculate_rule_features()
-            if description.name_conflict == 0 and description.date_match > -1:
-                candidates.append(description)
-        self.candidates = candidates
-
-        if len(self.candidates) == 0:
+        # Filter descriptions according to hard criteria, e.g. name conlfict
+        cand_list.filter()
+        if len(cand_list.filtered_candidates) == 0:
             self.result = Result("Name or date conflict")
             return self.result
 
-        # If any candidates remain, calculate their feature values and probability
-        self.solr_max_score, self.cand_max_score = self.get_max_score()
-        self.solr_inlinks_total, self.cand_inlinks_total = self.get_total_inlinks()
-        self.titles_total = self.get_total_titles()
-        self.quotes_total = self.get_total_quotes()
-
-        best_match = candidates[0]
-        for description in candidates:
-            description.calculate_prob_features()
-            example = []
-            for j in range(len(model.features)):
-                example.append(float(getattr(description, model.features[j])))
-            description.prob = model.predict(example)
-            if description.prob > best_match.prob:
-                best_match = description
-
+        # If any candidates remain, calculate their feature values and
+        # probability and select the best candidate
+        cand_list.rank(model)
+        best_match = cand_list.ranked_candidates[0]
         if best_match.prob >= min_prob:
             self.result = Result("Predicted link", best_match.prob, best_match)
         else:
-            self.result= Result("Probability too low for: " + best_match.document.get('label'), best_match.prob)
+            self.result= Result("Probability too low for: " +
+                best_match.document.get('label'), best_match.prob)
         return self.result
 
-
-    def query_solr(self, solr_connection, solr_rows):
-
-        queries = []
-
-        query = 'pref_label:"' + self.entities[0].norm + '"'
-        query += ' OR pref_label_str:"' + self.entities[0].norm + '"'
-        query += ' OR alt_label_str:"' + self.entities[0].norm + '"'
-        query += ' OR last_part_str:"' + self.entities[0].last_part + '"'
-
-        queries.append(query)
-
-        '''
-        if self.entities[0].last_part == self.entities[0].norm.split()[0]:
-            # Query #1: exact match
-            query = 'title_str:"' + self.entities[0].clean + '"'
-            query += ' OR lastpart_str:"' + last_part + '"'
-            query += ' OR lastpart_str:"' + self.entities[0].last_part.capitalize() + '"'
-            queries.append(query)
-
-            # Query #2: normalized match
-            query = 'title:"' + self.entities[0].norm + '"'
-            queries.append(query)
-        else:
-            # Query #1: exact match
-            query = 'title:"' + self.entities[0].norm + '"'
-            query += ' OR title_str:"' + self.entities[0].clean + '"'
-            queries.append(query)
-
-            # Query #2: last part match
-            query = 'lastpart_str:"' + last_part + '"'
-            query += ' OR lastpart_str:"' + self.entities[0].last_part.capitalize() + '"'
-            queries.append(query)
-        '''
-
-        # Query #3: stem match
-        # Query #4: fuzzy match
-
-        solr_iteration = None
-        solr_response = None
-        solr_result_count = None
-
-        for i, query in enumerate(queries):
-            solr_iteration = i
-            solr_response = solr_connection.query(
-	            q=query, rows=solr_rows, indent='on',
-	            sort='lang,inlinks', sort_order='desc')
-            solr_result_count = (solr_response.numFound if
-                    solr_response.numFound <= solr_rows else solr_rows)
-            if solr_result_count > 0:
-                break
-
-        return solr_iteration, solr_response, solr_result_count
-
-
-    def get_max_score(self):
-        solr_max_score = 0
-        for d in self.descriptions:
-            if d.document.get('score') > solr_max_score:
-                solr_max_score = d.document.get('score')
-        cand_max_score = 0
-        for d in self.candidates:
-            if d.document.get('score') > cand_max_score:
-                cand_max_score = d.document.get('score')
-        return solr_max_score, cand_max_score
-
-
-    def get_total_inlinks(self):
-        solr_inlinks_total = 0
-        for d in self.descriptions:
-            solr_inlinks_total += d.document.get('inlinks')
-        cand_inlinks_total = 0
-        for d in self.candidates:
-            cand_inlinks_total += d.document.get('inlinks')
-        return solr_inlinks_total, cand_inlinks_total
-
-
-    def get_total_titles(self):
-        titles_total = 0
-        for d in self.candidates:
-            titles_total += len(d.labels)
-        return titles_total
-
-
     def get_total_quotes(self):
+        '''
+        Get the total number of quotes for all entities in the cluster.
+        '''
         total_quotes = 0
         for e in self.entities:
             total_quotes += e.quotes
         return total_quotes
+
+
+class CandidateList():
+    '''
+    List of candidate links for an entity cluster.
+    '''
+
+    def __init__(self, solr_connection, solr_rows, norm, last_part):
+        '''
+        Query the Solr index.
+        '''
+        self.solr_rows = solr_rows
+
+        queries = []
+
+        query = 'pref_label:"' + norm + '"'
+        query += ' OR pref_label_str:"' + norm + '"'
+        query += ' OR alt_label_str:"' + norm + '"'
+        query += ' OR last_part_str:"' + last_part + '"'
+
+        queries.append(query)
+
+        solr_iteration = None
+        solr_response = None
+        for i, query in enumerate(queries):
+            solr_iteration = i
+            solr_response = solr_connection.query(q=query, rows=solr_rows,
+                indent='on', sort='lang,inlinks', sort_order='desc')
+            if solr_response.numFound > 0:
+                break
+
+        self.solr_iteration = solr_iteration
+        self.solr_response = solr_response
+        if solr_response.numFound < solr_rows:
+            self.solr_result_count = solr_response.numFound
+        else:
+            self.solr_result_count = solr_rows
+
+    def generate(self, cluster):
+        '''
+        Generate initial list of candidates.
+        '''
+        self.candidates = []
+        for r in self.solr_response.results:
+            self.candidates.append(Description(r, self, cluster))
+
+    def filter(self):
+        '''
+        Filter descriptions according to hard criteria, e.g. name conlfict
+        '''
+        self.filtered_candidates = []
+        for c in self.candidates:
+            c.calculate_rule_features()
+            if c.name_conflict == 0 and c.date_match > -1:
+                self.filtered_candidates.append(c)
+
+    def rank(self, model):
+        '''
+        Rank candidates according to trained model.
+        '''
+        self.model = model
+
+        self.solr_max_score, self.cand_max_score = self.get_max_score()
+        self.solr_inlinks_total, self.cand_inlinks_total = self.get_total_inlinks()
+        self.titles_total = self.get_total_titles()
+
+        for c in self.filtered_candidates:
+            c.calculate_prob_features()
+            example = []
+            for j in range(len(model.features)):
+                example.append(float(getattr(c, model.features[j])))
+            c.prob = model.predict(example)
+
+        self.ranked_candidates = sorted(self.filtered_candidates,
+            key=attrgetter('prob'), reverse=True)
+
+    def get_max_score(self):
+        '''
+        Get the maximum score for the result set.
+        '''
+        solr_max_score = 0
+        for c in self.candidates:
+            if c.document.get('score') > solr_max_score:
+                solr_max_score = c.document.get('score')
+        cand_max_score = 0
+        for c in self.filtered_candidates:
+            if c.document.get('score') > cand_max_score:
+                cand_max_score = c.document.get('score')
+        return solr_max_score, cand_max_score
+
+    def get_total_inlinks(self):
+        '''
+        Get the total number of inlinks for the result set.
+        '''
+        solr_inlinks_total = 0
+        for c in self.candidates:
+            solr_inlinks_total += c.document.get('inlinks')
+        cand_inlinks_total = 0
+        for c in self.filtered_candidates:
+            cand_inlinks_total += c.document.get('inlinks')
+        return solr_inlinks_total, cand_inlinks_total
+
+    def get_total_titles(self):
+        '''
+        Get the total number of titles for the result set.
+        '''
+        titles_total = 0
+        for c in self.filtered_candidates:
+            titles_total += len(c.labels)
+        return titles_total
 
 
 class Description():
@@ -655,10 +647,11 @@ class Description():
     prob = 0
 
 
-    def __init__(self, document, position, cluster):
+    def __init__(self, document, cand_list, cluster):
         self.document = document
-        self.position = position
+        self.cand_list = cand_list
         self.cluster = cluster
+
         self.labels = self.get_labels()
 
 
@@ -687,21 +680,24 @@ class Description():
 
 
     def calculate_prob_features(self):
-        self.solr_iteration = self.cluster.solr_iteration
+        self.solr_iteration = self.cand_list.solr_iteration
 
         # Position
-        self.solr_pos = (self.position + 1) / float(self.cluster.solr_rows)
-        self.cand_pos = (self.cluster.candidates.index(self) + 1) / float(self.cluster.solr_rows)
+        self.position = self.cand_list.solr_response.results.index(self.document)
+        self.solr_pos = (self.position + 1) / float(self.cand_list.solr_rows)
+        self.cand_pos = (self.cand_list.filtered_candidates.index(self) + 1) / float(self.cand_list.solr_rows)
+
         # Score
-        if self.cluster.solr_max_score > 0:
-            self.solr_score = self.document.get('score') / float(self.cluster.solr_max_score)
-        if self.cluster.cand_max_score > 0:
-            self.cand_score = self.document.get('score') / float(self.cluster.cand_max_score)
+        if self.cand_list.solr_max_score > 0:
+            self.solr_score = self.document.get('score') / float(self.cand_list.solr_max_score)
+        if self.cand_list.cand_max_score > 0:
+            self.cand_score = self.document.get('score') / float(self.cand_list.cand_max_score)
+
         # Inlinks
-        if self.cluster.solr_inlinks_total > 0:
-            self.solr_inlinks = self.document.get('inlinks') / float(self.cluster.solr_inlinks_total)
-        if self.cluster.cand_inlinks_total > 0:
-            self.cand_inlinks = self.document.get('inlinks') / float(self.cluster.cand_inlinks_total)
+        if self.cand_list.solr_inlinks_total > 0:
+            self.solr_inlinks = self.document.get('inlinks') / float(self.cand_list.solr_inlinks_total)
+        if self.cand_list.cand_inlinks_total > 0:
+            self.cand_inlinks = self.document.get('inlinks') / float(self.cand_list.cand_inlinks_total)
 
         self.quotes = self.cluster.quotes_total
         self.lang = 1 if self.document.get('lang') == 'nl' else 0
@@ -1077,9 +1073,9 @@ class Result():
             self.label = description.document.get('label')
 
             features = {}
-            for j in range(len(description.cluster.model.features)):
-                features[description.cluster.model.features[j]] = float(getattr(description,
-                        description.cluster.model.features[j]))
+            for j in range(len(description.cand_list.model.features)):
+                features[description.cand_list.model.features[j]] = float(getattr(description,
+                        description.cand_list.model.features[j]))
             self.features = features
 
 
