@@ -1053,47 +1053,47 @@ class Description():
 
 
 class Result():
+    '''
+    The link result for an entity cluster.
+    '''
 
-    link = None
-    label = None
-    prob = None
-    reason = None
-
-    features = None
-
-    description = None
-
-
-    def __init__(self, reason, prob=0, description=None):
+    def __init__(self, reason, prob=0.0, description=None):
+        '''
+        Set the result attributes.
+        '''
         self.reason = reason
         self.prob = prob
+        self.description = description
+
         if description:
-            self.description = description
             self.link = description.document.get('id')
             self.label = description.document.get('label')
-
-            features = {}
-            for j in range(len(description.cand_list.model.features)):
-                features[description.cand_list.model.features[j]] = float(getattr(description,
-                        description.cand_list.model.features[j]))
-            self.features = features
-
+            self.features = {}
+            for f in description.cand_list.model.features:
+                self.features[f] = float(getattr(description, f))
+        else:
+            self.link = None
+            self.label = None
+            self.features = None
 
     def get_dict(self):
+        '''
+        Return the result dictionary.
+        '''
         result = {}
-        result['link'] = self.link
-        result['label'] = self.label
         result['prob'] = self.prob
         result['reason'] = self.reason
+        result['link'] = self.link
+        result['label'] = self.label
         result['features'] = self.features
         return result
 
 
 if __name__ == '__main__':
-    import pprint
     if not len(sys.argv) > 1:
         print("Usage: ./dac.py [url (string)]")
     else:
+        import pprint
         linker = EntityLinker(debug=True)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
