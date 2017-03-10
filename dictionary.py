@@ -17,9 +17,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-days = ['maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag',
-    'zondag']
-
 months = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli',
     'augustus', 'september', 'oktober', 'november', 'december']
 
@@ -52,7 +49,8 @@ roles = {
         'words': ['minister', 'ministers', 'premier', 'kamerlid', 'kamerleden',
             'partijleider', 'burgemeester', 'staatssecretaris', 'president',
             'wethouder', 'consul', 'ambassadeur', 'gemeenteraadslid',
-            'diplomaat', 'fractieleider', 'politicus', 'politica', 'politici', 'staatsman'],
+            'diplomaat', 'fractieleider', 'politicus', 'politica', 'politici',
+            'staatsman'],
         'schema_types': ['Politician', 'OfficeHolder', 'Judge',
             'MemberOfParliament', 'President', 'PrimeMinister',
             'Governor', 'Congressman', 'Mayor'],
@@ -87,7 +85,8 @@ roles = {
             'MotorsportRacer', 'Canoist', 'Cricketer', 'RugbyPlayer',
             'HorseRider', 'AmericanFootballPlayer', 'Rower', 'MotorcycleRider',
             'Skater', 'BaseballPlayer', 'BasketballPlayer', 'Gymnast',
-            'SportsManager', 'IceHockeyPlayer', 'FigureSkater', 'HandballPlayer'],
+            'SportsManager', 'IceHockeyPlayer', 'FigureSkater',
+            'HandballPlayer'],
         'subjects': ['sports'],
         'types': ['person']
         },
@@ -138,8 +137,8 @@ roles = {
         },
     'scientist': {
         'words': ['prof', 'professor', 'natuurkundige', 'scheikundige',
-            'wiskundige', 'bioloog', 'historicus', 'onderzoeker', 'wetenschapper',
-            'filosoof', 'docent', 'astronoom'],
+            'wiskundige', 'bioloog', 'historicus', 'onderzoeker',
+            'wetenschapper', 'filosoof', 'docent', 'astronoom'],
         'schema_types': ['Scientist', 'Historian', 'Biologist', 'Philosopher',
             'Professor'],
         'subjects': ['science'],
@@ -150,7 +149,8 @@ roles = {
             'bisschop', 'monseigneur', 'mgr', 'kapelaan', 'deken',
             'abt', 'prior', 'pastoor', 'pater', 'predikant',
             'opperrabbijn', 'rabbijn', 'imam', 'geestelijke', 'frater'],
-        'schema_types': ['ChristianBishop', 'Cardinal', 'Cleric', 'Saint', 'Pope'],
+        'schema_types': ['ChristianBishop', 'Cardinal', 'Cleric', 'Saint',
+            'Pope'],
         'subjects': ['religion'],
         'types': ['person']
         },
@@ -165,8 +165,8 @@ roles = {
             'gebieden', 'havenstad', 'dorpje', 'plein'],
         'schema_types': ['Settlement', 'Village', 'Municipality', 'Town',
             'AdministrativeRegion', 'City', 'HistoricPlace', 'PopulatedPlace',
-            'ProtectedArea', 'CityDistrict', 'Country', 'SubMunicipality', 'Street'
-            'District'],
+            'ProtectedArea', 'CityDistrict', 'Country', 'SubMunicipality',
+            'Street', 'District'],
         'subjects': [],
         'types': ['location']
         },
@@ -174,8 +174,8 @@ roles = {
         'words': ['station', 'metrostation', 'vliegveld', 'gebouw', 'brug',
             'monument', 'metro', 'luchthaven', 'metrolijn'],
         'schema_types': ['Building', 'Road', 'Station', 'RailwayStation',
-            'Airport', 'HistoricBuilding', 'Bridge', 'Dam', 'ArchitecturalStructure',
-            'Monument', 'Castle', 'MetroStation'],
+            'Airport', 'HistoricBuilding', 'Bridge', 'Dam',
+            'ArchitecturalStructure', 'Monument', 'Castle', 'MetroStation'],
         'subjects': [],
         'types': ['location']
         },
@@ -279,8 +279,9 @@ roles = {
     'sports_event': {
         'words': ['wedstrijd', 'voetbalcompetitie', 'toernooi',
             'voetbaltoernooi', 'wielerwedstrijd'],
-        'schema_types': ['SoccerLeague', 'OlympicEvent', 'SoccerTournament', 'GrandPrix'
-            'TennisTournament', 'FootballMatch', 'CyclingRace', 'SportsEvent'],
+        'schema_types': ['SoccerLeague', 'OlympicEvent', 'SoccerTournament',
+            'GrandPrix', 'TennisTournament', 'FootballMatch', 'CyclingRace',
+            'SportsEvent'],
         'subjects': ['sports'],
         'types': []
         },
