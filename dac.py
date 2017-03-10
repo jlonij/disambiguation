@@ -297,7 +297,7 @@ class Entity():
     An entity mention occuring in an article.
     '''
 
-    def __init__(self, text, tpta_type=None, context, doc_pos=0):
+    def __init__(self, text, tpta_type, context, doc_pos=0):
         '''
         Gather information about the entity and its immediate surroundings.
         '''
@@ -454,8 +454,6 @@ class Cluster():
         Initialize cluster.
         '''
         self.entities = entities
-        self.quotes_total = self.get_total_quotes()
-        self.type_ratios = self.get_type_ratios()
 
     def link(self, solr_connection, solr_rows, model, min_prob):
         '''
@@ -488,6 +486,9 @@ class Cluster():
 
         # If any candidates remain, calculate their feature values and
         # probability and select the best candidate
+        self.quotes_total = self.get_total_quotes()
+        self.type_ratios = self.get_type_ratios()
+
         cand_list.rank(model)
         best_match = cand_list.ranked_candidates[0]
         if best_match.prob >= min_prob:
@@ -518,8 +519,6 @@ class Cluster():
         type_ratios = {}
         for t in list(set(types[:])):
             type_ratios[t] = types.count(t) / float(len(types))
-
-        print type_ratios
         return type_ratios
 
 
@@ -912,14 +911,8 @@ class Description():
         '''
         Match entity and description type (person, location or organization).
         '''
-        tpta_type = None
-
-        # Alt_type preferred over original tpta_type
-        if self.cluster.entities[0].alt_type:
-            tpta_type = self.cluster.entities[0].alt_type
-        elif self.cluster.entities[0].tpta_type:
-            tpta_type = self.cluster.entities[0].tpta_type
-        if not tpta_type or tpta_type not in dictionary.types:
+        type_ratios = self.cluster.type_ratios
+        if not type_ratios:
             return
 
         schema_types = []
@@ -950,22 +943,27 @@ class Description():
                 return
 
         # Matching type
-        for t in dictionary.types[tpta_type]['schema_types']:
-            if t in schema_types:
-                self.type_match = 1
-                return
-
-        # Non-matching: persons can't be locations or organizations
-        if tpta_type == 'person':
-            for confl in [d for d in dictionary.types if d != tpta_type]:
-                for t in dictionary.types[confl]['schema_types']:
+        for r in type_ratios:
+            if r in dictionary.types:
+                for t in dictionary.types[r]['schema_types']:
                     if t in schema_types:
-                        self.type_match = -1
-                        return
+                        self.type_match += type_ratios[r]
+        if self.type_match:
+            return
 
-        # Non-matching: locations and organizations can't be persons
-        elif 'Person' in schema_types:
-            self.type_match = -1
+        if len(type_ratios) == 1:
+            # Non-matching: persons can't be locations or organizations
+            if 'person' in type_ratios:
+                for other in [t for t in dictionary.types if t != 'person']:
+                    for t in dictionary.types[other]['schema_types']:
+                        if t in schema_types:
+                            self.type_match = -1
+                            return
+
+            # Non-matching: locations and organizations can't be persons
+            elif 'location' in type_ratios or 'organisation' in type_ratios:
+                if 'Person' in schema_types:
+                    self.type_match = -1
 
     def match_role(self):
         '''
