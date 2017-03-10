@@ -18,17 +18,13 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 days = ['maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag',
-'zondag']
+    'zondag']
 
 months = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli',
-'augustus', 'september', 'oktober', 'november', 'december']
+    'augustus', 'september', 'oktober', 'november', 'december']
 
-titles = ['drs', 'ing', 'ir', 'dr']
-
-genders = {
-    'male': ['heer', 'hr', 'dhr', 'meneer'],
-    'female': ['mevrouw', 'mevr', 'mw', 'mej', 'mejuffrouw']
-    }
+titles = ['heer', 'hr', 'dhr', 'meneer', 'mevrouw', 'mevr', 'mw', 'mej',
+    'mejuffrouw', 'drs', 'ing', 'ir', 'dr']
 
 types = {
     'person': {

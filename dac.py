@@ -84,7 +84,7 @@ class EntityLinker():
                 self.context.entities.append(entity_to_link)
             # Link only the cluster to which the entity belongs
             clusters_to_link = [c for c in clusters_to_link if entity_to_link
-                    in c.entities]
+                in c.entities]
 
         # Process all clusters to be linked
         linked = []
@@ -92,13 +92,13 @@ class EntityLinker():
         while clusters_to_link:
             cluster = clusters_to_link.pop()
             result = cluster.resolve(self.solr_connection, SOLR_ROWS,
-                    self.model, MIN_PROB)
+                self.model, MIN_PROB)
 
             # If a cluster consists of multiple entities and could not be linked
             # or was not linked to a person, split it up and return the parts to
             # the queue. If not, add the cluster to the linked list.
             dependencies = [e for e in cluster.entities if e.norm !=
-                    cluster.entities[0].norm]
+                cluster.entities[0].norm]
 
             if dependencies:
                 types = []
@@ -109,14 +109,14 @@ class EntityLinker():
                         types += result.description.document.get('dbo_type')
                 if not result.description or 'Person' not in types:
                     new_clusters = [Cluster([e for e in cluster.entities if e
-                            not in dependencies])]
+                        not in dependencies])]
                     new_clusters.extend(self.get_clusters(dependencies))
 
                     # If linking a specific ne, only return the new cluster
                     # containing that ne to the queue
                     if ne:
                         clusters_to_link.extend([c for c in new_clusters if
-                                entity_to_link in c.entities])
+                            entity_to_link in c.entities])
                     else:
                         clusters_to_link.extend(new_clusters)
             else:
@@ -140,8 +140,8 @@ class EntityLinker():
         '''
         clusters = []
         sorted_entities = sorted(entities, key=attrgetter('norm'), reverse=True)
-        sorted_entities = sorted(sorted_entities, key=attrgetter('word_length'),
-                reverse=True)
+        sorted_entities = sorted(sorted_entities, key=lambda entity:
+            len(entity.norm.split()), reverse=True)
         for entity in sorted_entities:
             clusters = self.cluster(entity, clusters)
         return clusters
@@ -198,7 +198,7 @@ class Context():
             data = urllib.urlopen(url).read()
             xml = etree.fromstring(data)
             ocr = etree.tostring(xml, encoding='utf8',
-                    method='text').decode('utf-8')
+                method='text').decode('utf-8')
         except:
             return ocr
         return ocr
@@ -263,7 +263,7 @@ class Context():
         for node in xml.iter():
             if node.text and len(node.text) > 1:
                 entity = Entity(node.text.decode('utf-8'), node.tag,
-                        self, doc_pos)
+                    self, doc_pos)
                 doc_pos = entity.end_pos if entity.end_pos > -1 else doc_pos
                 entities.append(entity)
         return entities
@@ -276,36 +276,31 @@ class Entity():
 
     def __init__(self, text, tpta_type, context, doc_pos=0):
         '''
-        Gather necessary info for an entity: position in the article,
-        normalized surface form and immediate context (e.g. punctuation, modifiers).
+        Gather information about the entity and its immediate surroundings.
         '''
         self.text = text
         self.tpta_type = tpta_type
         self.context = context
         self.doc_pos = doc_pos
 
-        # Get position in text
-        self.start_pos, self.end_pos = self.get_position(self.context.ocr,
-                self.text, self.doc_pos)
-
-        # Normalize and check validity
         self.norm = utilities.normalize(self.text)
-        self.last_part = utilities.get_last_name(self.norm)
-        self.word_length = len(self.norm.split())
+
+        self.start_pos, self.end_pos = self.get_position(self.text,
+            self.context.ocr, self.doc_pos)
+        self.window_left, self.window_right = self.get_window(self.context.ocr,
+            start_pos=self.start_pos, end_pos=self.end_pos, size=30)
+
+        self.quotes = self.get_quotes()
+        self.title, self.title_form = self.get_title()
+        self.role, self.role_form = self.get_role()
+
+        self.stripped = self.strip_titles()
+        self.last_part = utilities.get_last_name(self.stripped)
         self.valid = self.is_valid()
 
-        # Check immediate surroundings
-        if self.valid:
-            self.window_left, self.window_right = self.get_window(self.context.ocr,
-                start_pos=self.start_pos, end_pos=self.end_pos, size=30)
-            self.quotes = self.get_quotes(self.start_pos, self.end_pos)
+        self.alt_type = self.get_alt_type()
 
-            self.title, self.title_form = self.get_title()
-            self.gender, self.gender_form = self.get_gender()
-            self.role, self.role_form = self.get_role()
-            self.alt_type = self.get_alt_type()
-
-    def get_position(self, document, phrase, doc_pos=None):
+    def get_position(self, phrase, document, doc_pos=None):
         '''
         Find the start and end position of the mention in the article.
         '''
@@ -318,8 +313,7 @@ class Entity():
 
     def get_window(self, document, start_pos=None, end_pos=None, size=None):
         '''
-        Get the words appearing immediately to the left and right of the entity
-        in the article.
+        Get the words appearing to the left and right of the entity.
         '''
         left_bow = []
         right_bow = []
@@ -342,33 +336,22 @@ class Entity():
 
         return left_bow, right_bow
 
-
-    def get_quotes(self, start_pos, end_pos):
+    def get_quotes(self):
+        '''
+        Count quote characters surrounding the entity.
+        '''
         quotes = 0
         quote_chars = [u'"', u"'", u'„', u'”', u'‚', u'’']
-        for pos in [start_pos - 1, end_pos]:
+        for pos in [self.start_pos - 1, self.start_pos, self.end_pos - 1,
+                self.end_pos]:
             if self.context.ocr[pos] in quote_chars:
                 quotes += 1
         return quotes
 
-
-    def is_valid(self):
-        if hasattr(self, 'valid'):
-            return self.valid
-        elif len(self.norm) > 2 and self.last_part and not self.is_date():
-            return True
-        return False
-
-
-    def is_date(self):
-        if len(self.norm.split()) > 1:
-            if len([w for w in self.norm.split() if w in dictionary.months]):
-                if len([w for w in self.norm.split() if w.isdigit()]):
-                    return True
-        return False
-
-
     def get_title(self):
+        '''
+        Check for titles near the beginning of the entity.
+        '''
         words = [self.norm.split()[0]]
         if self.window_left:
             words.append(utilities.normalize(self.window_left[-1]))
@@ -377,19 +360,10 @@ class Entity():
                 return True, word
         return None, None
 
-
-    def get_gender(self):
-        words = [self.norm.split()[0]]
-        if self.window_left:
-            words.append(utilities.normalize(self.window_left[-1]))
-        for word in words:
-            for gender in dictionary.genders:
-                if word in dictionary.genders[gender]:
-                    return gender, word
-        return None, None
-
-
     def get_role(self):
+        '''
+        Check for roles near the beginning and end of the entity.
+        '''
         words = [self.norm.split()[0]]
         if self.window_left:
             words.append(utilities.normalize(self.window_left[-1]))
@@ -401,10 +375,38 @@ class Entity():
                     return role, word
         return None, None
 
+    def strip_titles(self):
+        '''
+        Remove titles and roles appearing inside the entity.
+        '''
+        if self.title and self.norm.split()[0] == self.title_form:
+            return ' '.join(self.norm.split()[1:])
+        if self.role and self.norm.split()[0] == self.role_form:
+            return ' '.join(self.norm.split()[1:])
+        return self.norm
+
+    def is_valid(self):
+        '''
+        Check entity validity.
+        '''
+        if len(self.stripped) >= 2 and self.last_part and not self.is_date():
+            return True
+        return False
+
+    def is_date(self):
+        '''
+        Check if the entity is some sort of date.
+        '''
+        if [w for w in self.norm.split() if w in dictionary.months]:
+            if [w for w in self.norm.split() if w.isdigit()]:
+                return True
+        return False
 
     def get_alt_type(self):
-
-        if self.gender or self.title:
+        '''
+        Infer addtional information about entity type from context.
+        '''
+        if self.title:
             return 'person'
 
         if self.role:
@@ -599,43 +601,6 @@ class Cluster():
         return total_quotes
 
 
-class Result():
-
-    link = None
-    label = None
-    prob = None
-    reason = None
-
-    features = None
-
-    description = None
-
-
-    def __init__(self, reason, prob=0, description=None):
-        self.reason = reason
-        self.prob = prob
-        if description:
-            self.description = description
-            self.link = description.document.get('id')
-            self.label = description.document.get('label')
-
-            features = {}
-            for j in range(len(description.cluster.model.features)):
-                features[description.cluster.model.features[j]] = float(getattr(description,
-                        description.cluster.model.features[j]))
-            self.features = features
-
-
-    def get_dict(self):
-        result = {}
-        result['link'] = self.link
-        result['label'] = self.label
-        result['prob'] = self.prob
-        result['reason'] = self.reason
-        result['features'] = self.features
-        return result
-
-
 class Description():
 
     document = None
@@ -806,15 +771,7 @@ class Description():
 
 
     def match_titles_last_part(self):
-        ne = self.cluster.entities[0].norm
-        if ((self.cluster.entities[0].gender and ne.split()[0] ==
-            self.cluster.entities[0].gender_form) or (self.cluster.entities[0].role
-            and ne.split()[0] == self.cluster.entities[0].role_form) or
-            (self.cluster.entities[0].title and ne.split()[0] ==
-                self.cluster.entities[0].title_form)):
-            ne = ' '.join(ne.split()[1:])
-            if not ne:
-                return
+        ne = self.cluster.entities[0].stripped
 
         # Preliminary check for ne's that are longer than the main label:
         # There has to be at least one alternative label that matches the
@@ -1097,6 +1054,43 @@ class Description():
         tokens = utilities.tokenize(utilities.normalize(ocr))
         self.cat_match = len(set(categories) & set(tokens))
         #print self.cat_match
+
+
+class Result():
+
+    link = None
+    label = None
+    prob = None
+    reason = None
+
+    features = None
+
+    description = None
+
+
+    def __init__(self, reason, prob=0, description=None):
+        self.reason = reason
+        self.prob = prob
+        if description:
+            self.description = description
+            self.link = description.document.get('id')
+            self.label = description.document.get('label')
+
+            features = {}
+            for j in range(len(description.cluster.model.features)):
+                features[description.cluster.model.features[j]] = float(getattr(description,
+                        description.cluster.model.features[j]))
+            self.features = features
+
+
+    def get_dict(self):
+        result = {}
+        result['link'] = self.link
+        result['label'] = self.label
+        result['prob'] = self.prob
+        result['reason'] = self.reason
+        result['features'] = self.features
+        return result
 
 
 if __name__ == '__main__':
