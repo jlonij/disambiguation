@@ -23,7 +23,6 @@ import dictionary
 import Levenshtein
 import math
 import models
-import re
 import solr
 import sys
 import urllib
@@ -119,6 +118,8 @@ class EntityLinker():
                             entity_to_link in c.entities])
                     else:
                         clusters_to_link.extend(new_clusters)
+                else:
+                    linked.append(cluster)
             else:
                 linked.append(cluster)
 
@@ -139,9 +140,12 @@ class EntityLinker():
         Group related entities into clusters.
         '''
         clusters = []
+        # Arrange the entities in reversed alphabetical order
         sorted_entities = sorted(entities, key=attrgetter('norm'), reverse=True)
+        # Arrange the entities by word length, longest first
         sorted_entities = sorted(sorted_entities, key=lambda entity:
             len(entity.norm.split()), reverse=True)
+        # Assign each entity to a cluster
         for entity in sorted_entities:
             clusters = self.cluster(entity, clusters)
         return clusters
@@ -150,6 +154,8 @@ class EntityLinker():
         '''
         Either add entity to an existing cluster or create a new one.
         '''
+        # If the entity text or norm exactly matches an existing cluster,
+        # add it to the cluster
         for cluster in clusters:
             for e in cluster.entities:
                 if entity.text == e.text:
@@ -159,15 +165,32 @@ class EntityLinker():
                     if entity.norm == e.norm:
                         cluster.entities.append(entity)
                         return clusters
+
+        # Find candidate clusters that partially match an entity
         candidates = []
         for cluster in clusters:
             for e in cluster.entities:
                 if len(entity.norm) > 0 and len(e.norm) > 0:
+                    # Last parts are the same
                     if entity.norm.split()[-1] == e.norm.split()[-1]:
+                        # Any preceding parts are the same
                         if e.norm.endswith(entity.norm):
+                            # The candidate norm is longer than the entity norm
                             if len(e.norm.split()) > len(entity.norm.split()):
                                 candidates.append(cluster)
                                 break
+                    # First parts are the same
+                    elif entity.norm.split()[0] == e.norm.split()[0]:
+                        # Entity norm consists of exactly one word (first name)
+                        if len(entity.norm.split()) == 1:
+                            # The candidate norm is longer than the entity norm
+                            if len(e.norm.split()) > len(entity.norm.split()):
+                                # Both entities are probably persons
+                                if e.tpta_type == 'person':
+                                    if entity.tpta_type == 'person':
+                                        candidates.append(cluster)
+                                        break
+
         if len(candidates) == 1:
             candidates[0].entities.append(entity)
         else:
