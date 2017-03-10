@@ -447,7 +447,7 @@ class Cluster():
             cand_list = CandidateList(solr_connection, solr_rows,
                 self.entities[0].norm, self.entities[0].last_part)
         except Exception as msg:
-            self.result = Result("Failed to query solr: " + str(msg), -1.0)
+            self.result = Result("Failed to query solr: " + str(msg))
             return self.result
 
         # Check the number of descriptions found
@@ -469,7 +469,7 @@ class Cluster():
         if best_match.prob >= min_prob:
             self.result = Result("Predicted link", best_match.prob, best_match)
         else:
-            self.result= Result("Probability too low for: " +
+            self.result = Result("Probability too low for: " +
                 best_match.document.get('label'), best_match.prob)
         return self.result
 
@@ -545,7 +545,6 @@ class CandidateList():
 
         self.solr_max_score, self.cand_max_score = self.get_max_score()
         self.solr_inlinks_total, self.cand_inlinks_total = self.get_total_inlinks()
-        self.titles_total = self.get_total_titles()
 
         for c in self.filtered_candidates:
             c.calculate_prob_features()
@@ -583,24 +582,11 @@ class CandidateList():
             cand_inlinks_total += c.document.get('inlinks')
         return solr_inlinks_total, cand_inlinks_total
 
-    def get_total_titles(self):
-        '''
-        Get the total number of titles for the result set.
-        '''
-        titles_total = 0
-        for c in self.filtered_candidates:
-            titles_total += len(c.labels)
-        return titles_total
-
 
 class Description():
-
-    document = None
-    position = None
-    cluster = None
-
-    labels = []
-    non_matching_labels = []
+    '''
+    Description of a link candidate.
+    '''
 
     main_title_match = 0
     main_title_start_match = 0
@@ -619,8 +605,10 @@ class Description():
 
     last_part_match = 0
     last_part_match_fraction = 0
-
+    mean_levenshtein_ratio = 0
     name_conflict = 0
+
+    date_match = 0
 
     solr_iteration = 0
     solr_pos = 0
@@ -629,57 +617,42 @@ class Description():
     cand_score = 0
     solr_inlinks = 0
     cand_inlinks = 0
-
     lang = 0
-    quotes = 0
     disambig = 0
 
-    mean_levenshtein_ratio = 0
+    quotes = 0
 
-    date_match = 0
     type_match = 0
     role_match = 0
-    subject_match = 0
-    entity_match = 0
     spec_match = 0
     cat_match = 0
-
-    prob = 0
-
+    subject_match = 0
+    entity_match = 0
 
     def __init__(self, document, cand_list, cluster):
+        '''
+        Set description attributes.
+        '''
         self.document = document
         self.cand_list = cand_list
         self.cluster = cluster
 
-        self.labels = self.get_labels()
-
-
-    def get_labels(self):
-        labels = [self.document.get('pref_label')]
-        if self.document.get('alt_label'):
-            labels += self.document.get('alt_label')
-        return labels
-
-
     def calculate_rule_features(self):
-        self.match_id()
-        self.match_titles()
-        self.match_titles_last_part()
-
-        features = ['main_title_exact_match', 'main_title_end_match',
-                'title_exact_match', 'title_end_match', 'last_part_match']
-        name_conflict = 1
-        for f in features:
-            if getattr(self, f) > 0:
-                name_conflict = 0
-                break
-        self.name_conflict = name_conflict
-
+        '''
+        Calcutate the feature values needed for rule-based candidate filtering.
+        '''
+        self.match_pref_label()
+        self.match_alt_label()
+        self.match_last_part()
+        self.match_levenshtein()
+        self.get_name_conflict()
         self.match_date()
 
-
     def calculate_prob_features(self):
+        '''
+        Calculate the additional feature values needed for probability-based
+        candidate ranking.
+        '''
         self.solr_iteration = self.cand_list.solr_iteration
 
         # Position
@@ -699,24 +672,25 @@ class Description():
         if self.cand_list.cand_inlinks_total > 0:
             self.cand_inlinks = self.document.get('inlinks') / float(self.cand_list.cand_inlinks_total)
 
-        self.quotes = self.cluster.quotes_total
         self.lang = 1 if self.document.get('lang') == 'nl' else 0
-        self.disambig = 1 if self.document.get('ambig') == 0 else 1
+        self.disambig = 1 if self.document.get('ambig') == 0 else 0
 
-        self.match_titles_levenshtein()
+        self.quotes = self.cluster.quotes_total
+
         self.match_type()
         self.match_role()
+        self.match_spec()
+        self.match_keywords()
         self.match_subjects()
         self.match_entities()
-        self.match_spec()
-        self.match_cat()
 
-
-    def match_id(self):
-        match_label = self.labels[0]
+    def match_pref_label(self):
+        '''
+        Match the main description label with the normalized entity.
+        '''
+        match_label = self.document.get('pref_label')
         ne = self.cluster.entities[0].norm
 
-        non_matching_labels = []
         if match_label == ne:
             self.main_title_exact_match = 1
         elif match_label.endswith(ne):
@@ -725,65 +699,68 @@ class Description():
             self.main_title_start_match = 1
         elif match_label.find(ne) > -1:
             self.main_title_match = 1
-        else:
-            non_matching_labels.append(match_label)
-        self.non_matching_labels = non_matching_labels
 
+    def match_alt_label(self):
+        '''
+        Match alternative labels with the normalized entity.
+        '''
+        match_label = self.document.get('alt_label')
+        if not match_label:
+            return
 
-    def match_titles(self):
-        title_match = 0
-        title_start_match = 0
-        title_end_match = 0
-        title_exact_match = 0
-
-        match_label = self.labels[1:]
         ne = self.cluster.entities[0].norm
 
-        non_matching_labels = []
         for label in match_label:
             if label == ne:
-                title_exact_match += 1
+                self.title_exact_match += 1
             elif label.endswith(ne):
-                title_end_match += 1
+                self.title_end_match += 1
             elif label.startswith(ne):
-                title_start_match += 1
+                self.title_start_match += 1
             elif label.find(ne) > -1:
-                title_match += 1
-            else:
-                non_matching_labels.append(label)
+                self.title_match += 1
 
-        self.title_match = title_match
-        self.title_start_match = title_start_match
-        self.title_end_match = title_end_match
-        self.title_exact_match = title_exact_match
+        self.title_match_fraction = (self.title_match /
+            float(len(match_label)))
+        self.title_start_match_fraction = (self.title_start_match /
+            float(len(match_label)))
+        self.title_end_match_fraction = (self.title_end_match /
+            float(len(match_label)))
+        self.title_exact_match_fraction = (self.title_exact_match /
+            float(len(match_label)))
 
-        if len(match_label) > 0:
-            self.title_match_fraction = title_match / float(len(match_label))
-            self.title_start_match_fraction = title_start_match / float(len(match_label))
-            self.title_end_match_fraction = title_end_match / float(len(match_label))
-            self.title_exact_match_fraction = title_exact_match / float(len(match_label))
-
-        self.non_matching_labels += non_matching_labels
-
-
-    def match_titles_last_part(self):
+    def match_last_part(self):
+        '''
+        Match the last part of the stripped entity with all labels,
+        making sure preceding parts (e.g. initials) don't conflict.
+        '''
         ne = self.cluster.entities[0].stripped
 
         # Preliminary check for ne's that are longer than the main label:
-        # There has to be at least one alternative label that matches the
+        # there has to be at least one alternative label that matches the
         # longer version
-        main_label = self.labels[0]
-        alt_label = self.labels[1:]
+        main_label = self.document.get('pref_label')
+        alt_label = self.document.get('alt_label')
+
         if len(ne.split()) > len(main_label.split()):
+            if not alt_label:
+                return
+
             skip = True
             for l in alt_label:
-                if len(ne.split()) == len(l.split()) and ne.split()[-1] == l.split()[-1]:
+                # The lenght and last part have to be the same
+                if (len(ne.split()) == len(l.split()) and ne.split()[-1] ==
+                        l.split()[-1]):
                     match = True
-                    for part in ne.split()[:-1]:
-                        if len(ne.split()[0]) > 1 and part != l.split()[ne.split().index(part)]:
+                    # The preceding parts cannot conflict
+                    for i, part in enumerate(ne.split()[:-1]):
+                        # Dealing with full words
+                        if (len(ne.split()[0]) > 1 and part != l.split()[i]):
                             match = False
                             break
-                        elif len(ne.split()[0]) <= 1 and part[0] != l.split()[ne.split().index(part)][0]:
+                        # Dealing with initials
+                        elif (len(ne.split()[0]) == 1 and part[0] !=
+                                l.split()[i][0]):
                             match = False
                             break
                     if match:
@@ -792,24 +769,28 @@ class Description():
             if skip:
                 return
 
-        # Last part match for titles that haven't been matched yet
-        last_part_match = 0
-        match_label = self.non_matching_labels
+        # Last part match for qualifing ne's
+        match_label = [main_label]
+        if alt_label:
+            match_label += alt_label
 
         for l in match_label:
 
-            # If the last words of the title and the ne match
+            # If the last words of the title and the ne match approximately,
+            # i.e. edit distance does not exceed 1
             if Levenshtein.distance(ne.split()[-1], l.split()[-1]) <= 1:
 
-                # Single word entities
+                # Single-word entities: match immediately
                 if len(ne.split()) == 1:
-                    last_part_match += 1
+                    self.last_part_match += 1
                     continue
 
-                # Check for any conflicting preceding parts
+                # Multi-word entities: check for conflicts among preceding parts
                 skip = False
-                source = l.split() if len(ne.split()) > len(l.split()) else ne.split()
-                target = ne.split() if len(ne.split()) > len(l.split()) else l.split()
+                source = (l.split() if len(ne.split()) > len(l.split())
+                    else ne.split())
+                target = (ne.split() if len(ne.split()) > len(l.split())
+                    else l.split())
 
                 target_pos = 0
                 for part in source[:-1]:
@@ -817,13 +798,16 @@ class Description():
                         if len(part) > 1 and part in target[target_pos:-1]:
                             target_pos = target.index(part) + 1
                         elif len(part) > 1 and len([p for p in
-                            target[target_pos:-1] if Levenshtein.distance(p, part) <= 1]) > 0:
+                                target[target_pos:-1] if
+                                Levenshtein.distance(p, part) <= 1]) > 0:
                             for p in target[target_pos:-1]:
                                 if Levenshtein.distance(p, part) <= 1:
                                     target_pos = target.index(p) + 1
                                     break
-                        elif len(part) <= 1 and part[0] in [p[0] for p in target[target_pos:-1]]:
-                            target_pos = [p[0] for p in target[target_pos:-1]].index(part[0]) + 1
+                        elif len(part) <= 1 and part[0] in [p[0] for p in
+                                target[target_pos:-1]]:
+                            target_pos = [p[0] for p in
+                                target[target_pos:-1]].index(part[0]) + 1
                         else:
                             skip = True
                             break
@@ -831,43 +815,66 @@ class Description():
                         break
                 if skip:
                     continue
+                else:
+                    self.last_part_match += 1
 
-                last_part_match += 1
+        self.last_part_match_fraction = (self.last_part_match /
+            float(len(match_label)))
 
-        self.last_part_match = last_part_match
-        if len(self.labels) > 0:
-            self.last_part_match_fraction = last_part_match / float(len(self.labels))
+    def get_name_conflict(self):
+        '''
+        Determine if the description has a name conflict, i.e. not a single
+        sufficiently matching label was found.
+        '''
+        features = ['main_title_exact_match', 'main_title_end_match',
+            'title_exact_match', 'title_end_match', 'last_part_match']
+        if sum([getattr(self, f) for f in features]) == 0:
+            self.name_conflict = 1
 
-
-    def match_titles_levenshtein(self):
+    def match_levenshtein(self):
+        '''
+        Get the mean Levenshtein ratio for all labels.
+        '''
+        match_label = [self.document.get('pref_label')]
+        if self.document.get('alt_label'):
+            match_label += self.document.get('alt_label')
         ne = self.cluster.entities[0].norm
-        sum = 0
-        for l in self.labels:
-            sum += Levenshtein.ratio(ne, l)
-        self.mean_levenshtein_ratio = sum / float(len(self.labels))
-
+        ratio_sum = sum([Levenshtein.ratio(ne, l) for l in match_label])
+        self.mean_levenshtein_ratio = ratio_sum / float(len(match_label))
 
     def match_date(self):
+        '''
+        Compare publication year of the article with birth and death years in
+        the entity description.
+        '''
         publ_date = self.cluster.entities[0].context.publ_date
-        if publ_date:
-            year_of_publ = int(publ_date[:4])
-            year_of_birth = self.document.get('birth_year')
-            if year_of_birth:
-                age = year_of_publ - year_of_birth
-                #print age
-                if age <= 0:
-                    self.date_match = -1
-                elif age < 20:
-                    self.date_match = 0
-                elif age < 100:
-                    self.date_match = 2
-                else:
-                    self.date_match = 1
+        if not publ_date:
+            return
+        publ_year = int(publ_date[:4])
 
+        birth_year = self.document.get('birth_year')
+        death_year = self.document.get('death_year')
+        if not birth_year:
+            return
+        if not death_year:
+            death_year = birth_year + 80
+
+        if publ_year < birth_year:
+            self.date_match = -1
+        elif publ_year < birth_year + 20:
+            self.date_match = 0.5
+        elif publ_year < death_year:
+            self.date_match = 1
+        else:
+            self.date_match = 0.5
 
     def match_type(self):
-        # Alt_type preferred over original tpta_type
+        '''
+        Match entity and description type (person, location or organization).
+        '''
         tpta_type = None
+
+        # Alt_type preferred over original tpta_type
         if self.cluster.entities[0].alt_type:
             tpta_type = self.cluster.entities[0].alt_type
         elif self.cluster.entities[0].tpta_type:
@@ -880,30 +887,27 @@ class Description():
             schema_types += self.document.get('schema_type')
         if self.document.get('dbo_type'):
             schema_types += self.document.get('dbo_type')
-        # If no types available, try to deduce type from first sentence
+
+        # If no types available, try to deduce a type from the first sentence
         # of the abstract
         if not schema_types:
             abstract = self.document.get('abstract')
-            if not abstract:
-                return
-            sentence = abstract[:abstract.find('. ')]
-            #print sentence
-            bow = utilities.tokenize(utilities.normalize(sentence))
+            sentence = utilities.segment(abstract).next()
+            bow = [utilities.normalize(t) for t in
+                utilities.tokenize(sentence, False)]
+
             cand_types = []
-            for role in [r for r in dictionary.roles if len(dictionary.roles[r]['types']) == 1]:
+            for role in [r for r in dictionary.roles if
+                    len(dictionary.roles[r]['types']) == 1]:
                 if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
                     cand_types.append(dictionary.roles[role]['types'][0])
-                    #print role
             for t in dictionary.types:
                 if len(set(bow) & set(dictionary.types[t]['words'])) > 0:
                     cand_types.append(t)
-                    #print t
             if len(set(cand_types)) == 1:
                 schema_types = dictionary.types[cand_types[0]]['schema_types']
             else:
                 return
-
-        #print schema_types
 
         # Matching type
         for t in dictionary.types[tpta_type]['schema_types']:
@@ -923,22 +927,20 @@ class Description():
         elif 'Person' in schema_types:
             self.type_match = -1
 
-
     def match_role(self):
+        '''
+        Match entity and description role (e.g. minister, university, river).
+        '''
         roles = {e.role for e in self.cluster.entities if e.role}
-        #print roles
         if not roles:
             return
 
-        role_match = 0
-
-        # Match schema.org types
+        # Match schema.org and DBpedia ontology types
         schema_types = []
         if self.document.get('schema_type'):
             schema_types += self.document.get('schema_type')
         if self.document.get('dbo_type'):
             schema_types += self.document.get('dbo_type')
-
         if schema_types:
             for role in roles:
                 for t in dictionary.roles[role]['schema_types']:
@@ -948,13 +950,13 @@ class Description():
 
         # Match first sentence abstract
         abstract = self.document.get('abstract')
-        if abstract:
-            sentence = abstract[:abstract.find('. ')]
-            bow = utilities.tokenize(utilities.normalize(sentence))
-            for role in roles:
-                if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
-                    self.role_match = 1
-                    return
+        sentence = utilities.segment(abstract).next()
+        bow = [utilities.normalize(t) for t in
+            utilities.tokenize(sentence, False)]
+        for role in roles:
+            if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
+                self.role_match = 1
+                return
 
         # Check for conflict
         if schema_types:
@@ -962,94 +964,113 @@ class Description():
                 for t in dictionary.roles[role]['schema_types']:
                     if t in schema_types:
                         self.role_match = -1
-                        return
-        if abstract:
-            for role in [r for r in dictionary.roles if r not in roles]:
-                if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
-                    self.role_match = -1
-                    return
 
+    def match_spec(self):
+        '''
+        Match the specification between brackets in the description uri with
+        the window surrounding the entity.
+        '''
+        if not self.document.get('spec'):
+            return
+
+        spec_stems = [w[:int(math.ceil(len(w) * 0.8))] for w in
+            self.document.get('spec').split() if len(w) > 3]
+        if not spec_stems:
+            return
+
+        window = []
+        for e in self.cluster.entities:
+            window += e.window_left + e.window_right
+        if not window:
+            return
+
+        for s in spec_stems:
+            for w in window:
+                if w.startswith(s):
+                    self.spec_match = 1
+                    break
+
+    def match_keywords(self):
+        '''
+        Match DBpedia category keywords with the article ocr.
+        '''
+        if not self.document.get('keyword'):
+            return
+
+        unwanted_keys = ['nederland', 'nederlands', 'nederlandse', 'amsterdam',
+            'amsterdams', 'amsterdamse']
+        key_stems = [w[:int(math.ceil(len(w) * 0.8))] for w in
+            self.document.get('keyword') if w not in unwanted_keys]
+        if not key_stems:
+            return
+
+        ocr = self.cluster.entities[0].context.ocr
+        bow = [utilities.normalize(t) for t in utilities.tokenize(ocr)]
+
+        key_match = 0
+        for s in key_stems:
+            for w in bow:
+                if w.startswith(s):
+                    key_match += 1
+
+        self.cat_match = math.tanh(key_match)
 
     def match_subjects(self):
+        '''
+        Match the subject areas identified for the article with the DBpedia
+        abstract.
+        '''
         subjects = self.cluster.entities[0].context.subjects
         if not subjects:
             return
 
-        subject_match = 0
         abstract = self.document.get('abstract')
-        if abstract:
-            bow = utilities.tokenize(utilities.normalize(abstract))
-            for subject in subjects:
+        bow = [utilities.normalize(t) for t in utilities.tokenize(abstract)]
+
+        subject_match = 0
+        for subject in subjects:
+            words = dictionary.subjects[subject]
+            for role in dictionary.roles:
+                if subject in dictionary.roles[role]['subjects']:
+                    words += dictionary.roles[role]['words']
+            if len(set(words) & set(bow)) > 0:
+                subject_match += 1
+
+        # Check for conflicts
+        if subject_match == 0:
+            for subject in [s for s in dictionary.subjects if s not in
+                    subjects]:
                 words = dictionary.subjects[subject]
                 for role in dictionary.roles:
                     if subject in dictionary.roles[role]['subjects']:
-                        words += dictionary.roles[role]['words']
+                        if len(set(dictionary.roles[role]['subjects']) &
+                                set(subjects)) == 0:
+                            words += dictionary.roles[role]['words']
                 if len(set(words) & set(bow)) > 0:
-                    subject_match += 1
+                    subject_match = -1
 
-            # Check for conflict
-            if subject_match == 0:
-                for subject in [s for s in dictionary.subjects if s not in
-                        subjects]:
-                    words = dictionary.subjects[subject]
-                    for role in dictionary.roles:
-                        if subject in dictionary.roles[role]['subjects']:
-                            if len(set(dictionary.roles[role]['subjects']) &
-                                    set(subjects)) == 0:
-                                words += dictionary.roles[role]['words']
-                    if len(set(words) & set(bow)) > 0:
-                        subject_match = -1
-                        break
-
-        self.subject_match = subject_match
-
+        if subject_match > 0:
+            self.subject_match = math.tanh(subject_match)
+        elif subject_match < -1:
+            self.subject_match = math.tanh(subject_match + 1)
 
     def match_entities(self):
-        entity_match = 0
-        excluded_entities = ['Nederland', 'Nederlandse', 'Amsterdam', 'Amsterdamse']
-        found_entities = []
-        abstract = self.document.get('abstract')
-        if abstract:
-            entity_list = [e.text for e in self.cluster.entities[0].context.entities
-                    if e.valid and self.cluster.entities[0].text.find(e.text)
-                    == -1 and e.text not in excluded_entities]
-            for entity in entity_list:
-                if entity not in found_entities and abstract.find(entity) > -1:
-                    found_entities.append(entity)
-                    entity_match += 1
-        entity_match = entity_match if entity_match < 3 else 3
-        self.entity_match = entity_match
+        '''
+        Match other entities appearing in the article with DBpedia abstract.
+        '''
+        unwanted_entities = ['nederland', 'nederlands', 'nederlandse',
+            'amsterdam', 'amsterdams', 'amsterdamse']
+        unwanted_entities += [e.norm for e in self.cluster.entities]
 
+        entities = [e.norm for e in self.cluster.entities[0].context.entities
+            if e.valid and e.norm not in unwanted_entities]
+        entities = list(set(entities))
 
-    def match_spec(self):
-        if self.document.get('spec'):
-            spec = self.document.get('spec')
-            spec_words = [w[:int(math.ceil(len(w) * 0.75))] for w in
-                    filter(None, re.split("[_\- ]+", spec)) if len(w) > 3]
-            if not spec_words:
-                return
-            window = []
-            for e in self.cluster.entities:
-                window += e.window_left + e.window_right
-            if not window:
-                return
-            spec_match = 0
-            for word in spec_words:
-                for w in window:
-                    if w.startswith(word):
-                        spec_match += 1
-                        break
-            self.spec_match = spec_match
+        abstract = utilities.normalize(self.document.get('abstract'))
 
+        found = [e for e in entities if abstract.find(e) > -1]
 
-    def match_cat(self):
-        categories = self.document.get('keyword')
-        if not categories:
-            return
-        ocr = self.cluster.entities[0].context.ocr
-        tokens = utilities.tokenize(utilities.normalize(ocr))
-        self.cat_match = len(set(categories) & set(tokens))
-        #print self.cat_match
+        self.entity_match = math.tanh(len(found))
 
 
 class Result():

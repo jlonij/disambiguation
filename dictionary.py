@@ -28,7 +28,7 @@ titles = ['heer', 'hr', 'dhr', 'meneer', 'mevrouw', 'mevr', 'mw', 'mej',
 
 types = {
     'person': {
-        'schema_types': ['Person', 'Agent'],
+        'schema_types': ['Person'],
         'words': ['familie', 'zoon', 'dochter', 'persoon', 'geboren',
             'overleden', 'dood', 'man', 'vrouw', 'leven', 'echtgenoot',
             'echtgenote', 'vader', 'moeder']

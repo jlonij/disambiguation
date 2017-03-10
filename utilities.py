@@ -84,11 +84,19 @@ def get_last_name(s, exclude_first_part=False):
 
     return last_name
 
-def tokenize(text):
+def segment(text):
+    '''
+    Split text into sentences using SegTok segmenter.
+    '''
+    return split_multi(text)
+
+def tokenize(text, segment=True):
     '''
     Tokenize text using SegTok segmenter and tokenizer.
     '''
+    sentences = split_multi(text) if segment else text
+
     tokens = []
-    for sentence in split_multi(text):
-        tokens += [t for t in word_tokenizer(sentence) if len(t) > 1]
+    for s in sentences:
+        tokens += [t for t in word_tokenizer(s) if len(t) > 1]
     return tokens
