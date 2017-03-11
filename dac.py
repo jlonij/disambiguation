@@ -125,13 +125,15 @@ class EntityLinker():
                 linked.append(cluster)
 
         # Return the result for each (unique) entity
+        get_candidates = True if ne else False
+
         results = []
         to_return = [entity_to_link] if ne else self.context.entities
         for entity in to_return:
             if entity.text not in [result['text'] for result in results]:
                 for cluster in linked:
                     if entity in cluster.entities:
-                        result = cluster.result.get_dict()
+                        result = cluster.result.get_dict(get_candidates)
                         result['text'] = entity.text
                         results.append(result)
         return results
@@ -471,7 +473,7 @@ class Cluster():
         # If entity is valid, try to query Solr for candidate descriptions
         try:
             cand_list = CandidateList(solr_connection, solr_rows,
-                self.entities[0].norm, self.entities[0].last_part)
+                self.entities[0].norm, self.entities[0].last_part, model)
         except Exception as msg:
             self.result = Result("Failed to query solr: " + str(msg))
             return self.result
@@ -485,7 +487,7 @@ class Cluster():
         # Filter descriptions according to hard criteria, e.g. name conlfict
         cand_list.filter()
         if len(cand_list.filtered_candidates) == 0:
-            self.result = Result("Name or date conflict")
+            self.result = Result("Name or date conflict", cand_list=cand_list)
             return self.result
 
         # If any candidates remain, calculate their feature values and
@@ -493,13 +495,15 @@ class Cluster():
         self.quotes_total = self.get_total_quotes()
         self.type_ratios = self.get_type_ratios()
 
-        cand_list.rank(model)
+        cand_list.rank()
         best_match = cand_list.ranked_candidates[0]
         if best_match.prob >= min_prob:
-            self.result = Result("Predicted link", best_match.prob, best_match)
+            self.result = Result("Predicted link", best_match.prob, best_match,
+                cand_list=cand_list)
         else:
             self.result = Result("Probability too low for: " +
-                best_match.document.get('label'), best_match.prob)
+                best_match.document.get('label'), best_match.prob,
+                    cand_list=cand_list)
         return self.result
 
     def get_total_quotes(self):
@@ -531,11 +535,13 @@ class CandidateList():
     List of candidate links for an entity cluster.
     '''
 
-    def __init__(self, solr_connection, solr_rows, norm, last_part):
+    def __init__(self, solr_connection, solr_rows, norm, last_part, model=None):
         '''
         Query the Solr index.
         '''
+        self.solr_connection = solr_connection
         self.solr_rows = solr_rows
+        self.model = model
 
         queries = []
 
@@ -580,21 +586,19 @@ class CandidateList():
             if c.name_conflict == 0 and c.date_match > -1:
                 self.filtered_candidates.append(c)
 
-    def rank(self, model):
+    def rank(self):
         '''
         Rank candidates according to trained model.
         '''
-        self.model = model
-
         self.solr_max_score, self.cand_max_score = self.get_max_score()
         self.solr_inlinks_total, self.cand_inlinks_total = self.get_total_inlinks()
 
         for c in self.filtered_candidates:
             c.calculate_prob_features()
             example = []
-            for j in range(len(model.features)):
-                example.append(float(getattr(c, model.features[j])))
-            c.prob = model.predict(example)
+            for j in range(len(self.model.features)):
+                example.append(float(getattr(c, self.model.features[j])))
+            c.prob = self.model.predict(example)
 
         self.ranked_candidates = sorted(self.filtered_candidates,
             key=attrgetter('prob'), reverse=True)
@@ -1122,7 +1126,7 @@ class Result():
     The link result for an entity cluster.
     '''
 
-    def __init__(self, reason, prob=0.0, description=None):
+    def __init__(self, reason, prob=0.0, description=None, cand_list=None):
         '''
         Set the result attributes.
         '''
@@ -1141,7 +1145,15 @@ class Result():
             self.label = None
             self.features = None
 
-    def get_dict(self):
+        if cand_list:
+            self.candidates = []
+            for c in cand_list.candidates:
+                d = {'id': c.document.get('id'), 'features': {}}
+                for f in cand_list.model.features:
+                    d['features'][f] = float(getattr(c, f))
+                self.candidates.append(d)
+
+    def get_dict(self, candidates=False):
         '''
         Return the result dictionary.
         '''
@@ -1151,6 +1163,8 @@ class Result():
         result['link'] = self.link
         result['label'] = self.label
         result['features'] = self.features
+        if candidates:
+            result['candidates'] = self.candidates
         return result
 
 
