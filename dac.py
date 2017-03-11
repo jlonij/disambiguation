@@ -66,9 +66,6 @@ class EntityLinker():
         # Get context information (article ocr and recognized entities)
         self.context = Context(url, self.tpta_url)
 
-        # Group related entities into clusters
-        clusters_to_link = self.get_clusters(self.context.entities)
-
         # If a specific ne was requested, search for a corresponding entity in
         # the list of recognized entities
         if ne:
@@ -81,6 +78,10 @@ class EntityLinker():
             if not entity_to_link:
                 entity_to_link = Entity(ne, None, self.context)
                 self.context.entities.append(entity_to_link)
+
+        # Group related entities into clusters
+        clusters_to_link = self.get_clusters(self.context.entities)
+        if ne:
             # Link only the cluster to which the entity belongs
             clusters_to_link = [c for c in clusters_to_link if entity_to_link
                 in c.entities]
@@ -285,8 +286,11 @@ class Context():
         doc_pos = 0
         for node in xml.iter():
             if node.text and len(node.text) > 1:
-                entity = Entity(node.text.decode('utf-8'), node.tag,
-                    self, doc_pos)
+                if isinstance(node.text, str):
+                    t = node.text.decode('utf-8')
+                else:
+                    t = node.text
+                entity = Entity(t, node.tag, self, doc_pos)
                 doc_pos = entity.end_pos if entity.end_pos > -1 else doc_pos
                 entities.append(entity)
         return entities
