@@ -572,7 +572,7 @@ class CandidateList():
 
     def filter(self):
         '''
-        Filter descriptions according to hard criteria, e.g. name conlfict
+        Filter descriptions according to hard criteria, e.g. name conlfict.
         '''
         self.filtered_candidates = []
         for c in self.candidates:
@@ -734,14 +734,15 @@ class Description():
         match_label = self.document.get('pref_label')
         ne = self.cluster.entities[0].norm
 
-        if match_label == ne:
-            self.main_title_exact_match = 1
-        elif match_label.endswith(ne):
-            self.main_title_end_match = 1
-        elif match_label.startswith(ne):
-            self.main_title_start_match = 1
-        elif match_label.find(ne) > -1:
-            self.main_title_match = 1
+        if len(set(ne.split()) - set(match_label.split())) == 0:
+            if match_label == ne:
+                self.main_title_exact_match = 1
+            elif match_label.endswith(ne):
+                self.main_title_end_match = 1
+            elif match_label.startswith(ne):
+                self.main_title_start_match = 1
+            elif match_label.find(ne) > -1:
+                self.main_title_match = 1
 
     def match_alt_label(self):
         '''
@@ -754,14 +755,15 @@ class Description():
         ne = self.cluster.entities[0].norm
 
         for label in match_label:
-            if label == ne:
-                self.title_exact_match += 1
-            elif label.endswith(ne):
-                self.title_end_match += 1
-            elif label.startswith(ne):
-                self.title_start_match += 1
-            elif label.find(ne) > -1:
-                self.title_match += 1
+            if len(set(ne.split()) - set(label.split())) == 0:
+                if label == ne:
+                    self.title_exact_match += 1
+                elif label.endswith(ne):
+                    self.title_end_match += 1
+                elif label.startswith(ne):
+                    self.title_start_match += 1
+                elif label.find(ne) > -1:
+                    self.title_match += 1
 
         self.title_match_fraction = (self.title_match /
             float(len(match_label)))
