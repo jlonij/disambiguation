@@ -33,10 +33,15 @@ from bottle import template
 
 # Fix all path related stuff in one go ;)
 # Don't do this at home kids!
+'''
 ABS_PATH = '/var/www/dac/'
 os.environ['PATH_INFO'] = ABS_PATH
 os.chdir(os.path.dirname(ABS_PATH))
 sys.path.insert(0, os.path.dirname(ABS_PATH))
+'''
+
+abs_path = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, abs_path)
 
 import dac
 
@@ -140,4 +145,7 @@ def index():
     response.set_header('Content-Type', 'application/json')
     return resp
 
-application = default_app()
+if __name__ == '__main__':
+    run(host='localhost', port=5002)
+else:
+    application = default_app()
