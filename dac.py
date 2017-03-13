@@ -1152,6 +1152,8 @@ class Result():
                 for f in cand_list.model.features:
                     d['features'][f] = float(getattr(c, f))
                 self.candidates.append(d)
+        else:
+            self.candidates = None
 
     def get_dict(self, candidates=False):
         '''
