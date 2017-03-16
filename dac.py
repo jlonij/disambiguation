@@ -41,11 +41,14 @@ class EntityLinker():
     Link named entity mention(s) in an article to a DBpedia description.
     '''
 
-    def __init__(self, debug=None, model=None, tpta_url=None, solr_url=None):
+    def __init__(self, tpta_url=None, solr_url=None, model=None, debug=False,
+            features=False, candidates=False):
         '''
         Initialize the disambiguation model and Solr connection.
         '''
-        self.debug = debug
+        self.tpta_url = tpta_url if tpta_url else TPTA_URL
+        self.solr_url = solr_url if solr_url else SOLR_URL
+        self.solr_connection = solr.SolrConnection(self.solr_url)
 
         if model == 'svm':
             self.model = models.LinearSVM()
@@ -54,10 +57,9 @@ class EntityLinker():
         else:
             self.model = models.LinearSVM()
 
-        self.tpta_url = tpta_url if tpta_url else TPTA_URL
-        self.solr_url = solr_url if solr_url else SOLR_URL
-
-        self.solr_connection = solr.SolrConnection(self.solr_url)
+        self.debug = debug
+        self.features = features
+        self.candidates = candidates
 
     def link(self, url, ne=None):
         '''
@@ -125,17 +127,17 @@ class EntityLinker():
                 linked.append(cluster)
 
         # Return the result for each (unique) entity
-        get_candidates = True if ne else False
-
         results = []
         to_return = [entity_to_link] if ne else self.context.entities
         for entity in to_return:
             if entity.text not in [result['text'] for result in results]:
                 for cluster in linked:
                     if entity in cluster.entities:
-                        result = cluster.result.get_dict(get_candidates)
+                        result = cluster.result.get_dict(features=self.features,
+                            candidates=self.candidates)
                         result['text'] = entity.text
-                        results.append(result)
+                        if self.debug or 'link' in result:
+                            results.append(result)
         return results
 
     def get_clusters(self, entities):
@@ -502,7 +504,7 @@ class Cluster():
                 cand_list=cand_list)
         else:
             self.result = Result("Probability too low for: " +
-                best_match.document.get('label'), best_match.prob,
+                best_match.document.get('label'), best_match.prob, best_match,
                     cand_list=cand_list)
         return self.result
 
@@ -1134,16 +1136,18 @@ class Result():
         self.prob = prob
         self.description = description
 
+        self.link = None
+        self.label = None
+        self.features = None
+        self.candidates = None
+
         if description:
-            self.link = description.document.get('id')
-            self.label = description.document.get('label')
             self.features = {}
             for f in description.cand_list.model.features:
                 self.features[f] = float(getattr(description, f))
-        else:
-            self.link = None
-            self.label = None
-            self.features = None
+            if self.prob > MIN_PROB:
+                self.link = description.document.get('id')
+                self.label = description.document.get('label')
 
         if cand_list:
             self.candidates = []
@@ -1152,20 +1156,22 @@ class Result():
                 for f in cand_list.model.features:
                     d['features'][f] = float(getattr(c, f))
                 self.candidates.append(d)
-        else:
-            self.candidates = None
 
-    def get_dict(self, candidates=False):
+    def get_dict(self, features=False, candidates=False):
         '''
         Return the result dictionary.
         '''
         result = {}
-        result['prob'] = self.prob
         result['reason'] = self.reason
-        result['link'] = self.link
-        result['label'] = self.label
-        result['features'] = self.features
-        if candidates:
+        if self.prob:
+            result['prob'] = self.prob
+        if self.link:
+            result['link'] = self.link
+        if self.label:
+            result['label'] = self.label
+        if features and self.features:
+            result['features'] = self.features
+        if candidates and self.candidates:
             result['candidates'] = self.candidates
         return result
 
@@ -1175,7 +1181,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
     else:
         import pprint
-        linker = EntityLinker(debug=True)
+        linker = EntityLinker(debug=True, features=False, candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:

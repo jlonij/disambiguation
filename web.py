@@ -19,7 +19,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-
 import os
 import sys
 
@@ -57,7 +56,6 @@ stats = {}
 stats['urls_total'] = 0
 stats['links_total'] = 0
 
-
 def mk_md5sums():
     with os.popen(FIND) as fh:
         sums = fh.read()
@@ -68,7 +66,6 @@ def mk_md5sums():
             sums1[i[0]] = i[1][2:]
     return sums1
 
-
 def test_errors():
     nr = 0
     for fname in os.listdir('/tmp/'):
@@ -76,8 +73,62 @@ def test_errors():
             nr += 1
     return nr
 
+def array_to_utf(a):
+    autf = []
+    for v in a:
+        if isinstance(v, unicode):
+            autf.append(v.encode('utf-8'))
+        elif isinstance(v, dict):
+            autf.append(dict_to_utf(v))
+        elif isinstance(v, list):
+            autf.append(array_to_utf(v))
+        else:
+            autf.append(v)
+    return autf
 
-@route('/info')
+def dict_to_utf(d):
+    dutf = {}
+    for k,v in d.iteritems():
+        if isinstance(v, unicode):
+            dutf[k] = v.encode('utf-8')
+        elif isinstance(v, list):
+            dutf[k] = array_to_utf(v)
+        elif isinstance(v, dict):
+            dutf[k] = dict_to_utf(v)
+        else:
+            dutf[k] = v
+    return dutf
+
+@route('/')
+def index():
+    os.chdir(os.path.dirname(__file__))
+
+    url = request.params.get('url')
+    ne = request.params.get('ne')
+
+    model = request.params.get('model')
+    debug = request.params.get('debug')
+    features = request.params.get('features')
+    candidates = request.params.get('candidates')
+
+    callback = request.params.get('callback')
+
+    if not url:
+        abort(400, "No fitting argument (\"url=...\") given.")
+
+    linker = dac.EntityLinker(model=model, debug=debug, features=features,
+        candidates=candidates)
+    result = linker.link(url, ne)
+
+    result = array_to_utf(result)
+    result = {'linkedNEs': result}
+    if callback:
+        resp = callback + '(' + str(result) + ');'
+
+    response.set_header('Content-Type', 'application/json')
+    return result
+
+route('/info')
 def info():
 
     try:
@@ -99,49 +150,6 @@ def info():
             'test_report': test_report,
             'test_report_stamp': test_report_stamp,
             'stats': stats}
-    response.set_header('Content-Type', 'application/json')
-    return resp
-
-
-@route('/')
-def index():
-    os.chdir(os.path.dirname(__file__))
-
-    url = request.params.get('url')
-    ne = request.params.get('ne')
-    callback = request.params.get('callback')
-    debug = request.params.get('debug')
-    features = request.params.get('features')
-    model = request.params.get('model')
-
-    if not url:
-        abort(400, "No fitting argument (\"url=...\") given.")
-
-    linker = dac.EntityLinker(model=model)
-    results = linker.link(url, ne)
-
-    resp = []
-    for result in results:
-        if result['link'] or debug:
-            r = {}
-            r['text'] = result['text'].encode('utf-8')
-            if debug:
-                r['reason'] = result['reason'].encode('utf-8')
-                if result['prob'] > 0:
-                    r['prob'] = result['prob']
-            if result['link']:
-                r['link'] = result['link'].encode('utf-8')
-                r['label'] = result['label'].encode('utf-8')
-                r['prob'] = result['prob']
-                if features:
-                    r['features'] = result['features']
-                    #r['features'] = {key.encode('utf-8'):value for key,value in result['features'].items()}
-            resp.append(r)
-
-    resp = {'linkedNEs': resp}
-    if callback:
-        resp = callback + '(' + str(resp) + ');'
-
     response.set_header('Content-Type', 'application/json')
     return resp
 
