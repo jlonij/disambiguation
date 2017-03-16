@@ -123,7 +123,7 @@ def index():
     result = array_to_utf(result)
     result = {'linkedNEs': result}
     if callback:
-        resp = callback + '(' + str(result) + ');'
+        result = callback + '(' + str(result) + ');'
 
     response.set_header('Content-Type', 'application/json')
     return result
