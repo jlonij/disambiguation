@@ -42,7 +42,7 @@ class EntityLinker():
     '''
 
     def __init__(self, tpta_url=None, solr_url=None, model=None, debug=False,
-            features=False, candidates=False):
+            features=False, candidates=False, training=False):
         '''
         Initialize the disambiguation model and Solr connection.
         '''
@@ -60,6 +60,7 @@ class EntityLinker():
         self.debug = debug
         self.features = features
         self.candidates = candidates
+        self.training = training
 
     def link(self, url, ne=None):
         '''
@@ -94,7 +95,7 @@ class EntityLinker():
         while clusters_to_link:
             cluster = clusters_to_link.pop()
             result = cluster.link(self.solr_connection, SOLR_ROWS,
-                self.model, MIN_PROB)
+                self.model, MIN_PROB, self.training)
 
             # If a cluster consists of multiple entities and could not be linked
             # or was not linked to a person, split it up and return the parts to
@@ -463,7 +464,7 @@ class Cluster():
         '''
         self.entities = entities
 
-    def link(self, solr_connection, solr_rows, model, min_prob):
+    def link(self, solr_connection, solr_rows, model, min_prob, training):
         '''
         Get the link result for the cluster.
         '''
@@ -497,7 +498,7 @@ class Cluster():
         self.quotes_total = self.get_total_quotes()
         self.type_ratios = self.get_type_ratios()
 
-        cand_list.rank()
+        cand_list.rank(training)
         best_match = cand_list.ranked_candidates[0]
         if best_match.prob >= min_prob:
             self.result = Result("Predicted link", best_match.prob, best_match,
@@ -588,19 +589,22 @@ class CandidateList():
             if c.name_conflict == 0 and c.date_match > -1:
                 self.filtered_candidates.append(c)
 
-    def rank(self):
+    def rank(self, training):
         '''
         Rank candidates according to trained model.
         '''
-        self.solr_max_score, self.cand_max_score = self.get_max_score()
-        self.solr_inlinks_total, self.cand_inlinks_total = self.get_total_inlinks()
+        self.solr_max_score = self.get_max_score()
+        self.solr_inlinks_total = self.get_total_inlinks()
 
         for c in self.filtered_candidates:
             c.calculate_prob_features()
-            example = []
-            for j in range(len(self.model.features)):
-                example.append(float(getattr(c, self.model.features[j])))
-            c.prob = self.model.predict(example)
+            if training:
+                c.prob = 0.5
+            else:
+                example = []
+                for j in range(len(self.model.features)):
+                    example.append(float(getattr(c, self.model.features[j])))
+                c.prob = self.model.predict(example)
 
         self.ranked_candidates = sorted(self.filtered_candidates,
             key=attrgetter('prob'), reverse=True)
@@ -610,73 +614,33 @@ class CandidateList():
         Get the maximum score for the result set.
         '''
         solr_max_score = 0
-        for c in self.candidates:
+        for c in self.filtered_candidates:
             if c.document.get('score') > solr_max_score:
                 solr_max_score = c.document.get('score')
-        cand_max_score = 0
-        for c in self.filtered_candidates:
-            if c.document.get('score') > cand_max_score:
-                cand_max_score = c.document.get('score')
-        return solr_max_score, cand_max_score
+        return solr_max_score
 
     def get_total_inlinks(self):
         '''
         Get the total number of inlinks for the result set.
         '''
         solr_inlinks_total = 0
-        for c in self.candidates:
-            solr_inlinks_total += c.document.get('inlinks')
-        cand_inlinks_total = 0
         for c in self.filtered_candidates:
-            cand_inlinks_total += c.document.get('inlinks')
-        return solr_inlinks_total, cand_inlinks_total
+            solr_inlinks_total += c.document.get('inlinks')
+        return solr_inlinks_total
 
 
 class Description():
     '''
     Description of a link candidate.
     '''
-
-    main_title_match = 0
-    main_title_start_match = 0
-    main_title_end_match = 0
-    main_title_exact_match = 0
-
-    title_match = 0
-    title_start_match = 0
-    title_end_match = 0
-    title_exact_match = 0
-
-    title_match_fraction = 0
-    title_start_match_fraction = 0
-    title_end_match_fraction = 0
-    title_exact_match_fraction = 0
-
-    last_part_match = 0
-    last_part_match_fraction = 0
-    mean_levenshtein_ratio = 0
-    name_conflict = 0
-
-    date_match = 0
-
-    solr_iteration = 0
-    solr_pos = 0
-    cand_pos = 0
-    solr_score = 0
-    cand_score = 0
-    solr_inlinks = 0
-    cand_inlinks = 0
-    lang = 0
-    disambig = 0
-
-    quotes = 0
-
-    type_match = 0
-    role_match = 0
-    spec_match = 0
-    cat_match = 0
-    subject_match = 0
-    entity_match = 0
+    features = [
+        'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
+        'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
+        'last_part_match', 'levenshtein_ratio', 'name_conflict', 'date_match',
+        'solr_iteration', 'solr_position', 'solr_score', 'inlinks', 'lang',
+        'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
+        'keyword_match', 'subject_match', 'entity_match'
+    ]
 
     def __init__(self, document, cand_list, cluster):
         '''
@@ -685,6 +649,9 @@ class Description():
         self.document = document
         self.cand_list = cand_list
         self.cluster = cluster
+
+        for f in self.features:
+            setattr(self, f, 0)
 
     def calculate_rule_features(self):
         '''
@@ -702,29 +669,25 @@ class Description():
         Calculate the additional feature values needed for probability-based
         candidate ranking.
         '''
+        # Solr iteration
         self.solr_iteration = self.cand_list.solr_iteration
 
-        # Position
-        self.position = self.cand_list.solr_response.results.index(self.document)
-        self.solr_pos = (self.position + 1) / float(self.cand_list.solr_rows)
-        self.cand_pos = (self.cand_list.filtered_candidates.index(self) + 1) / float(self.cand_list.solr_rows)
+        # Solr position (relative to other remaining candidates)
+        pos = self.cand_list.filtered_candidates.index(self) + 1
+        self.solr_position = pos / float(self.cand_list.solr_rows)
 
-        # Score
+        # Solr score (relative to other remaining candidates)
         if self.cand_list.solr_max_score > 0:
             self.solr_score = self.document.get('score') / float(self.cand_list.solr_max_score)
-        if self.cand_list.cand_max_score > 0:
-            self.cand_score = self.document.get('score') / float(self.cand_list.cand_max_score)
 
         # Inlinks
         if self.cand_list.solr_inlinks_total > 0:
-            self.solr_inlinks = self.document.get('inlinks') / float(self.cand_list.solr_inlinks_total)
-        if self.cand_list.cand_inlinks_total > 0:
-            self.cand_inlinks = self.document.get('inlinks') / float(self.cand_list.cand_inlinks_total)
+            self.inlinks = self.document.get('inlinks') / float(self.cand_list.solr_inlinks_total)
 
         self.lang = 1 if self.document.get('lang') == 'nl' else 0
-        self.disambig = 1 if self.document.get('ambig') == 0 else 0
+        self.ambig = 1 if self.document.get('ambig') == 1 else 0
 
-        self.quotes = self.cluster.quotes_total
+        self.quotes = math.tanh(self.cluster.quotes_total)
 
         self.match_type()
         self.match_role()
@@ -742,13 +705,11 @@ class Description():
 
         if len(set(ne.split()) - set(match_label.split())) == 0:
             if match_label == ne:
-                self.main_title_exact_match = 1
+                self.pref_label_exact_match = 1
             elif match_label.endswith(ne):
-                self.main_title_end_match = 1
-            elif match_label.startswith(ne):
-                self.main_title_start_match = 1
+                self.pref_label_end_match = 1
             elif match_label.find(ne) > -1:
-                self.main_title_match = 1
+                self.pref_label_match = 1
 
     def match_alt_label(self):
         '''
@@ -760,24 +721,23 @@ class Description():
 
         ne = self.cluster.entities[0].norm
 
+        alt_label_exact_match = 0
+        alt_label_end_match = 0
+        alt_label_match = 0
         for label in match_label:
             if len(set(ne.split()) - set(label.split())) == 0:
                 if label == ne:
-                    self.title_exact_match += 1
+                    alt_label_exact_match += 1
                 elif label.endswith(ne):
-                    self.title_end_match += 1
-                elif label.startswith(ne):
-                    self.title_start_match += 1
+                    alt_label_end_match += 1
                 elif label.find(ne) > -1:
-                    self.title_match += 1
+                    alt_label_match += 1
 
-        self.title_match_fraction = (self.title_match /
+        self.alt_label_exact_match = (alt_label_exact_match /
             float(len(match_label)))
-        self.title_start_match_fraction = (self.title_start_match /
+        self.alt_label_end_match = (alt_label_end_match /
             float(len(match_label)))
-        self.title_end_match_fraction = (self.title_end_match /
-            float(len(match_label)))
-        self.title_exact_match_fraction = (self.title_exact_match /
+        self.alt_label_match = (alt_label_match /
             float(len(match_label)))
 
     def match_last_part(self):
@@ -825,6 +785,7 @@ class Description():
         if alt_label:
             match_label += alt_label
 
+        last_part_match = 0
         for l in match_label:
 
             # If the last words of the title and the ne match approximately,
@@ -833,7 +794,7 @@ class Description():
 
                 # Single-word entities: match immediately
                 if len(ne.split()) == 1:
-                    self.last_part_match += 1
+                    last_part_match += 1
                     continue
 
                 # Multi-word entities: check for conflicts among preceding parts
@@ -867,9 +828,9 @@ class Description():
                 if skip:
                     continue
                 else:
-                    self.last_part_match += 1
+                    last_part_match += 1
 
-        self.last_part_match_fraction = (self.last_part_match /
+        self.last_part_match = (last_part_match /
             float(len(match_label)))
 
     def get_name_conflict(self):
@@ -877,8 +838,8 @@ class Description():
         Determine if the description has a name conflict, i.e. not a single
         sufficiently matching label was found.
         '''
-        features = ['main_title_exact_match', 'main_title_end_match',
-            'title_exact_match', 'title_end_match', 'last_part_match']
+        features = ['pref_label_exact_match', 'pref_label_end_match',
+            'alt_label_exact_match', 'alt_label_end_match', 'last_part_match']
         if sum([getattr(self, f) for f in features]) == 0:
             self.name_conflict = 1
 
@@ -891,7 +852,7 @@ class Description():
             match_label += self.document.get('alt_label')
         ne = self.cluster.entities[0].norm
         ratio_sum = sum([Levenshtein.ratio(ne, l) for l in match_label])
-        self.mean_levenshtein_ratio = ratio_sum / float(len(match_label))
+        self.levenshtein_ratio = ratio_sum / float(len(match_label))
 
     def match_date(self):
         '''
@@ -960,6 +921,7 @@ class Description():
                 for t in dictionary.types[r]['schema_types']:
                     if t in schema_types:
                         self.type_match += type_ratios[r]
+                        break
         if self.type_match:
             return
 
@@ -1063,7 +1025,7 @@ class Description():
                 if w.startswith(s):
                     key_match += 1
 
-        self.cat_match = math.tanh(key_match)
+        self.keyword_match = math.tanh(key_match)
 
     def match_subjects(self):
         '''
@@ -1143,18 +1105,18 @@ class Result():
 
         if description:
             self.features = {}
-            for f in description.cand_list.model.features:
+            for f in description.features:
                 self.features[f] = float(getattr(description, f))
-            if self.prob > MIN_PROB:
+            if self.prob >= MIN_PROB:
                 self.link = description.document.get('id')
                 self.label = description.document.get('label')
 
         if cand_list:
             self.candidates = []
-            for c in cand_list.candidates:
-                d = {'id': c.document.get('id'), 'features': {}}
-                for f in cand_list.model.features:
-                    d['features'][f] = float(getattr(c, f))
+            for description in cand_list.candidates:
+                d = {'id': description.document.get('id'), 'features': {}}
+                for f in description.features:
+                    d['features'][f] = float(getattr(description, f))
                 self.candidates.append(d)
 
     def get_dict(self, features=False, candidates=False):
@@ -1181,7 +1143,8 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
     else:
         import pprint
-        linker = EntityLinker(debug=True, features=False, candidates=False)
+        linker = EntityLinker(debug=True, features=True, candidates=False,
+            training=True)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
