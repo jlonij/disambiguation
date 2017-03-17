@@ -701,6 +701,8 @@ class Description():
         '''
         Match the main description label with the normalized entity.
         '''
+        self.non_matching = []
+
         match_label = self.document.get('pref_label')
         ne = self.cluster.entities[0].norm
 
@@ -711,6 +713,10 @@ class Description():
                 self.pref_label_end_match = 1
             elif match_label.find(ne) > -1:
                 self.pref_label_match = 1
+            else:
+                self.non_matching.append(match_label)
+        else:
+            self.non_matching.append(match_label)
 
     def match_alt_label(self):
         '''
@@ -733,6 +739,10 @@ class Description():
                     alt_label_end_match += 1
                 elif label.find(ne) > -1:
                     alt_label_match += 1
+                else:
+                    self.non_matching.append(label)
+            else:
+                self.non_matching.append(label)
 
         self.alt_label_exact_match = (alt_label_exact_match /
             float(len(match_label)))
@@ -746,6 +756,9 @@ class Description():
         Match the last part of the stripped entity with all labels,
         making sure preceding parts (e.g. initials) don't conflict.
         '''
+        if not self.non_matching:
+            return
+
         ne = self.cluster.entities[0].stripped
 
         # Preliminary check for ne's that are longer than the main label:
@@ -782,9 +795,7 @@ class Description():
                 return
 
         # Last part match for qualifing ne's
-        match_label = [main_label]
-        if alt_label:
-            match_label += alt_label
+        match_label = self.non_matching
 
         last_part_match = 0
         for l in match_label:
