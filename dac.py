@@ -598,9 +598,7 @@ class CandidateList():
 
         for c in self.filtered_candidates:
             c.calculate_prob_features()
-            if training:
-                c.prob = 0.5
-            else:
+            if not training:
                 example = []
                 for j in range(len(self.model.features)):
                     example.append(float(getattr(c, self.model.features[j])))
@@ -653,6 +651,8 @@ class Description():
         for f in self.features:
             setattr(self, f, 0)
 
+        self.prob = 0
+
     def calculate_rule_features(self):
         '''
         Calcutate the feature values needed for rule-based candidate filtering.
@@ -678,15 +678,16 @@ class Description():
 
         # Solr score (relative to other remaining candidates)
         if self.cand_list.solr_max_score > 0:
-            self.solr_score = self.document.get('score') / float(self.cand_list.solr_max_score)
+            self.solr_score = (self.document.get('score') /
+                float(self.cand_list.solr_max_score))
 
         # Inlinks
         if self.cand_list.solr_inlinks_total > 0:
-            self.inlinks = self.document.get('inlinks') / float(self.cand_list.solr_inlinks_total)
+            self.inlinks = (self.document.get('inlinks') /
+                float(self.cand_list.solr_inlinks_total))
 
         self.lang = 1 if self.document.get('lang') == 'nl' else 0
         self.ambig = 1 if self.document.get('ambig') == 1 else 0
-
         self.quotes = math.tanh(self.cluster.quotes_total)
 
         self.match_type()
@@ -1090,7 +1091,7 @@ class Result():
     The link result for an entity cluster.
     '''
 
-    def __init__(self, reason, prob=0.0, description=None, cand_list=None):
+    def __init__(self, reason, prob=0, description=None, cand_list=None):
         '''
         Set the result attributes.
         '''
@@ -1114,7 +1115,10 @@ class Result():
         if cand_list:
             self.candidates = []
             for description in cand_list.candidates:
-                d = {'id': description.document.get('id'), 'features': {}}
+                d = {}
+                d['id'] = description.document.get('id')
+                d['prob'] = description.prob
+                d['features'] = {}
                 for f in description.features:
                     d['features'][f] = float(getattr(description, f))
                 self.candidates.append(d)
