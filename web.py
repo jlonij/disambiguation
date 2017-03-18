@@ -30,22 +30,10 @@ from bottle import route
 from bottle import run
 from bottle import template
 
-# Fix all path related stuff in one go ;)
-# Don't do this at home kids!
-'''
-ABS_PATH = '/var/www/dac/'
-os.environ['PATH_INFO'] = ABS_PATH
-os.chdir(os.path.dirname(ABS_PATH))
-sys.path.insert(0, os.path.dirname(ABS_PATH))
-'''
-
 abs_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, abs_path)
 
 import dac
-
-# md5sums for all file, keeps things in sync
-FIND = "find . -type f -not -path \*.pyc -not -path \*.swp -exec md5sum '{}' ';'"
 
 # Path to doctests output (from cron)
 DOCTEST_OUTPUT = '/tmp/dac_test_results'
@@ -57,7 +45,9 @@ stats['urls_total'] = 0
 stats['links_total'] = 0
 
 def mk_md5sums():
-    with os.popen(FIND) as fh:
+    find = "find . -type f -not -path \*.pyc -not -path \*.swp "
+    find += "-exec md5sum '{}' ';'"
+    with os.popen(find) as fh:
         sums = fh.read()
     sums = [[f for f in l.split(' ') if f.strip()] for l in sums.split('\n')]
     sums1 = {}
@@ -72,6 +62,33 @@ def test_errors():
         if fname.startswith(DOCTEST_OUTPUT_ERROR_PREFIX):
             nr += 1
     return nr
+
+route('/info')
+def info():
+    '''
+    Return service information.
+    '''
+    try:
+        test_report_stamp = time.ctime(os.path.getctime(DOCTEST_OUTPUT))
+    except:
+        test_report_stamp = ''
+
+    try:
+        with open('/tmp/dac_test_results') as fh:
+            test_report = fh.read()
+    except:
+        test_report = ''
+
+    resp = {'sums': mk_md5sums(),
+            'solr': SOLR_URL,
+            'tpta': TPTA_URL,
+            'test_errors': test_errors(),
+            'test_report': test_report,
+            'test_report_stamp': test_report_stamp,
+            'stats': stats}
+
+    response.set_header('Content-Type', 'application/json')
+    return resp
 
 def array_to_utf(a):
     autf = []
@@ -101,16 +118,15 @@ def dict_to_utf(d):
 
 @route('/')
 def index():
-    os.chdir(os.path.dirname(__file__))
-
+    '''
+    Return the entity linker result.
+    '''
     url = request.params.get('url')
     ne = request.params.get('ne')
-
     model = request.params.get('model')
     debug = request.params.get('debug')
     features = request.params.get('features')
     candidates = request.params.get('candidates')
-
     callback = request.params.get('callback')
 
     if not url:
@@ -127,31 +143,6 @@ def index():
 
     response.set_header('Content-Type', 'application/json')
     return result
-
-route('/info')
-def info():
-
-    try:
-        test_report_stamp = time.ctime(
-                                os.path.getctime(DOCTEST_OUTPUT))
-    except:
-        test_report_stamp = ''
-
-    try:
-        with open('/tmp/dac_test_results') as fh:
-            test_report = fh.read()
-    except:
-        test_report = ''
-
-    resp = {'sums': mk_md5sums(),
-            'solr': SOLR_URL,
-            'tpta': TPTA_URL,
-            'test_errors': test_errors(),
-            'test_report': test_report,
-            'test_report_stamp': test_report_stamp,
-            'stats': stats}
-    response.set_header('Content-Type', 'application/json')
-    return resp
 
 if __name__ == '__main__':
     run(host='localhost', port=5002)
