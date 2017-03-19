@@ -147,7 +147,7 @@ roles = {
     'religious_person': {
         'words': ['dominee', 'paus', 'kardinaal', 'aartsbisschop',
             'bisschop', 'monseigneur', 'mgr', 'kapelaan', 'deken',
-            'abt', 'prior', 'pastoor', 'pater', 'predikant',
+            'abt', 'prior', 'pastoor', 'pater', 'predikant', 'st',
             'opperrabbijn', 'rabbijn', 'imam', 'geestelijke', 'frater'],
         'schema_types': ['ChristianBishop', 'Cardinal', 'Cleric', 'Saint',
             'Pope'],
