@@ -327,7 +327,7 @@ class Entity():
         self.role, self.role_form = self.get_role()
 
         self.stripped = self.strip_titles()
-        self.last_part = utilities.get_last_name(self.stripped)
+        self.last_part = utilities.get_last_part(self.stripped)
         self.valid = self.is_valid()
 
         self.alt_type = self.get_alt_type()

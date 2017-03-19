@@ -54,12 +54,12 @@ def normalize(s):
     s = u' '.join(s.split())
     return s
 
-def get_last_name(s, exclude_first_part=False):
+def get_last_part(s, exclude_first_part=False):
     '''
     Extract probable last name from a string, excluding numbers, Roman numerals
     and some well-known suffixes.
     '''
-    last_name = None
+    last_part = None
 
     # Some suffixes that shouldn't qualify as last names
     suffixes = ['jr', 'sr', 'z', 'zn', 'fils']
@@ -72,17 +72,27 @@ def get_last_name(s, exclude_first_part=False):
     for part in reversed(parts):
         if exclude_first_part:
             if parts.index(part) == 0:
-                continue
+                break
         if part.isdigit():
             continue
         if part in suffixes:
             continue
         if re.match(pattern, part, flags=re.IGNORECASE):
             continue
-        last_name = part
+        last_part = part
         break
 
-    return last_name
+    prefixes = ['van', 'de', 'der', 'het', 'von']
+
+    if last_part:
+        for part in reversed(parts[:parts.index(last_part)]):
+            if exclude_first_part:
+                if parts.index(part) == 0:
+                    break
+            if part in prefixes:
+                last_part = ' '.join([part, last_part])
+
+    return last_part
 
 def segment(text):
     '''
