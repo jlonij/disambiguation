@@ -32,6 +32,7 @@ from lxml import etree
 from operator import attrgetter
 
 TPTA_URL = 'http://tpta.kbresearch.nl/analyse?lang=nl&url='
+TPTA_URL = 'http://tpta-solr.linking-kb.surf-hosted.nl:8080/tpta2/analyse?lang=nl&url='
 SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
 SOLR_ROWS = 20
 MIN_PROB = 0.5
@@ -42,7 +43,7 @@ class EntityLinker():
     '''
 
     def __init__(self, tpta_url=None, solr_url=None, model=None, debug=False,
-            features=False, candidates=False, training=False):
+            features=False, candidates=False, train=False):
         '''
         Initialize the disambiguation model and Solr connection.
         '''
@@ -55,12 +56,12 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         else:
-            self.model = models.LinearSVM()
+            self.model = models.NeuralNet()
 
         self.debug = debug
         self.features = features
         self.candidates = candidates
-        self.training = training
+        self.train = train
 
     def link(self, url, ne=None):
         '''
@@ -95,7 +96,7 @@ class EntityLinker():
         while clusters_to_link:
             cluster = clusters_to_link.pop()
             result = cluster.link(self.solr_connection, SOLR_ROWS,
-                self.model, MIN_PROB, self.training)
+                self.model, MIN_PROB, self.train)
 
             # If a cluster consists of multiple entities and could not be linked
             # or was not linked to a person, split it up and return the parts to
@@ -306,7 +307,7 @@ class Entity():
     An entity mention occuring in an article.
     '''
 
-    def __init__(self, text, tpta_type, context, doc_pos=0):
+    def __init__(self, text, tpta_type=None, context=None, doc_pos=0):
         '''
         Gather information about the entity and its immediate surroundings.
         '''
@@ -323,6 +324,7 @@ class Entity():
             start_pos=self.start_pos, end_pos=self.end_pos, size=30)
 
         self.quotes = self.get_quotes()
+
         self.title, self.title_form = self.get_title()
         self.role, self.role_form = self.get_role()
 
@@ -464,7 +466,7 @@ class Cluster():
         '''
         self.entities = entities
 
-    def link(self, solr_connection, solr_rows, model, min_prob, training):
+    def link(self, solr_connection, solr_rows, model, min_prob, train):
         '''
         Get the link result for the cluster.
         '''
@@ -475,14 +477,12 @@ class Cluster():
 
         # If entity is valid, try to query Solr for candidate descriptions
         try:
-            cand_list = CandidateList(solr_connection, solr_rows,
-                self.entities[0].norm, self.entities[0].last_part, model)
+            cand_list = CandidateList(solr_connection, solr_rows, self, model)
         except Exception as msg:
             self.result = Result("Failed to query solr: " + str(msg))
             return self.result
 
         # Check the number of descriptions found
-        cand_list.generate(self)
         if len(cand_list.candidates) == 0:
             self.result = Result("Nothing found")
             return self.result
@@ -498,7 +498,7 @@ class Cluster():
         self.quotes_total = self.get_total_quotes()
         self.type_ratios = self.get_type_ratios()
 
-        cand_list.rank(training)
+        cand_list.rank(train)
         best_match = cand_list.ranked_candidates[0]
         if best_match.prob >= min_prob:
             self.result = Result("Predicted link", best_match.prob, best_match,
@@ -538,46 +538,43 @@ class CandidateList():
     List of candidate links for an entity cluster.
     '''
 
-    def __init__(self, solr_connection, solr_rows, norm, last_part, model=None):
+    def __init__(self, solr_connection, solr_rows, cluster, model=None):
         '''
-        Query the Solr index.
+        Query the Solr index and generate initial list of candidates.
         '''
         self.solr_connection = solr_connection
         self.solr_rows = solr_rows
         self.model = model
+        self.cluster = cluster
+
+        if cluster:
+            norm = self.cluster.entities[0].norm
+            last_part = self.cluster.entities[0].last_part
 
         queries = []
+        queries.append('pref_label_str:"' + norm + '"')
+        queries.append('pref_label:"' + norm + '"')
+        queries.append('alt_label_str:"' + norm + '"')
+        queries.append('last_part_str:"' + last_part + '"')
+        self.queries = queries
 
-        query = 'pref_label:"' + norm + '"'
-        query += ' OR pref_label_str:"' + norm + '"'
-        query += ' OR alt_label_str:"' + norm + '"'
-        query += ' OR last_part_str:"' + last_part + '"'
+        candidates = []
 
-        queries.append(query)
-
-        solr_iteration = None
-        solr_response = None
         for i, query in enumerate(queries):
-            solr_iteration = i
-            solr_response = solr_connection.query(q=query, rows=solr_rows,
-                indent='on', sort='lang,inlinks', sort_order='desc')
-            if solr_response.numFound > 0:
+            if not len(candidates) < solr_rows:
                 break
+            else:
+                rows = solr_rows - len(candidates)
 
-        self.solr_iteration = solr_iteration
-        self.solr_response = solr_response
-        if solr_response.numFound < solr_rows:
-            self.solr_result_count = solr_response.numFound
-        else:
-            self.solr_result_count = solr_rows
+            solr_response = solr_connection.query(q=query, rows=rows,
+                indent='on', sort='lang,inlinks', sort_order='desc')
 
-    def generate(self, cluster):
-        '''
-        Generate initial list of candidates.
-        '''
-        self.candidates = []
-        for r in self.solr_response.results:
-            self.candidates.append(Description(r, self, cluster))
+            for r in solr_response.results:
+                if r.get('id') not in [c.document.get('id') for c in
+                        candidates]:
+                    candidates.append(Description(r, i, self, cluster))
+
+        self.candidates = candidates
 
     def filter(self):
         '''
@@ -589,7 +586,7 @@ class CandidateList():
             if c.name_conflict == 0 and c.date_match > -1:
                 self.filtered_candidates.append(c)
 
-    def rank(self, training):
+    def rank(self, train):
         '''
         Rank candidates according to trained model.
         '''
@@ -598,7 +595,7 @@ class CandidateList():
 
         for c in self.filtered_candidates:
             c.calculate_prob_features()
-            if not training:
+            if not train:
                 example = []
                 for j in range(len(self.model.features)):
                     example.append(float(getattr(c, self.model.features[j])))
@@ -640,18 +637,19 @@ class Description():
         'keyword_match', 'subject_match', 'entity_match'
     ]
 
-    def __init__(self, document, cand_list, cluster):
+    def __init__(self, document, query_id, cand_list, cluster):
         '''
         Set description attributes.
         '''
         self.document = document
+        self.query_id = query_id
         self.cand_list = cand_list
         self.cluster = cluster
 
+        self.prob = 0
+
         for f in self.features:
             setattr(self, f, 0)
-
-        self.prob = 0
 
     def calculate_rule_features(self):
         '''
@@ -670,11 +668,12 @@ class Description():
         candidate ranking.
         '''
         # Solr iteration
-        self.solr_iteration = self.cand_list.solr_iteration
+        self.solr_iteration = 1.0 - (self.query_id /
+            float(len(self.cand_list.queries)))
 
         # Solr position (relative to other remaining candidates)
-        pos = self.cand_list.filtered_candidates.index(self) + 1
-        self.solr_position = pos / float(self.cand_list.solr_rows)
+        pos = self.cand_list.filtered_candidates.index(self)
+        self.solr_position = 1.0 - (pos / float(self.cand_list.solr_rows))
 
         # Solr score (relative to other remaining candidates)
         if self.cand_list.solr_max_score > 0:
@@ -1132,6 +1131,7 @@ class Result():
                 d['features'] = {}
                 for f in description.features:
                     d['features'][f] = float(getattr(description, f))
+                d['document'] = description.document
                 self.candidates.append(d)
 
     def get_dict(self, features=False, candidates=False):
@@ -1158,8 +1158,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
     else:
         import pprint
-        linker = EntityLinker(debug=True, features=False, candidates=False,
-            training=False)
+        linker = EntityLinker(debug=True, features=False, candidates=True, model='svm')
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
