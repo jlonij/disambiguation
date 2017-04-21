@@ -17,6 +17,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+uninformative = ['nederland', 'holland', 'amsterdam']
+
+days = ['maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag',
+    'zondag']
+
 months = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli',
     'augustus', 'september', 'oktober', 'november', 'december']
 

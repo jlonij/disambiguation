@@ -104,7 +104,7 @@ def tokenize(text, segment=True):
     '''
     Tokenize text using SegTok segmenter and tokenizer.
     '''
-    sentences = split_multi(text) if segment else text
+    sentences = split_multi(text) if segment else [text]
 
     tokens = []
     for s in sentences:

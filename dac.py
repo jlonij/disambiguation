@@ -34,6 +34,8 @@ from operator import attrgetter
 TPTA_URL = 'http://tpta.kbresearch.nl/analyse?lang=nl&url='
 TPTA_URL = 'http://tpta-solr.linking-kb.surf-hosted.nl:8080/tpta2/analyse?lang=nl&url='
 SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
+VEC_URL = 'http://www.kbresearch.nl/vec/sim/'
+
 SOLR_ROWS = 20
 MIN_PROB = 0.5
 
@@ -321,7 +323,7 @@ class Entity():
         self.start_pos, self.end_pos = self.get_position(self.text,
             self.context.ocr, self.doc_pos)
         self.window_left, self.window_right = self.get_window(self.context.ocr,
-            start_pos=self.start_pos, end_pos=self.end_pos, size=30)
+            start_pos=self.start_pos, end_pos=self.end_pos, size=20)
 
         self.quotes = self.get_quotes()
 
@@ -497,6 +499,7 @@ class Cluster():
         # probability and select the best candidate
         self.quotes_total = self.get_total_quotes()
         self.type_ratios = self.get_type_ratios()
+        self.window = self.get_window()
 
         cand_list.rank(train)
         best_match = cand_list.ranked_candidates[0]
@@ -532,6 +535,29 @@ class Cluster():
             type_ratios[t] = types.count(t) / float(len(types))
         return type_ratios
 
+    def get_window(self):
+        '''
+        Get combined window of all cluster entities, excluding entity parts.
+        '''
+        entity_parts = []
+        for e in self.entities:
+            entity_parts.extend(e.stripped.split())
+
+        window = []
+        for e in self.entities:
+            for w in e.window_left + e.window_right:
+                norm = utilities.normalize(w)
+                window.extend(norm.split())
+            if e.title:
+                window.append(e.title_form)
+            if e.role:
+                window.append(e.role_form)
+
+        window = [w for w in window if len(w) > 4 and w not in entity_parts
+            and not w.startswith('amsterdam') and not w.startswith('nederland')]
+
+        return window
+
 
 class CandidateList():
     '''
@@ -553,8 +579,8 @@ class CandidateList():
 
         queries = []
         queries.append('pref_label_str:"' + norm + '"')
-        queries.append('pref_label:"' + norm + '"')
         queries.append('alt_label_str:"' + norm + '"')
+        queries.append('pref_label:"' + norm + '"')
         queries.append('last_part_str:"' + last_part + '"')
         self.queries = queries
 
@@ -634,7 +660,8 @@ class Description():
         'last_part_match', 'levenshtein_ratio', 'name_conflict', 'date_match',
         'solr_iteration', 'solr_position', 'solr_score', 'inlinks', 'lang',
         'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
-        'keyword_match', 'subject_match', 'entity_match'
+        'keyword_match', 'subject_match', 'max_vec_sim', 'mean_vec_sim',
+        'vec_match', 'entity_match'
     ]
 
     def __init__(self, document, query_id, cand_list, cluster):
@@ -694,6 +721,7 @@ class Description():
         self.match_spec()
         self.match_keywords()
         self.match_subjects()
+        self.match_vectors()
         self.match_entities()
 
     def match_pref_label(self):
@@ -1077,6 +1105,49 @@ class Description():
         elif subject_match < -1:
             self.subject_match = math.tanh(subject_match + 1)
 
+    def match_vectors(self):
+        '''
+        Get maximum and mean similarity for entity context and candidate
+        description vector sets.
+        '''
+        if not self.cluster.window:
+            return
+        if not self.document.get('lang') == 'nl':
+            return
+
+        entity_parts = []
+        for e in self.cluster.entities:
+            entity_parts.extend(e.stripped.split())
+
+        bow = []
+        if self.document.get('keyword'):
+            bow.extend(self.document.get('keyword'))
+
+        abstract = self.document.get('abstract')
+        sentence = utilities.segment(abstract).next()
+        for t in utilities.tokenize(sentence, False):
+            norm = utilities.normalize(t)
+            bow.extend(norm.split())
+
+        bow = [t for t in bow if len(t) > 4 and t not in entity_parts]
+        for t in bow[:]:
+            for u in dictionary.uninformative:
+                if t.startswith(u):
+                    bow.remove(t)
+
+        if not bow:
+            return
+
+        url = VEC_URL + ','.join(list(set(self.cluster.window)))
+        url += '/' + ','.join(list(set(bow)))
+
+        scores = urllib.urlopen(url).read()
+        scores = [float(s) for s in scores[1:-1].split(',')]
+
+        self.max_vec_sim = max(scores)
+        self.mean_vec_sim = sum(scores) / len(scores)
+        self.vec_match = math.tanh(len([s for s in scores if s >= 0.5]))
+
     def match_entities(self):
         '''
         Match other entities appearing in the article with DBpedia abstract.
@@ -1158,7 +1229,8 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
     else:
         import pprint
-        linker = EntityLinker(debug=True, features=False, candidates=True, model='svm')
+        linker = EntityLinker(debug=True, features=False, candidates=True,
+            model='svm')
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
