@@ -58,7 +58,7 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         else:
-            self.model = models.NeuralNet()
+            self.model = models.LinearSVM()
 
         self.debug = debug
         self.features = features
@@ -1018,28 +1018,18 @@ class Description():
 
     def match_spec(self):
         '''
-        Match the specification between brackets in the description uri with
-        the window surrounding the entity.
+        Find the specification between brackets in the description uri in
+        the article.
         '''
-        if not self.document.get('spec'):
+        spec = self.document.get('spec')
+        if not spec:
             return
 
-        spec_stems = [w[:int(math.ceil(len(w) * 0.8))] for w in
-            self.document.get('spec').split() if len(w) > 3]
-        if not spec_stems:
-            return
+        spec_stem = spec[:int(math.ceil(len(spec) * 0.8))]
 
-        window = []
-        for e in self.cluster.entities:
-            window += e.window_left + e.window_right
-        if not window:
-            return
-
-        for s in spec_stems:
-            for w in window:
-                if w.startswith(s):
-                    self.spec_match = 1
-                    break
+        ocr = self.cluster.entities[0].context.ocr
+        if utilities.normalize(ocr).find(spec_stem):
+            self.spec_match = 1
 
     def match_keywords(self):
         '''
@@ -1063,6 +1053,7 @@ class Description():
             for w in bow:
                 if w.startswith(s):
                     key_match += 1
+                    break
 
         self.keyword_match = math.tanh(key_match)
 
