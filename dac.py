@@ -32,7 +32,7 @@ from lxml import etree
 from operator import attrgetter
 
 TPTA_URL = 'http://tpta.kbresearch.nl/analyse?lang=nl&url='
-TPTA_URL = 'http://tpta-solr.linking-kb.surf-hosted.nl:8080/tpta2/analyse?lang=nl&url='
+TPTA_URL = 'http://145.100.59.209:8080/tpta2/analyse?lang=nl&url='
 SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
 VEC_URL = 'http://www.kbresearch.nl/vec/sim/'
 
@@ -1135,9 +1135,9 @@ class Description():
         scores = urllib.urlopen(url).read()
         scores = [float(s) for s in scores[1:-1].split(',')]
 
-        self.max_vec_sim = max(scores)
-        self.mean_vec_sim = sum(scores) / len(scores)
-        self.vec_match = math.tanh(len([s for s in scores if s >= 0.5]))
+        self.max_vec_sim = max(scores) - 0.35
+        self.mean_vec_sim = (sum(scores) / len(scores)) - 0.15
+        self.vec_match = math.tanh(len([s for s in scores if s >= 0.55]))
 
     def match_entities(self):
         '''
@@ -1220,8 +1220,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
     else:
         import pprint
-        linker = EntityLinker(debug=True, features=False, candidates=True,
-            model='svm')
+        linker = EntityLinker(debug=True, features=False, candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
