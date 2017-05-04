@@ -36,7 +36,6 @@ class LinearSVM:
     variances = []
     bias = 0
 
-
     def __init__(self):
 
         model_file = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-1]) + os.sep
@@ -71,7 +70,6 @@ class LinearSVM:
         nodes = root.findall(".//b")
         self.bias = float(nodes[0].text)
 
-
     def predict(self, example):
 
         # Start with bias
@@ -98,7 +96,6 @@ class RadialSVM:
     alphas = []
     gamma = 0
     bias = 0
-
 
     def __init__(self):
 
@@ -136,7 +133,6 @@ class RadialSVM:
             examples.append(example)
         self.examples = examples
 
-
     def predict(self, example):
 
         # Start with bias
@@ -150,7 +146,6 @@ class RadialSVM:
         # Convert function value to confidence value for positive class (i.e. link)
         prob = 1 / (1 + math.exp(pred * -1))
         return prob
-
 
     def kernel_value(self, x, y):
         result = 0
@@ -166,36 +161,14 @@ class NeuralNet:
     def __init__(self):
 
         self.features = [
-                'solr_iteration',
-                'solr_pos',
-                'cand_pos',
-                'solr_score',
-                'cand_score',
-                'solr_inlinks',
-                'cand_inlinks',
-                'quotes',
-                'lang',
-                'disambig',
-                'main_title_exact_match',
-                'main_title_start_match',
-                'main_title_end_match',
-                'main_title_match',
-                'title_exact_match_fraction',
-                'title_start_match_fraction',
-                'title_end_match_fraction',
-                'title_match_fraction',
-                'last_part_match_fraction',
-                'mean_levenshtein_ratio',
-                'name_conflict',
-                'date_match',
-                'type_match',
-                'role_match',
-                'subject_match',
-                'entity_match',
-                'spec_match',
-                'cat_match'
-                ]
-
+            'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
+            'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
+            'last_part_match', 'levenshtein_ratio', 'name_conflict', 'date_match',
+            'solr_iteration', 'solr_position', 'solr_score', 'inlinks', 'lang',
+            'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
+            'keyword_match', 'subject_match', 'max_vec_sim', 'mean_vec_sim',
+            'vec_match', 'entity_match'
+        ]
 
     def predict(self, example):
 
@@ -210,7 +183,7 @@ class NeuralNet:
             num_hidden_nodes2 = 14
             num_hidden_nodes3 = 7
 
-            num_features = 28
+            num_features = len(self.features)
             num_labels = 2
             #global_step = tf.Variable(0)
 
@@ -244,9 +217,7 @@ class NeuralNet:
 
             return float(session.run(y, feed_dict={x: ex})[0,1])
 
-
 if __name__ == '__main__':
     model = RadialSVM()
     model.predict([0,0,0,0,0,0,0,0,0,1,0,1,0.180])
-
 
