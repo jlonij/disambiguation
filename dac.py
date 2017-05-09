@@ -575,12 +575,15 @@ class CandidateList():
 
         if cluster:
             norm = self.cluster.entities[0].norm
+            stripped = self.cluster.entities[0].stripped
             last_part = self.cluster.entities[0].last_part
 
         queries = []
-        queries.append('pref_label_str:"' + norm + '"')
-        queries.append('alt_label_str:"' + norm + '"')
-        queries.append('pref_label:"' + norm + '"')
+        queries.append('pref_label_str:"' + norm + '" OR pref_label_str:"' +
+                stripped + '"')
+        queries.append('alt_label_str:"' + norm + '" OR alt_label_str:"' +
+                stripped + '"')
+        queries.append('pref_label:"' + norm + '" OR pref_label:"' + stripped + '"')
         queries.append('last_part_str:"' + last_part + '"')
         self.queries = queries
 
@@ -1220,7 +1223,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
     else:
         import pprint
-        linker = EntityLinker(debug=True, features=False, candidates=False)
+        linker = EntityLinker(debug=True, features=False, candidates=True)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
