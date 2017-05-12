@@ -164,8 +164,8 @@ class NeuralNet:
             'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
             'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
             'last_part_match', 'levenshtein_ratio', 'name_conflict', 'date_match',
-            'solr_iteration', 'solr_position', 'solr_score', 'inlinks', 'lang',
-            'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
+            'solr_iteration', 'solr_query', 'solr_position', 'solr_score', 'inlinks',
+            'lang', 'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
             'keyword_match', 'subject_match', 'max_vec_sim', 'mean_vec_sim',
             'vec_match', 'entity_match'
         ]

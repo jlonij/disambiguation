@@ -23,6 +23,7 @@ import dictionary
 import Levenshtein
 import math
 import models
+import re
 import solr
 import sys
 import urllib
@@ -58,7 +59,7 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         else:
-            self.model = models.NeuralNet()
+            self.model = models.LinearSVM()
 
         self.debug = debug
         self.features = features
@@ -456,6 +457,45 @@ class Entity():
 
         return None
 
+    def substitute(self):
+        '''
+        Try to substitute norm with basic spelling variant.
+        '''
+        subs = []
+
+        # Replace y with ij
+        if self.stripped.find('y') > -1:
+            subs.append(self.stripped.replace('y', 'ij'))
+
+        # Remove trailing s
+        if self.stripped.endswith('s'):
+            subs.append(self.stripped[:-1])
+
+        # Replace sch(e) with s(e)
+        pattern = r'(^|\s)([a-zA-Z]{2,})sch(e?)($|\s)'
+        if re.search(pattern, self.stripped):
+            subs.append(re.sub(pattern, r'\1\2s\3\4', self.stripped))
+
+        # Replace trailing v with w
+        pattern = r'(^|\s)([a-zA-Z]{2,})v($|\s)'
+        if re.search(pattern, self.stripped):
+            subs.append(re.sub(pattern, r'\1\2w\3', self.stripped))
+
+        # Replace trailing w with v
+        pattern = r'(^|\s)([a-zA-Z]{2,})w($|\s)'
+        if re.search(pattern, self.stripped):
+            subs.append(re.sub(pattern, r'\1\2v\3', self.stripped))
+
+        # If there is exactly one possible substitution, replace norm, stripped
+        # and last_part
+        if len(subs) == 1:
+            self.norm = self.norm.replace(self.stripped, subs[0])
+            self.stripped = subs[0]
+            self.last_part = utilities.get_last_part(self.stripped)
+            return True
+
+        return False
+
 
 class Cluster():
     '''
@@ -573,35 +613,43 @@ class CandidateList():
         self.model = model
         self.cluster = cluster
 
-        if cluster:
+        candidates = []
+        iteration = 0
+
+        while iteration <= 1:
+            if iteration == 1:
+                if not self.cluster.entities[0].substitute():
+                    break
+
             norm = self.cluster.entities[0].norm
             stripped = self.cluster.entities[0].stripped
             last_part = self.cluster.entities[0].last_part
 
-        queries = []
-        queries.append('pref_label_str:"' + norm + '" OR pref_label_str:"' +
-                stripped + '"')
-        queries.append('alt_label_str:"' + norm + '" OR alt_label_str:"' +
-                stripped + '"')
-        queries.append('pref_label:"' + norm + '" OR pref_label:"' + stripped + '"')
-        queries.append('last_part_str:"' + last_part + '"')
-        self.queries = queries
+            queries = []
+            queries.append('pref_label_str:"' + norm + '" OR pref_label_str:"' +
+                    stripped + '"')
+            queries.append('alt_label_str:"' + norm + '" OR alt_label_str:"' +
+                    stripped + '"')
+            queries.append('pref_label:"' + norm + '" OR pref_label:"' + stripped + '"')
+            queries.append('last_part_str:"' + last_part + '"')
+            self.queries = queries
 
-        candidates = []
+            for i, query in enumerate(queries):
+                if not len(candidates) < solr_rows:
+                    break
+                else:
+                    rows = solr_rows - len(candidates)
 
-        for i, query in enumerate(queries):
-            if not len(candidates) < solr_rows:
-                break
-            else:
-                rows = solr_rows - len(candidates)
+                solr_response = solr_connection.query(q=query, rows=rows,
+                    indent='on', sort='lang,inlinks', sort_order='desc')
 
-            solr_response = solr_connection.query(q=query, rows=rows,
-                indent='on', sort='lang,inlinks', sort_order='desc')
+                for r in solr_response.results:
+                    if r.get('id') not in [c.document.get('id') for c in
+                            candidates]:
+                        candidates.append(Description(r, iteration, i, self,
+                            cluster))
 
-            for r in solr_response.results:
-                if r.get('id') not in [c.document.get('id') for c in
-                        candidates]:
-                    candidates.append(Description(r, i, self, cluster))
+            iteration += 1
 
         self.candidates = candidates
 
@@ -661,17 +709,18 @@ class Description():
         'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
         'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
         'last_part_match', 'levenshtein_ratio', 'name_conflict', 'date_match',
-        'solr_iteration', 'solr_position', 'solr_score', 'inlinks', 'lang',
-        'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
-        'keyword_match', 'subject_match', 'max_vec_sim', 'mean_vec_sim',
-        'vec_match', 'entity_match'
+        'solr_iteration', 'solr_query', 'solr_position', 'solr_score',
+        'inlinks', 'lang', 'ambig', 'quotes', 'type_match', 'role_match',
+        'spec_match', 'keyword_match', 'subject_match', 'max_vec_sim',
+        'mean_vec_sim', 'vec_match', 'entity_match'
     ]
 
-    def __init__(self, document, query_id, cand_list, cluster):
+    def __init__(self, document, query_iteration, query_id, cand_list, cluster):
         '''
         Set description attributes.
         '''
         self.document = document
+        self.query_iteration = query_iteration
         self.query_id = query_id
         self.cand_list = cand_list
         self.cluster = cluster
@@ -698,8 +747,10 @@ class Description():
         candidate ranking.
         '''
         # Solr iteration
-        self.solr_iteration = 1.0 - (self.query_id /
+        self.solr_query = 1.0 - (self.query_id /
             float(len(self.cand_list.queries)))
+
+        self.solr_iteration = 1 - self.query_iteration
 
         # Solr position (relative to other remaining candidates)
         pos = self.cand_list.filtered_candidates.index(self)
