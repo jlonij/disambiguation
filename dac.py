@@ -59,7 +59,7 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         else:
-            self.model = models.LinearSVM()
+            self.model = models.NeuralNet()
 
         self.debug = debug
         self.features = features
