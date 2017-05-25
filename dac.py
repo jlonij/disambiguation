@@ -426,8 +426,9 @@ class Entity():
         '''
         Check entity validity.
         '''
-        if len(self.stripped) >= 2 and self.last_part and not self.is_date():
-            return True
+        if [w for w in self.stripped.split() if len(w) >= 2]:
+            if self.last_part and not self.is_date():
+                return True
         return False
 
     def is_date(self):
@@ -788,8 +789,7 @@ class Description():
 
         label = self.document.get('pref_label')
         ne = self.cluster.entities[0].norm
-        print label
-        print ne
+
         if len(set(ne.split()) - set(label.split())) == 0:
             if label == ne:
                 self.pref_label_exact_match = 1
@@ -801,7 +801,6 @@ class Description():
                 self.non_matching.append(label)
         else:
             self.non_matching.append(label)
-        print self.pref_label_match
 
     def match_alt_label(self):
         '''
