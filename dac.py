@@ -59,7 +59,7 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         else:
-            self.model = models.NeuralNet()
+            self.model = models.LinearSVM()
 
         self.debug = debug
         self.features = features
@@ -617,6 +617,8 @@ class CandidateList():
         iteration = 0
 
         while iteration <= 1:
+            if candidates:
+                break
             if iteration == 1:
                 if not self.cluster.entities[0].substitute():
                     break
@@ -784,27 +786,29 @@ class Description():
         '''
         self.non_matching = []
 
-        match_label = self.document.get('pref_label')
+        label = self.document.get('pref_label')
         ne = self.cluster.entities[0].norm
-
-        if len(set(ne.split()) - set(match_label.split())) == 0:
-            if match_label == ne:
+        print label
+        print ne
+        if len(set(ne.split()) - set(label.split())) == 0:
+            if label == ne:
                 self.pref_label_exact_match = 1
-            elif match_label.endswith(ne):
+            elif label.endswith(ne):
                 self.pref_label_end_match = 1
-            elif match_label.find(ne) > -1:
+            elif label.find(ne) > -1:
                 self.pref_label_match = 1
             else:
-                self.non_matching.append(match_label)
+                self.non_matching.append(label)
         else:
-            self.non_matching.append(match_label)
+            self.non_matching.append(label)
+        print self.pref_label_match
 
     def match_alt_label(self):
         '''
         Match alternative labels with the normalized entity.
         '''
-        match_label = self.document.get('alt_label')
-        if not match_label:
+        labels = self.document.get('alt_label')
+        if not labels:
             return
 
         ne = self.cluster.entities[0].norm
@@ -812,119 +816,77 @@ class Description():
         alt_label_exact_match = 0
         alt_label_end_match = 0
         alt_label_match = 0
-        for label in match_label:
-            if len(set(ne.split()) - set(label.split())) == 0:
-                if label == ne:
+        for l in labels:
+            if len(set(ne.split()) - set(l.split())) == 0:
+                if l == ne:
                     alt_label_exact_match += 1
-                elif label.endswith(ne):
+                elif l.endswith(ne):
                     alt_label_end_match += 1
-                elif label.find(ne) > -1:
+                elif l.find(ne) > -1:
                     alt_label_match += 1
                 else:
-                    self.non_matching.append(label)
+                    self.non_matching.append(l)
             else:
-                self.non_matching.append(label)
+                self.non_matching.append(l)
 
         self.alt_label_exact_match = (alt_label_exact_match /
-            float(len(match_label)))
+            float(len(labels)))
         self.alt_label_end_match = (alt_label_end_match /
-            float(len(match_label)))
+            float(len(labels)))
         self.alt_label_match = (alt_label_match /
-            float(len(match_label)))
+            float(len(labels)))
 
     def match_last_part(self):
         '''
         Match the last part of the stripped entity with all labels,
         making sure preceding parts (e.g. initials) don't conflict.
         '''
-        if not self.non_matching:
+        labels = self.non_matching
+        if not labels:
             return
 
         ne = self.cluster.entities[0].stripped
-
-        # Preliminary check for ne's that are longer than the main label:
-        # there has to be at least one alternative label that matches the
-        # longer version
-        main_label = self.document.get('pref_label')
-        alt_label = self.document.get('alt_label')
-
-        if len(ne.split()) > len(main_label.split()):
-            if not alt_label:
-                return
-
-            skip = True
-            for l in alt_label:
-                # The lenght and last part have to be the same
-                if (len(ne.split()) == len(l.split()) and ne.split()[-1] ==
-                        l.split()[-1]):
-                    match = True
-                    # The preceding parts cannot conflict
-                    for i, part in enumerate(ne.split()[:-1]):
-                        # Dealing with full words
-                        if (len(ne.split()[0]) > 1 and part != l.split()[i]):
-                            match = False
-                            break
-                        # Dealing with initials
-                        elif (len(ne.split()[0]) == 1 and part[0] !=
-                                l.split()[i][0]):
-                            match = False
-                            break
-                    if match:
-                        skip = False
-                        break
-            if skip:
-                return
-
-        # Last part match for qualifing ne's
-        match_label = self.non_matching
+        if len(ne.split()) == 1:
+            return
 
         last_part_match = 0
-        for l in match_label:
+        for l in labels:
+
+            if len(ne.split()) > len(l.split()):
+                continue
 
             # If the last words of the title and the ne match approximately,
             # i.e. edit distance does not exceed 1
             if Levenshtein.distance(ne.split()[-1], l.split()[-1]) <= 1:
 
-                # Single-word entities: match immediately
-                if len(ne.split()) == 1:
-                    last_part_match += 1
-                    continue
-
                 # Multi-word entities: check for conflicts among preceding parts
-                skip = False
-                source = (l.split() if len(ne.split()) > len(l.split())
-                    else ne.split())
-                target = (ne.split() if len(ne.split()) > len(l.split())
-                    else l.split())
+                conflict = False
+                source = ne.split()
+                target = l.split()
 
                 target_pos = 0
                 for part in source[:-1]:
                     if target_pos < len(target[:-1]):
+                        # Full words
                         if len(part) > 1 and part in target[target_pos:-1]:
                             target_pos = target.index(part) + 1
-                        elif len(part) > 1 and len([p for p in
-                                target[target_pos:-1] if
-                                Levenshtein.distance(p, part) <= 1]) > 0:
-                            for p in target[target_pos:-1]:
-                                if Levenshtein.distance(p, part) <= 1:
-                                    target_pos = target.index(p) + 1
-                                    break
+                        # Initials
                         elif len(part) <= 1 and part[0] in [p[0] for p in
                                 target[target_pos:-1]]:
                             target_pos = [p[0] for p in
                                 target[target_pos:-1]].index(part[0]) + 1
                         else:
-                            skip = True
+                            conflict = True
                             break
                     else:
+                        conflict = True
                         break
-                if skip:
-                    continue
-                else:
+
+                if not conflict:
                     last_part_match += 1
 
         self.last_part_match = (last_part_match /
-            float(len(match_label)))
+            float(len(labels)))
 
     def get_name_conflict(self):
         '''
@@ -940,12 +902,12 @@ class Description():
         '''
         Get the mean Levenshtein ratio for all labels.
         '''
-        match_label = [self.document.get('pref_label')]
+        labels = [self.document.get('pref_label')]
         if self.document.get('alt_label'):
-            match_label += self.document.get('alt_label')
+            labels += self.document.get('alt_label')
         ne = self.cluster.entities[0].norm
-        ratio_sum = sum([Levenshtein.ratio(ne, l) for l in match_label])
-        self.levenshtein_ratio = ratio_sum / float(len(match_label))
+        ratio_sum = sum([Levenshtein.ratio(ne, l) for l in labels])
+        self.levenshtein_ratio = ratio_sum / float(len(labels))
 
     def match_date(self):
         '''
