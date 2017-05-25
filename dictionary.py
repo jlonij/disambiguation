@@ -26,7 +26,7 @@ months = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli',
     'augustus', 'september', 'oktober', 'november', 'december']
 
 titles = ['heer', 'hr', 'dhr', 'meneer', 'mevrouw', 'mevr', 'mw', 'mej',
-    'mejuffrouw', 'drs', 'ing', 'ir', 'dr', 'sir']
+    'mejuffrouw', 'drs', 'ing', 'ir', 'dr', 'sir', 'mr']
 
 types = {
     'person': {
