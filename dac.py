@@ -59,7 +59,7 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         else:
-            self.model = models.LinearSVM()
+            self.model = models.NeuralNet()
 
         self.debug = debug
         self.features = features
@@ -866,14 +866,26 @@ class Description():
                 target_pos = 0
                 for part in source[:-1]:
                     if target_pos < len(target[:-1]):
+
                         # Full words
                         if len(part) > 1 and part in target[target_pos:-1]:
                             target_pos = target.index(part) + 1
+
+                        # First names may differ with one character
+                        elif len(part) > 1 and len([p for p in
+                                target[target_pos:-1] if Levenshtein.distance(p,
+                                part) == 1]) > 0:
+                            for p in target[target_pos:-1]:
+                                if Levenshtein.distance(p, part) == 1:
+                                    target_pos = target.index(p) + 1
+                                    break
+
                         # Initials
                         elif len(part) <= 1 and part[0] in [p[0] for p in
                                 target[target_pos:-1]]:
                             target_pos = [p[0] for p in
                                 target[target_pos:-1]].index(part[0]) + 1
+
                         else:
                             conflict = True
                             break
