@@ -59,7 +59,7 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         else:
-            self.model = models.NeuralNet()
+            self.model = models.LinearSVM()
 
         self.debug = debug
         self.features = features
@@ -609,15 +609,17 @@ class CandidateList():
         '''
         Query the Solr index and generate initial list of candidates.
         '''
+        self.n_iterations = 2
+
         self.solr_connection = solr_connection
         self.solr_rows = solr_rows
         self.model = model
         self.cluster = cluster
 
         candidates = []
-        iteration = 0
 
-        while iteration <= 1:
+        iteration = 0
+        while iteration < self.n_iterations:
             if candidates:
                 break
             if iteration == 1:
@@ -630,10 +632,11 @@ class CandidateList():
 
             queries = []
             queries.append('pref_label_str:"' + norm + '" OR pref_label_str:"' +
-                    stripped + '"')
+                stripped + '"')
             queries.append('alt_label_str:"' + norm + '" OR alt_label_str:"' +
-                    stripped + '"')
-            queries.append('pref_label:"' + norm + '" OR pref_label:"' + stripped + '"')
+                stripped + '"')
+            queries.append('pref_label:"' + norm + '" OR pref_label:"' +
+                stripped + '"')
             queries.append('last_part_str:"' + last_part + '"')
             self.queries = queries
 
@@ -711,11 +714,12 @@ class Description():
     features = [
         'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
         'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
-        'last_part_match', 'levenshtein_ratio', 'name_conflict', 'date_match',
-        'solr_iteration', 'solr_query', 'solr_position', 'solr_score',
-        'inlinks', 'lang', 'ambig', 'quotes', 'type_match', 'role_match',
-        'spec_match', 'keyword_match', 'subject_match', 'max_vec_sim',
-        'mean_vec_sim', 'vec_match', 'entity_match'
+        'last_part_match', 'name_conflict', 'pref_levenshtein_ratio',
+        'mean_levenshtein_ratio', 'max_levenshtein_ratio', 'date_match',
+        'solr_iteration', 'solr_position', 'solr_score', 'inlinks', 'lang',
+        'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
+        'keyword_match', 'subject_match', 'max_vec_sim', 'mean_vec_sim',
+        'vec_match', 'entity_match'
     ]
 
     def __init__(self, document, query_iteration, query_id, cand_list, cluster):
@@ -750,10 +754,8 @@ class Description():
         candidate ranking.
         '''
         # Solr iteration
-        self.solr_query = 1.0 - (self.query_id /
-            float(len(self.cand_list.queries)))
-
-        self.solr_iteration = 1 - self.query_iteration
+        self.solr_iteration = 1.0 - ((2 * self.query_id + self.query_iteration)
+            / float(len(self.cand_list.queries) * self.cand_list.n_iterations))
 
         # Solr position (relative to other remaining candidates)
         pos = self.cand_list.filtered_candidates.index(self)
@@ -911,14 +913,16 @@ class Description():
 
     def match_levenshtein(self):
         '''
-        Get the mean Levenshtein ratio for all labels.
+        Get the mean and max Levenshtein ratio for all labels.
         '''
         labels = [self.document.get('pref_label')]
         if self.document.get('alt_label'):
             labels += self.document.get('alt_label')
         ne = self.cluster.entities[0].norm
-        ratio_sum = sum([Levenshtein.ratio(ne, l) for l in labels])
-        self.levenshtein_ratio = ratio_sum / float(len(labels))
+        ratios = [Levenshtein.ratio(ne, l) for l in labels]
+        self.pref_levenshtein_ratio = ratios[0]
+        self.max_levenshtein_ratio = max(ratios)
+        self.mean_levenshtein_ratio = sum(ratios) / float(len(labels))
 
     def match_date(self):
         '''

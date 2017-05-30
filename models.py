@@ -19,7 +19,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+import math
 import os
+
 import numpy as np
 
 from keras.models import load_model
@@ -36,15 +38,18 @@ class LinearSVM:
         self.features = [
             'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
             'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
-            'last_part_match', 'levenshtein_ratio', 'name_conflict', 'date_match',
-            'solr_iteration', 'solr_query', 'solr_position', 'solr_score', 'inlinks',
-            'lang', 'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
+            'last_part_match', 'name_conflict', 'pref_levenshtein_ratio',
+            'mean_levenshtein_ratio', 'max_levenshtein_ratio', 'date_match',
+            'solr_iteration', 'solr_position', 'solr_score', 'inlinks', 'lang',
+            'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
             'keyword_match', 'subject_match', 'max_vec_sim', 'mean_vec_sim',
             'vec_match', 'entity_match'
         ]
 
     def predict(self, example):
-        return self.clf.predict_proba([example])[0][1]
+        dec = self.clf.decision_function([example])[0]
+        prob = 1 / (1 + math.exp(dec * -1))
+        return prob
 
 
 class NeuralNet:
@@ -58,9 +63,10 @@ class NeuralNet:
         self.features = [
             'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
             'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
-            'last_part_match', 'levenshtein_ratio', 'name_conflict', 'date_match',
-            'solr_iteration', 'solr_query', 'solr_position', 'solr_score', 'inlinks',
-            'lang', 'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
+            'last_part_match', 'name_conflict', 'pref_levenshtein_ratio',
+            'mean_levenshtein_ratio', 'max_levenshtein_ratio', 'date_match',
+            'solr_iteration', 'solr_position', 'solr_score', 'inlinks', 'lang',
+            'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
             'keyword_match', 'subject_match', 'max_vec_sim', 'mean_vec_sim',
             'vec_match', 'entity_match'
         ]
