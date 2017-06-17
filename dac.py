@@ -59,7 +59,7 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         else:
-            self.model = models.LinearSVM()
+            self.model = models.NeuralNet()
 
         self.debug = debug
         self.features = features
@@ -609,8 +609,6 @@ class CandidateList():
         '''
         Query the Solr index and generate initial list of candidates.
         '''
-        self.n_iterations = 2
-
         self.solr_connection = solr_connection
         self.solr_rows = solr_rows
         self.model = model
@@ -618,11 +616,10 @@ class CandidateList():
 
         candidates = []
 
-        iteration = 0
-        while iteration < self.n_iterations:
+        for i in range(2):
             if candidates:
                 break
-            if iteration == 1:
+            if i == 1:
                 if not self.cluster.entities[0].substitute():
                     break
 
@@ -640,7 +637,7 @@ class CandidateList():
             queries.append('last_part_str:"' + last_part + '"')
             self.queries = queries
 
-            for i, query in enumerate(queries):
+            for query_id, query in enumerate(queries):
                 if not len(candidates) < solr_rows:
                     break
                 else:
@@ -652,10 +649,8 @@ class CandidateList():
                 for r in solr_response.results:
                     if r.get('id') not in [c.document.get('id') for c in
                             candidates]:
-                        candidates.append(Description(r, iteration, i, self,
+                        candidates.append(Description(r, i, query_id, self,
                             cluster))
-
-            iteration += 1
 
         self.candidates = candidates
 
@@ -714,10 +709,10 @@ class Description():
     features = [
         'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
         'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
-        'last_part_match', 'name_conflict', 'pref_levenshtein_ratio',
-        'mean_levenshtein_ratio', 'max_levenshtein_ratio', 'date_match',
-        'solr_iteration', 'solr_position', 'solr_score', 'inlinks', 'lang',
-        'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
+        'last_part_match', 'non_matching_labels', 'name_conflict', 'pref_lsr',
+        'mean_lsr', 'date_match', 'query_id_0', 'query_id_1', 'query_id_2',
+        'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
+        'lang', 'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
         'keyword_match', 'subject_match', 'max_vec_sim', 'mean_vec_sim',
         'vec_match', 'entity_match'
     ]
@@ -754,8 +749,11 @@ class Description():
         candidate ranking.
         '''
         # Solr iteration
-        self.solr_iteration = 1.0 - ((2 * self.query_id + self.query_iteration)
-            / float(len(self.cand_list.queries) * self.cand_list.n_iterations))
+        self.query_id_0 = 1 if self.query_id == 0 else 0
+        self.query_id_1 = 1 if self.query_id == 1 else 0
+        self.query_id_2 = 1 if self.query_id == 2 else 0
+        self.query_id_3 = 1 if self.query_id == 3 else 0
+        self.substitution = 1 if self.query_iteration == 1 else 0
 
         # Solr position (relative to other remaining candidates)
         pos = self.cand_list.filtered_candidates.index(self)
@@ -771,9 +769,9 @@ class Description():
             self.inlinks = (self.document.get('inlinks') /
                 float(self.cand_list.solr_inlinks_total))
 
-        self.lang = 1 if self.document.get('lang') == 'nl' else 0
-        self.ambig = 1 if self.document.get('ambig') == 1 else 0
-        self.quotes = math.tanh(self.cluster.quotes_total)
+        self.lang = 1 if self.document.get('lang') == 'nl' else -1
+        self.ambig = 1 if self.document.get('ambig') == 1 else -1
+        self.quotes = min(self.cluster.quotes_total, 5) / 5.0
 
         self.match_type()
         self.match_role()
@@ -830,12 +828,9 @@ class Description():
             else:
                 self.non_matching.append(l)
 
-        self.alt_label_exact_match = (alt_label_exact_match /
-            float(len(labels)))
-        self.alt_label_end_match = (alt_label_end_match /
-            float(len(labels)))
-        self.alt_label_match = (alt_label_match /
-            float(len(labels)))
+        self.alt_label_exact_match = min(alt_label_exact_match, 5) / 5.0
+        self.alt_label_end_match = min(alt_label_end_match, 5) / 5.0
+        self.alt_label_match = min(alt_label_match, 5) / 5.0
 
     def match_last_part(self):
         '''
@@ -898,8 +893,9 @@ class Description():
                 if not conflict:
                     last_part_match += 1
 
-        self.last_part_match = (last_part_match /
-            float(len(labels)))
+        self.last_part_match = min(last_part_match, 5) / 5.0
+        self.non_matching_labels = min(len(self.non_matching) -
+            last_part_match, 5) / 5.0
 
     def get_name_conflict(self):
         '''
@@ -910,6 +906,8 @@ class Description():
             'alt_label_exact_match', 'alt_label_end_match', 'last_part_match']
         if sum([getattr(self, f) for f in features]) == 0:
             self.name_conflict = 1
+        else:
+            self.name_conflict = 0
 
     def match_levenshtein(self):
         '''
@@ -920,9 +918,8 @@ class Description():
             labels += self.document.get('alt_label')
         ne = self.cluster.entities[0].norm
         ratios = [Levenshtein.ratio(ne, l) for l in labels]
-        self.pref_levenshtein_ratio = ratios[0]
-        self.max_levenshtein_ratio = max(ratios)
-        self.mean_levenshtein_ratio = sum(ratios) / float(len(labels))
+        self.pref_lsr = ratios[0]
+        self.mean_lsr = sum(ratios) / float(len(labels))
 
     def match_date(self):
         '''
@@ -945,10 +942,10 @@ class Description():
             self.date_match = -1
         elif publ_year < birth_year + 20:
             self.date_match = 0.5
-        elif publ_year < death_year:
+        elif publ_year < death_year + 20:
             self.date_match = 1
         else:
-            self.date_match = 0.5
+            self.date_match = 0.75
 
     def match_type(self):
         '''
@@ -1046,6 +1043,7 @@ class Description():
                 for t in dictionary.roles[role]['schema_types']:
                     if t in schema_types:
                         self.role_match = -1
+                        return
 
     def match_spec(self):
         '''
@@ -1086,7 +1084,7 @@ class Description():
                     key_match += 1
                     break
 
-        self.keyword_match = math.tanh(key_match)
+        self.keyword_match = min(key_match, 5) / 5.0
 
     def match_subjects(self):
         '''
@@ -1123,9 +1121,9 @@ class Description():
                     subject_match = -1
 
         if subject_match > 0:
-            self.subject_match = math.tanh(subject_match)
+            self.subject_match = min(subject_match, 5) / 5.0
         elif subject_match < -1:
-            self.subject_match = math.tanh(subject_match + 1)
+            self.subject_match = max(subject_match + 1, -5) / 5.0
 
     def match_vectors(self):
         '''
@@ -1168,7 +1166,7 @@ class Description():
 
         self.max_vec_sim = max(scores) - 0.35
         self.mean_vec_sim = (sum(scores) / len(scores)) - 0.15
-        self.vec_match = math.tanh(len([s for s in scores if s >= 0.55]))
+        self.vec_match = min(len([s for s in scores if s >= 0.55]), 5) / 5.0
 
     def match_entities(self):
         '''
@@ -1186,7 +1184,7 @@ class Description():
 
         found = [e for e in entities if abstract.find(e) > -1]
 
-        self.entity_match = math.tanh(len(found))
+        self.entity_match = min(len(found), 5) / 5.0
 
 
 class Result():
