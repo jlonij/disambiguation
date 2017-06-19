@@ -38,7 +38,7 @@ class LinearSVM:
         self.features = [
             'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
             'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
-            'last_part_match', 'non_matching_labels', 'pref_lsr',
+            'last_part_match', 'non_matching_labels', 'name_conflict', 'pref_lsr',
             'mean_lsr', 'date_match', 'query_id_0', 'query_id_1', 'query_id_2',
             'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
             'lang', 'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
@@ -63,7 +63,7 @@ class NeuralNet:
         self.features = [
             'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
             'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
-            'last_part_match', 'non_matching_labels', 'pref_lsr',
+            'last_part_match', 'non_matching_labels', 'name_conflict', 'pref_lsr',
             'mean_lsr', 'date_match', 'query_id_0', 'query_id_1', 'query_id_2',
             'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
             'lang', 'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
@@ -74,4 +74,5 @@ class NeuralNet:
     def predict(self, example):
         example = np.array([example], dtype=np.float32)
         prob = self.model.predict(example, batch_size=1)
-        return prob[0][0]
+        return float(prob[0][0])
+

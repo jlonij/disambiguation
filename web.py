@@ -106,6 +106,7 @@ def array_to_utf(a):
 def dict_to_utf(d):
     dutf = {}
     for k,v in d.iteritems():
+        print k, type(k), v, type(v)
         if isinstance(v, unicode):
             dutf[k] = v.encode('utf-8')
         elif isinstance(v, list):
@@ -135,7 +136,6 @@ def index():
     linker = dac.EntityLinker(model=model, debug=debug, features=features,
         candidates=candidates)
     result = linker.link(url, ne)
-
     result = array_to_utf(result)
     result = {'linkedNEs': result}
     if callback:

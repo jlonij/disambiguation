@@ -59,7 +59,7 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         else:
-            self.model = models.NeuralNet()
+            self.model = models.LinearSVM()
 
         self.debug = debug
         self.features = features
@@ -843,6 +843,7 @@ class Description():
 
         ne = self.cluster.entities[0].stripped
         if len(ne.split()) == 1:
+            self.non_matching_labels = min(len(self.non_matching), 5) / 5.0
             return
 
         last_part_match = 0
@@ -1249,7 +1250,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
     else:
         import pprint
-        linker = EntityLinker(debug=True, features=False, candidates=False)
+        linker = EntityLinker(debug=True, features=True, candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
