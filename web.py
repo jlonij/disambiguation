@@ -106,7 +106,6 @@ def array_to_utf(a):
 def dict_to_utf(d):
     dutf = {}
     for k,v in d.iteritems():
-        print k, type(k), v, type(v)
         if isinstance(v, unicode):
             dutf[k] = v.encode('utf-8')
         elif isinstance(v, list):

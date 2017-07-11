@@ -1250,7 +1250,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
     else:
         import pprint
-        linker = EntityLinker(debug=True, features=True, candidates=False)
+        linker = EntityLinker(model='nn', debug=True, features=False, candidates=True)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
