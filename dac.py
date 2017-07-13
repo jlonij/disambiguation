@@ -24,16 +24,17 @@ import Levenshtein
 import math
 import models
 import re
+import requests
 import solr
 import sys
-import urllib
 import utilities
 
 from lxml import etree
 from operator import attrgetter
 
-#TPTA_URL = 'http://tpta.kbresearch.nl/analyse?lang=nl&url='
-TPTA_URL = 'http://145.100.59.209:8080/tpta2/analyse?lang=nl&url='
+#TPTA_URL = 'http://tpta.kbresearch.nl/analyse?'
+TPTA_URL = 'http://145.100.59.209:8080/tpta2/analyse'
+JSRU_URL = 'http://jsru.kb.nl/sru'
 SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
 VEC_URL = 'http://www.kbresearch.nl/vec/sim/'
 
@@ -68,11 +69,12 @@ class EntityLinker():
         '''
         Link named entity mention(s) in an article to a DBpedia description.
         '''
-        # Get context information (article ocr and recognized entities)
+        # Get context information (article ocr, metadata and recognized entities)
         try:
             self.context = Context(url, self.tpta_url)
-        except:
-            return {'status': 'error', 'message': ''}
+        except Exception as e:
+            return {'status': 'error', 'message': 'Error retrieving context: '
+                    + str(e)}
 
         # If a specific ne was requested, search for a corresponding entity in
         # the list of recognized entities
@@ -102,8 +104,9 @@ class EntityLinker():
             try:
                 result = cluster.link(self.solr_connection, SOLR_ROWS,
                     self.model, MIN_PROB, self.train)
-            except:
-                return {'status': 'error', 'message': ''}
+            except Exception as e:
+                return {'status': 'error', 'message': 'Error linking entity: '
+                        + str(e)}
 
             # If a cluster consists of multiple entities and could not be linked
             # or was not linked to a person, split it up and return the parts to
@@ -231,31 +234,29 @@ class Context():
         '''
         Retrieve ocr from resolver url.
         '''
-        ocr = None
-        try:
-            data = urllib.urlopen(url).read()
-            xml = etree.fromstring(data)
-            ocr = etree.tostring(xml, encoding='utf8',
-                method='text').decode('utf-8')
-        except:
-            return ocr
+        response = requests.get(url, timeout=5)
+        assert response.status_code == 200, 'Error retrieving OCR'
+
+        xml = etree.fromstring(response.content)
+        ocr = etree.tostring(xml, encoding='utf8',
+            method='text').decode('utf-8')
+        ocr = ' '.join(ocr.split())
+
         return ocr
 
     def get_metadata(self, url):
         '''
         Retrieve metadata (currently just publication date) with sru.
         '''
-        publ_date = None
+        payload = {}
+        payload['operation'] = 'searchRetrieve'
+        payload['x-collection'] = 'DDD_artikel'
+        payload['query'] = 'uniqueKey=' + url[url.find('ddd:'):-4]
 
-        jsru_url = 'http://jsru.kb.nl/sru/sru?'
-        jsru_url += 'operation=searchRetrieve&x-collection=DDD_artikel'
-        jsru_url += '&query=uniqueKey=' + url[url.find('ddd:'):-4]
+        response = requests.get(JSRU_URL, params=payload, timeout=5)
+        assert response.status_code == 200, 'Error retrieving metadata'
 
-        try:
-            data = urllib.urlopen(jsru_url).read()
-            xml = etree.fromstring(data)
-        except:
-            return publ_date
+        xml = etree.fromstring(response.content)
 
         path = '{http://www.loc.gov/zing/srw/}records/'
         path += '{http://www.loc.gov/zing/srw/}record/'
@@ -264,9 +265,9 @@ class Context():
 
         date_element = xml.find(path)
         if date_element is not None:
-            publ_date = date_element.text
-
-        return publ_date
+            return date_element.text
+        else:
+            return None
 
     def get_subjects(self, ocr):
         '''
@@ -288,25 +289,35 @@ class Context():
         Retrieve the list of entities from the NER service and instantiate an
         entity object for each one.
         '''
-        entities = []
-        try:
-            data = urllib.urlopen(tpta_url + url).read()
-            xml = etree.fromstring(data)
-        except:
-            return entities
+        payload = {}
+        payload['lang'] = 'nl'
+        payload['url'] = url
 
-        # Keep track of the position of each entity in the document so that
-        # entity mentions with identical surface forms can be kept apart
-        doc_pos = 0
-        for node in xml.iter():
-            if node.text and len(node.text) > 1:
-                if isinstance(node.text, str):
-                    t = node.text.decode('utf-8')
-                else:
-                    t = node.text
-                entity = Entity(t, node.tag, self, doc_pos)
-                doc_pos = entity.end_pos if entity.end_pos > -1 else doc_pos
-                entities.append(entity)
+        response = requests.get(tpta_url, params=payload, timeout=5)
+        assert response.status_code == 200, 'TPTA error'
+
+        xml = etree.fromstring(response.content)
+        error_node = xml.find('error')
+        if error_node is not None:
+            raise Exception('TPTA error: ' + error_node.text)
+
+        entities = []
+
+        entity_nodes = xml.find('entities')
+        if entity_nodes is not None:
+            # Keep track of the position of each entity in the document so that
+            # entity mentions with identical surface forms can be kept apart
+            doc_pos = 0
+            for node in entity_nodes:
+                if node.text and len(node.text) > 1:
+                    if isinstance(node.text, str):
+                        t = node.text.decode('utf-8')
+                    else:
+                        t = node.text
+                    entity = Entity(t, node.tag, self, doc_pos)
+                    doc_pos = entity.end_pos if entity.end_pos > -1 else doc_pos
+                    entities.append(entity)
+
         return entities
 
 
@@ -524,11 +535,7 @@ class Cluster():
             return self.result
 
         # If entity is valid, try to query Solr for candidate descriptions
-        try:
-            cand_list = CandidateList(solr_connection, solr_rows, self, model)
-        except Exception as msg:
-            self.result = Result("Failed to query solr: " + str(msg))
-            return self.result
+        cand_list = CandidateList(solr_connection, solr_rows, self, model)
 
         # Check the number of descriptions found
         if len(cand_list.candidates) == 0:
@@ -1167,8 +1174,9 @@ class Description():
         url = VEC_URL + ','.join(list(set(self.cluster.window)))
         url += '/' + ','.join(list(set(bow)))
 
-        scores = urllib.urlopen(url).read()
-        scores = [float(s) for s in scores[1:-1].split(',')]
+        response = requests.get(url)
+        assert response.status_code == 200, 'Error retrieving word vectors'
+        scores = [float(s) for s in response.text[1:-1].split(',')]
 
         self.max_vec_sim = max(scores) - 0.35
         self.mean_vec_sim = (sum(scores) / len(scores)) - 0.15

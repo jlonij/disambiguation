@@ -290,11 +290,11 @@ class SolrException(Exception):
         self.body = body
 
     def __repr__(self):
-        return 'HTTP code=%s, Reason=%s, body=%s' % (
+        return 'Solr error: HTTP code=%s, Reason=%s, body=%s' % (
             self.httpcode, self.reason, self.body)
 
     def __str__(self):
-        return 'HTTP code=%s, reason=%s' % (self.httpcode, self.reason)
+        return 'Solr error: HTTP code=%s, reason=%s' % (self.httpcode, self.reason)
 
 
 # Decorator (used below)
