@@ -132,11 +132,16 @@ def index():
     if not url:
         abort(400, "No fitting argument (\"url=...\") given.")
 
-    linker = dac.EntityLinker(model=model, debug=debug, features=features,
-        candidates=candidates)
-    result = linker.link(url, ne)
-    result = array_to_utf(result)
-    result = {'linkedNEs': result}
+    try:
+        linker = dac.EntityLinker(model=model, debug=debug, features=features,
+            candidates=candidates)
+        result = linker.link(url, ne)
+    except Exception as e:
+        result = {'status': 'error', 'message': str(e)}
+
+    if result['status'] == 'ok':
+        result['linkedNEs'] = array_to_utf(result['linkedNEs'])
+
     if callback:
         result = callback + '(' + str(result) + ');'
 

@@ -32,7 +32,7 @@ import utilities
 from lxml import etree
 from operator import attrgetter
 
-TPTA_URL = 'http://tpta.kbresearch.nl/analyse?lang=nl&url='
+#TPTA_URL = 'http://tpta.kbresearch.nl/analyse?lang=nl&url='
 TPTA_URL = 'http://145.100.59.209:8080/tpta2/analyse?lang=nl&url='
 SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
 VEC_URL = 'http://www.kbresearch.nl/vec/sim/'
@@ -54,9 +54,7 @@ class EntityLinker():
         self.solr_url = solr_url if solr_url else SOLR_URL
         self.solr_connection = solr.SolrConnection(self.solr_url)
 
-        if model == 'svm':
-            self.model = models.LinearSVM()
-        elif model == 'nn':
+        if model == 'nn':
             self.model = models.NeuralNet()
         else:
             self.model = models.LinearSVM()
@@ -71,7 +69,10 @@ class EntityLinker():
         Link named entity mention(s) in an article to a DBpedia description.
         '''
         # Get context information (article ocr and recognized entities)
-        self.context = Context(url, self.tpta_url)
+        try:
+            self.context = Context(url, self.tpta_url)
+        except:
+            return {'status': 'error', 'message': ''}
 
         # If a specific ne was requested, search for a corresponding entity in
         # the list of recognized entities
@@ -94,12 +95,15 @@ class EntityLinker():
                 in c.entities]
 
         # Process all clusters to be linked
-        linked = []
+        clusters_linked = []
 
         while clusters_to_link:
             cluster = clusters_to_link.pop()
-            result = cluster.link(self.solr_connection, SOLR_ROWS,
-                self.model, MIN_PROB, self.train)
+            try:
+                result = cluster.link(self.solr_connection, SOLR_ROWS,
+                    self.model, MIN_PROB, self.train)
+            except:
+                return {'status': 'error', 'message': ''}
 
             # If a cluster consists of multiple entities and could not be linked
             # or was not linked to a person, split it up and return the parts to
@@ -127,23 +131,24 @@ class EntityLinker():
                     else:
                         clusters_to_link.extend(new_clusters)
                 else:
-                    linked.append(cluster)
+                    clusters_linked.append(cluster)
             else:
-                linked.append(cluster)
+                clusters_linked.append(cluster)
 
         # Return the result for each (unique) entity
         results = []
         to_return = [entity_to_link] if ne else self.context.entities
         for entity in to_return:
             if entity.text not in [result['text'] for result in results]:
-                for cluster in linked:
+                for cluster in clusters_linked:
                     if entity in cluster.entities:
                         result = cluster.result.get_dict(features=self.features,
                             candidates=self.candidates)
                         result['text'] = entity.text
                         if self.debug or 'link' in result:
                             results.append(result)
-        return results
+
+        return {'status': 'ok', 'linkedNEs': results}
 
     def get_clusters(self, entities):
         '''
@@ -1250,7 +1255,8 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
     else:
         import pprint
-        linker = EntityLinker(model='nn', debug=True, features=False, candidates=True)
+        linker = EntityLinker(model='nn', debug=True, features=False,
+                candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
