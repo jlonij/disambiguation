@@ -38,7 +38,7 @@ JSRU_URL = 'http://jsru.kb.nl/sru'
 SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
 VEC_URL = 'http://www.kbresearch.nl/vec/sim/'
 
-SOLR_ROWS = 20
+SOLR_ROWS = 25
 MIN_PROB = 0.5
 
 class EntityLinker():
@@ -397,8 +397,9 @@ class Entity():
         quote_chars = [u'"', u"'", u'„', u'”', u'‚', u'’']
         for pos in [self.start_pos - 1, self.start_pos, self.end_pos - 1,
                 self.end_pos]:
-            if self.context.ocr[pos] in quote_chars:
-                quotes += 1
+            if pos >= 0 and pos < len(self.context.ocr):
+                if self.context.ocr[pos] in quote_chars:
+                    quotes += 1
         return quotes
 
     def get_title(self):
@@ -854,9 +855,9 @@ class Description():
             return
 
         ne = self.cluster.entities[0].stripped
-        if len(ne.split()) == 1:
-            self.non_matching_labels = min(len(self.non_matching), 5) / 5.0
-            return
+        #if len(ne.split()) == 1:
+        #    self.non_matching_labels = min(len(self.non_matching), 5) / 5.0
+        #    return
 
         last_part_match = 0
         for l in labels:
