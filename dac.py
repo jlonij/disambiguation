@@ -781,7 +781,7 @@ class Description():
         if self.cand_list.solr_inlinks_total > 0:
             self.inlinks = (self.document.get('inlinks') /
                 float(self.cand_list.solr_inlinks_total))
-            self.inlinks = 0.2
+            #self.inlinks = 0.2
 
         self.lang = 1 if self.document.get('lang') == 'nl' else -1
         self.ambig = 1 if self.document.get('ambig') == 1 else -1
