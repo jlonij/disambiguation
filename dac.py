@@ -36,7 +36,7 @@ from operator import attrgetter
 TPTA_URL = 'http://145.100.59.209:8080/tpta2/analyse'
 JSRU_URL = 'http://jsru.kb.nl/sru'
 SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
-VEC_URL = 'http://www.kbresearch.nl/vec/sim/'
+FT_URL = 'http://www.kbresearch.nl/fasttext/sim/'
 
 SOLR_ROWS = 25
 MIN_PROB = 0.5
@@ -781,6 +781,7 @@ class Description():
         if self.cand_list.solr_inlinks_total > 0:
             self.inlinks = (self.document.get('inlinks') /
                 float(self.cand_list.solr_inlinks_total))
+            self.inlinks = 0.2
 
         self.lang = 1 if self.document.get('lang') == 'nl' else -1
         self.ambig = 1 if self.document.get('ambig') == 1 else -1
@@ -1146,8 +1147,8 @@ class Description():
         '''
         if not self.cluster.window:
             return
-        if not self.document.get('lang') == 'nl':
-            return
+        #if not self.document.get('lang') == 'nl':
+        #    return
 
         entity_parts = []
         for e in self.cluster.entities:
@@ -1172,12 +1173,14 @@ class Description():
         if not bow:
             return
 
-        url = VEC_URL + ','.join(list(set(self.cluster.window)))
+        url = FT_URL + ','.join(list(set(self.cluster.window)))
         url += '/' + ','.join(list(set(bow)))
 
         response = requests.get(url)
         assert response.status_code == 200, 'Error retrieving word vectors'
-        scores = [float(s) for s in response.text[1:-1].split(',')]
+
+        data = response.json()
+        scores = data['scores']
 
         self.max_vec_sim = max(scores) - 0.35
         self.mean_vec_sim = (sum(scores) / len(scores)) - 0.15
@@ -1264,7 +1267,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
     else:
         import pprint
-        linker = EntityLinker(model='nn', debug=True, features=False,
+        linker = EntityLinker(model='svm', debug=True, features=True,
                 candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
