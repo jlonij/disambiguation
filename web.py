@@ -21,6 +21,7 @@
 
 import os
 import sys
+import json
 
 from bottle import abort
 from bottle import default_app
@@ -143,7 +144,7 @@ def index():
         result['linkedNEs'] = array_to_utf(result['linkedNEs'])
 
     if callback:
-        result = callback + '(' + str(result) + ');'
+        result = unicode(callback) + u'(' + json.dumps(result) + u');'
 
     response.set_header('Content-Type', 'application/json')
     return result
@@ -152,3 +153,4 @@ if __name__ == '__main__':
     run(host='localhost', port=5002)
 else:
     application = default_app()
+

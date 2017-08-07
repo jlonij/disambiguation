@@ -31,7 +31,7 @@ def clean(s):
     '''
     chars = ['+', '=', '^', '*', '~', '#', '_', '\\']
     chars += ['(', ')', '[', ']', '{', '}', '<', '>']
-    chars += ['\'', '"', '`']
+    chars += ['\'', '"', '`', '%']
     for c in chars:
         s = s.replace(c, u'')
     s = u' '.join(s.split())
