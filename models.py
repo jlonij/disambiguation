@@ -34,16 +34,16 @@ class LinearSVM:
         abs_path = os.path.dirname(os.path.realpath(__file__))
         model_file = os.path.join(abs_path, 'models', 'model.pkl')
         self.clf = joblib.load(model_file)
-
         self.features = [
             'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
             'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
             'last_part_match', 'non_matching_labels', 'name_conflict', 'pref_lsr',
             'mean_lsr', 'date_match', 'query_id_0', 'query_id_1', 'query_id_2',
             'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
-            'lang', 'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
-            'keyword_match', 'subject_match', 'max_vec_sim', 'mean_vec_sim',
-            'vec_match', 'entity_match'
+            'inlinks_rel', 'outlinks', 'inlinks_newspapers', 'lang', 'ambig',
+            'quotes', 'type_match', 'role_match', 'spec_match', 'keyword_match',
+            'subject_match', 'entity_match', 'entity_similarity', 'max_vec_sim',
+            'mean_vec_sim', 'vec_match'
         ]
 
     def predict(self, example):
@@ -59,16 +59,16 @@ class NeuralNet:
         abs_path = os.path.dirname(os.path.realpath(__file__))
         model_file = os.path.join(abs_path, 'models', 'model.h5')
         self.model = load_model(model_file)
-
         self.features = [
             'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
             'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
             'last_part_match', 'non_matching_labels', 'name_conflict', 'pref_lsr',
             'mean_lsr', 'date_match', 'query_id_0', 'query_id_1', 'query_id_2',
             'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
-            'lang', 'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
-            'keyword_match', 'subject_match', 'max_vec_sim', 'mean_vec_sim',
-            'vec_match', 'entity_match'
+            'inlinks_rel', 'outlinks', 'inlinks_newspapers', 'lang', 'ambig',
+            'quotes', 'type_match', 'role_match', 'spec_match', 'keyword_match',
+            'subject_match', 'entity_match', 'entity_similarity', 'max_vec_sim',
+            'mean_vec_sim', 'vec_match'
         ]
 
     def predict(self, example):

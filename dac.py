@@ -57,8 +57,10 @@ class EntityLinker():
 
         if model == 'nn':
             self.model = models.NeuralNet()
-        else:
+        elif model == 'svm':
             self.model = models.LinearSVM()
+        else:
+            self.model = models.NeuralNet()
 
         self.debug = debug
         self.features = features
@@ -70,6 +72,7 @@ class EntityLinker():
         Link named entity mention(s) in an article to a DBpedia description.
         '''
         # Get context information (article ocr, metadata and recognized entities)
+        #self.context = Context(url, self.tpta_url)
         try:
             self.context = Context(url, self.tpta_url)
         except Exception as e:
@@ -101,6 +104,8 @@ class EntityLinker():
 
         while clusters_to_link:
             cluster = clusters_to_link.pop()
+            #result = cluster.link(self.solr_connection, SOLR_ROWS,
+            #        self.model, MIN_PROB, self.train)
             try:
                 result = cluster.link(self.solr_connection, SOLR_ROWS,
                     self.model, MIN_PROB, self.train)
@@ -226,9 +231,9 @@ class Context():
         Retrieve ocr, metadata, subjects and entities.
         '''
         self.ocr = self.get_ocr(url)
+        self.entities = self.get_entities(url, tpta_url)
         self.publ_date = self.get_metadata(url)
         self.subjects = self.get_subjects(self.ocr)
-        self.entities = self.get_entities(url, tpta_url)
 
     def get_ocr(self, url):
         '''
@@ -243,6 +248,42 @@ class Context():
         ocr = ' '.join(ocr.split())
 
         return ocr
+
+    def get_entities(self, url, tpta_url):
+        '''
+        Retrieve the list of entities from the NER service and instantiate an
+        entity object for each one.
+        '''
+        payload = {}
+        payload['lang'] = 'nl'
+        payload['url'] = url
+
+        response = requests.get(tpta_url, params=payload, timeout=5)
+        assert response.status_code == 200, 'TPTA error'
+
+        xml = etree.fromstring(response.content)
+        error_node = xml.find('error')
+        if error_node is not None:
+            raise Exception('TPTA error: ' + error_node.text)
+
+        entities = []
+
+        entity_nodes = xml.find('entities')
+        if entity_nodes is not None:
+            # Keep track of the position of each entity in the document so that
+            # entity mentions with identical surface forms can be kept apart
+            doc_pos = 0
+            for node in entity_nodes:
+                if node.text and len(node.text) > 1:
+                    if isinstance(node.text, str):
+                        t = node.text.decode('utf-8')
+                    else:
+                        t = node.text
+                    entity = Entity(t, node.tag, self, doc_pos)
+                    doc_pos = entity.end_pos if entity.end_pos > -1 else doc_pos
+                    entities.append(entity)
+
+        return entities
 
     def get_metadata(self, url):
         '''
@@ -283,42 +324,6 @@ class Context():
             if len(set(words) & set(window)) > 0:
                 subjects.append(subject)
         return subjects
-
-    def get_entities(self, url, tpta_url):
-        '''
-        Retrieve the list of entities from the NER service and instantiate an
-        entity object for each one.
-        '''
-        payload = {}
-        payload['lang'] = 'nl'
-        payload['url'] = url
-
-        response = requests.get(tpta_url, params=payload, timeout=5)
-        assert response.status_code == 200, 'TPTA error'
-
-        xml = etree.fromstring(response.content)
-        error_node = xml.find('error')
-        if error_node is not None:
-            raise Exception('TPTA error: ' + error_node.text)
-
-        entities = []
-
-        entity_nodes = xml.find('entities')
-        if entity_nodes is not None:
-            # Keep track of the position of each entity in the document so that
-            # entity mentions with identical surface forms can be kept apart
-            doc_pos = 0
-            for node in entity_nodes:
-                if node.text and len(node.text) > 1:
-                    if isinstance(node.text, str):
-                        t = node.text.decode('utf-8')
-                    else:
-                        t = node.text
-                    entity = Entity(t, node.tag, self, doc_pos)
-                    doc_pos = entity.end_pos if entity.end_pos > -1 else doc_pos
-                    entities.append(entity)
-
-        return entities
 
 
 class Entity():
@@ -725,9 +730,10 @@ class Description():
         'last_part_match', 'non_matching_labels', 'name_conflict', 'pref_lsr',
         'mean_lsr', 'date_match', 'query_id_0', 'query_id_1', 'query_id_2',
         'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
-        'lang', 'ambig', 'quotes', 'type_match', 'role_match', 'spec_match',
-        'keyword_match', 'subject_match', 'max_vec_sim', 'mean_vec_sim',
-        'vec_match', 'entity_match'
+        'inlinks_rel', 'outlinks', 'inlinks_newspapers', 'lang', 'ambig',
+        'quotes', 'type_match', 'role_match', 'spec_match', 'keyword_match',
+        'subject_match', 'entity_match', 'entity_similarity', 'max_vec_sim',
+        'mean_vec_sim', 'vec_match'
     ]
 
     def __init__(self, document, query_iteration, query_id, cand_list, cluster):
@@ -770,7 +776,7 @@ class Description():
 
         # Solr position (relative to other remaining candidates)
         pos = self.cand_list.filtered_candidates.index(self)
-        self.solr_position = 1.0 - (pos / float(self.cand_list.solr_rows))
+        self.solr_position = 1.0 - math.tanh(pos * 0.25)
 
         # Solr score (relative to other remaining candidates)
         if self.cand_list.solr_max_score > 0:
@@ -778,14 +784,26 @@ class Description():
                 float(self.cand_list.solr_max_score))
 
         # Inlinks
+        inlinks = self.document.get('inlinks')
+        self.inlinks = math.tanh(inlinks * 0.001)
+
         if self.cand_list.solr_inlinks_total > 0:
-            self.inlinks = (self.document.get('inlinks') /
+            self.inlinks_rel = (inlinks /
                 float(self.cand_list.solr_inlinks_total))
-            #self.inlinks = 0.2
+
+        # Outlinks
+        outlinks = self.document.get('outlinks')
+        if outlinks:
+            self.outlinks = math.tanh(outlinks * 0.005)
+
+        # Inlinks newspapers
+        inlinks_newspapers = self.document.get('inlinks_newspapers')
+        if inlinks_newspapers:
+            self.inlinks_newspapers = math.tanh(inlinks_newspapers * 0.001)
 
         self.lang = 1 if self.document.get('lang') == 'nl' else -1
         self.ambig = 1 if self.document.get('ambig') == 1 else -1
-        self.quotes = min(self.cluster.quotes_total, 5) / 5.0
+        self.quotes = math.tanh(self.cluster.quotes_total * 0.25)
 
         self.match_type()
         self.match_role()
@@ -842,9 +860,9 @@ class Description():
             else:
                 self.non_matching.append(l)
 
-        self.alt_label_exact_match = min(alt_label_exact_match, 5) / 5.0
-        self.alt_label_end_match = min(alt_label_end_match, 5) / 5.0
-        self.alt_label_match = min(alt_label_match, 5) / 5.0
+        self.alt_label_exact_match = math.tanh(alt_label_exact_match * 0.25)
+        self.alt_label_end_match = math.tanh(alt_label_end_match * 0.25)
+        self.alt_label_match = math.tanh(alt_label_match * 0.25)
 
     def match_last_part(self):
         '''
@@ -908,9 +926,9 @@ class Description():
                 if not conflict:
                     last_part_match += 1
 
-        self.last_part_match = min(last_part_match, 5) / 5.0
-        self.non_matching_labels = min(len(self.non_matching) -
-            last_part_match, 5) / 5.0
+        self.last_part_match = math.tanh(last_part_match * 0.25)
+        self.non_matching_labels = math.tanh((len(self.non_matching) -
+            last_part_match) * 0.25)
 
     def get_name_conflict(self):
         '''
@@ -1099,7 +1117,7 @@ class Description():
                     key_match += 1
                     break
 
-        self.keyword_match = min(key_match, 5) / 5.0
+        self.keyword_match = math.tanh(key_match * 0.25)
 
     def match_subjects(self):
         '''
@@ -1136,9 +1154,40 @@ class Description():
                     subject_match = -1
 
         if subject_match > 0:
-            self.subject_match = min(subject_match, 5) / 5.0
+            self.subject_match = math.tanh(subject_match * 0.25)
         elif subject_match < -1:
-            self.subject_match = max(subject_match + 1, -5) / 5.0
+            self.subject_match = math.tanh((subject_match + 1) * 0.25)
+
+    def match_entities(self):
+        '''
+        Match other entities appearing in the article with DBpedia abstract.
+        '''
+        unwanted_entities = ['nederland', 'nederlands', 'nederlandse',
+            'amsterdam', 'amsterdams', 'amsterdamse']
+        unwanted_entities += [e.norm for e in self.cluster.entities]
+        unwanted_entities = list(set(unwanted_entities))
+
+        entities = [e.norm for e in self.cluster.entities[0].context.entities
+            if e.valid and e.norm not in unwanted_entities]
+        entities = list(set(entities))
+
+        abstract = utilities.normalize(self.document.get('abstract'))
+        found = [e for e in entities if abstract.find(e) > -1]
+        self.entity_match = math.tanh(len(found) * 0.25)
+
+        # Compare article entity vectors with candidate entity vector
+        url = 'http://www.kbresearch.nl/word2vec/cand-similarity?'
+        wd_id = self.document.get('uri_wd')
+        if wd_id:
+            wd_id = wd_id.split('/')[-1]
+            params = {'context': ' '.join(entities), 'cand': wd_id}
+            response = requests.get(url, params=params, timeout=60)
+            #print(response.url)
+            #print(response.text)
+            response = response.json()
+            similarity = response['similarities'][0]['similarity']
+            if similarity:
+                self.entity_similarity = similarity
 
     def match_vectors(self):
         '''
@@ -1147,8 +1196,8 @@ class Description():
         '''
         if not self.cluster.window:
             return
-        #if not self.document.get('lang') == 'nl':
-        #    return
+        if not self.document.get('lang') == 'nl':
+            return
 
         entity_parts = []
         for e in self.cluster.entities:
@@ -1184,25 +1233,7 @@ class Description():
 
         self.max_vec_sim = max(scores) - 0.35
         self.mean_vec_sim = (sum(scores) / len(scores)) - 0.15
-        self.vec_match = min(len([s for s in scores if s >= 0.55]), 5) / 5.0
-
-    def match_entities(self):
-        '''
-        Match other entities appearing in the article with DBpedia abstract.
-        '''
-        unwanted_entities = ['nederland', 'nederlands', 'nederlandse',
-            'amsterdam', 'amsterdams', 'amsterdamse']
-        unwanted_entities += [e.norm for e in self.cluster.entities]
-
-        entities = [e.norm for e in self.cluster.entities[0].context.entities
-            if e.valid and e.norm not in unwanted_entities]
-        entities = list(set(entities))
-
-        abstract = utilities.normalize(self.document.get('abstract'))
-
-        found = [e for e in entities if abstract.find(e) > -1]
-
-        self.entity_match = min(len(found), 5) / 5.0
+        self.vec_match = math.tanh(len([s for s in scores if s >= 0.55]) * 0.25)
 
 
 class Result():
@@ -1267,7 +1298,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
     else:
         import pprint
-        linker = EntityLinker(model='svm', debug=True, features=True,
+        linker = EntityLinker(model='nn', debug=True, features=True,
                 candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
