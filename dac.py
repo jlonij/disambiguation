@@ -60,7 +60,7 @@ class EntityLinker():
         elif model == 'svm':
             self.model = models.LinearSVM()
         else:
-            self.model = models.NeuralNet()
+            self.model = models.LinearSVM()
 
         self.debug = debug
         self.features = features
@@ -732,7 +732,8 @@ class Description():
         'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
         'inlinks_rel', 'outlinks', 'inlinks_newspapers', 'lang', 'ambig',
         'quotes', 'type_match', 'role_match', 'spec_match', 'keyword_match',
-        'subject_match', 'entity_match', 'entity_similarity', 'max_vec_sim',
+        'subject_match', 'entity_match', 'entity_similarity',
+        'entity_similarity_top', 'entity_similarity_mean', 'max_vec_sim',
         'mean_vec_sim', 'vec_match'
     ]
 
@@ -1176,18 +1177,23 @@ class Description():
         self.entity_match = math.tanh(len(found) * 0.25)
 
         # Compare article entity vectors with candidate entity vector
-        url = 'http://www.kbresearch.nl/word2vec/cand-similarity?'
+        url = 'http://www.kbresearch.nl/word2vec/n-similarity?'
         wd_id = self.document.get('uri_wd')
         if wd_id:
             wd_id = wd_id.split('/')[-1]
-            params = {'context': ' '.join(entities), 'cand': wd_id}
-            response = requests.get(url, params=params, timeout=60)
+            params = {'source': ' '.join(entities), 'target': wd_id}
+            response = requests.get(url, params=params, timeout=10)
             #print(response.url)
             #print(response.text)
             response = response.json()
-            similarity = response['similarities'][0]['similarity']
-            if similarity:
-                self.entity_similarity = similarity
+            if 'similarities' in response:
+                sim = response['similarities'][0]
+                if sim['max']:
+                    self.entity_similarity = sim['max']
+                if sim['top']:
+                    self.entity_similarity_top = sim['top']
+                if sim['mean']:
+                    self.entity_similarity_mean = sim['mean']
 
     def match_vectors(self):
         '''

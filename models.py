@@ -42,7 +42,8 @@ class LinearSVM:
             'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
             'inlinks_rel', 'outlinks', 'inlinks_newspapers', 'lang', 'ambig',
             'quotes', 'type_match', 'role_match', 'spec_match', 'keyword_match',
-            'subject_match', 'entity_match', 'entity_similarity', 'max_vec_sim',
+            'subject_match', 'entity_match', 'entity_similarity',
+            'entity_similarity_top', 'entity_similarity_mean', 'max_vec_sim',
             'mean_vec_sim', 'vec_match'
         ]
 
@@ -67,7 +68,8 @@ class NeuralNet:
             'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
             'inlinks_rel', 'outlinks', 'inlinks_newspapers', 'lang', 'ambig',
             'quotes', 'type_match', 'role_match', 'spec_match', 'keyword_match',
-            'subject_match', 'entity_match', 'entity_similarity', 'max_vec_sim',
+            'subject_match', 'entity_match', 'entity_similarity',
+            'entity_similarity_top', 'entity_similarity_mean', 'max_vec_sim',
             'mean_vec_sim', 'vec_match'
         ]
 
