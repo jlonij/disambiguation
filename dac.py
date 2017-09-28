@@ -41,6 +41,7 @@ FT_URL = 'http://www.kbresearch.nl/fasttext/sim/'
 SOLR_ROWS = 25
 MIN_PROB = 0.5
 
+
 class EntityLinker():
     '''
     Link named entity mention(s) in an article to a DBpedia description.
@@ -239,7 +240,7 @@ class Context():
         '''
         Retrieve ocr from resolver url.
         '''
-        response = requests.get(url, timeout=5)
+        response = requests.get(url, timeout=30)
         assert response.status_code == 200, 'Error retrieving OCR'
 
         xml = etree.fromstring(response.content)
@@ -251,14 +252,14 @@ class Context():
 
     def get_entities(self, url, tpta_url):
         '''
-        Retrieve the list of entities from the NER service and instantiate an
+        Retrieve entities from the NER service and instantiate an
         entity object for each one.
         '''
         payload = {}
         payload['lang'] = 'nl'
         payload['url'] = url
 
-        response = requests.get(tpta_url, params=payload, timeout=5)
+        response = requests.get(tpta_url, params=payload, timeout=30)
         assert response.status_code == 200, 'TPTA error'
 
         xml = etree.fromstring(response.content)
@@ -294,7 +295,7 @@ class Context():
         payload['x-collection'] = 'DDD_artikel'
         payload['query'] = 'uniqueKey=' + url[url.find('ddd:'):-4]
 
-        response = requests.get(JSRU_URL, params=payload, timeout=5)
+        response = requests.get(JSRU_URL, params=payload, timeout=30)
         assert response.status_code == 200, 'Error retrieving metadata'
 
         xml = etree.fromstring(response.content)
@@ -686,8 +687,14 @@ class CandidateList():
         '''
         Rank candidates according to trained model.
         '''
-        self.solr_max_score = self.get_max_score()
-        self.solr_inlinks_total = self.get_total_inlinks()
+        self.max_score = max([c.document.get('score') for c in
+            self.filtered_candidates])
+        self.sum_inlinks = sum([c.document.get('inlinks') for c in
+            self.filtered_candidates if c.document.get('inlinks')])
+        self.sum_outlinks = sum([c.document.get('outlinks') for c in
+            self.filtered_candidates if c.document.get('outlinks')])
+        self.sum_inlinks_newspapers = sum([c.document.get('inlinks_newspapers')
+            for c in self.filtered_candidates if c.document.get('inlinks_newspapers')])
 
         for c in self.filtered_candidates:
             c.calculate_prob_features()
@@ -700,25 +707,6 @@ class CandidateList():
         self.ranked_candidates = sorted(self.filtered_candidates,
             key=attrgetter('prob'), reverse=True)
 
-    def get_max_score(self):
-        '''
-        Get the maximum score for the result set.
-        '''
-        solr_max_score = 0
-        for c in self.filtered_candidates:
-            if c.document.get('score') > solr_max_score:
-                solr_max_score = c.document.get('score')
-        return solr_max_score
-
-    def get_total_inlinks(self):
-        '''
-        Get the total number of inlinks for the result set.
-        '''
-        solr_inlinks_total = 0
-        for c in self.filtered_candidates:
-            solr_inlinks_total += c.document.get('inlinks')
-        return solr_inlinks_total
-
 
 class Description():
     '''
@@ -730,11 +718,11 @@ class Description():
         'last_part_match', 'non_matching_labels', 'name_conflict', 'pref_lsr',
         'mean_lsr', 'date_match', 'query_id_0', 'query_id_1', 'query_id_2',
         'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
-        'inlinks_rel', 'outlinks', 'inlinks_newspapers', 'lang', 'ambig',
-        'quotes', 'type_match', 'role_match', 'spec_match', 'keyword_match',
-        'subject_match', 'entity_match', 'entity_similarity',
-        'entity_similarity_top', 'entity_similarity_mean', 'max_vec_sim',
-        'mean_vec_sim', 'vec_match'
+        'inlinks_rel', 'outlinks', 'outlinks_rel', 'inlinks_newspapers',
+        'inlinks_newspapers_rel', 'lang', 'ambig', 'quotes', 'type_match',
+        'role_match', 'spec_match', 'keyword_match', 'subject_match',
+        'entity_match', 'entity_similarity', 'entity_similarity_top',
+        'entity_similarity_mean', 'max_vec_sim', 'mean_vec_sim', 'vec_match'
     ]
 
     def __init__(self, document, query_iteration, query_id, cand_list, cluster):
@@ -780,27 +768,31 @@ class Description():
         self.solr_position = 1.0 - math.tanh(pos * 0.25)
 
         # Solr score (relative to other remaining candidates)
-        if self.cand_list.solr_max_score > 0:
+        if self.cand_list.max_score:
             self.solr_score = (self.document.get('score') /
-                float(self.cand_list.solr_max_score))
+                float(self.cand_list.max_score))
 
         # Inlinks
-        inlinks = self.document.get('inlinks')
+        inlinks = (self.document.get('inlinks')
+            if self.document.get('inlinks') else 0)
+        if self.cand_list.sum_inlinks:
+            self.inlinks_rel = inlinks / float(self.cand_list.sum_inlinks)
         self.inlinks = math.tanh(inlinks * 0.001)
 
-        if self.cand_list.solr_inlinks_total > 0:
-            self.inlinks_rel = (inlinks /
-                float(self.cand_list.solr_inlinks_total))
-
         # Outlinks
-        outlinks = self.document.get('outlinks')
-        if outlinks:
-            self.outlinks = math.tanh(outlinks * 0.005)
+        outlinks = (self.document.get('outlinks')
+            if self.document.get('outlinks') else 0)
+        if self.cand_list.sum_outlinks:
+            self.outlinks_rel = outlinks / float(self.cand_list.sum_outlinks)
+        self.oulinks = math.tanh(outlinks * 0.005)
 
         # Inlinks newspapers
-        inlinks_newspapers = self.document.get('inlinks_newspapers')
-        if inlinks_newspapers:
-            self.inlinks_newspapers = math.tanh(inlinks_newspapers * 0.001)
+        inlinks_newspapers = (self.document.get('inlinks_newspapers')
+            if self.document.get('inlinks_newspapers') else 0)
+        if self.cand_list.sum_inlinks_newspapers:
+            self.inlinks_newspapers_rel = (inlinks_newspapers /
+                float(self.cand_list.sum_inlinks_newspapers))
+        self.inlinks_newspapers = math.tanh(inlinks_newspapers * 0.001)
 
         self.lang = 1 if self.document.get('lang') == 'nl' else -1
         self.ambig = 1 if self.document.get('ambig') == 1 else -1
@@ -1091,7 +1083,7 @@ class Description():
         spec_stem = spec[:int(math.ceil(len(spec) * 0.8))]
 
         ocr = self.cluster.entities[0].context.ocr
-        if utilities.normalize(ocr).find(spec_stem):
+        if utilities.normalize(ocr).find(spec_stem) > -1:
             self.spec_match = 1
 
     def match_keywords(self):
@@ -1182,7 +1174,7 @@ class Description():
         if wd_id:
             wd_id = wd_id.split('/')[-1]
             params = {'source': ' '.join(entities), 'target': wd_id}
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, timeout=30)
             #print(response.url)
             #print(response.text)
             response = response.json()
@@ -1300,12 +1292,14 @@ class Result():
 
 
 if __name__ == '__main__':
+    import pprint
+
     if not len(sys.argv) > 1:
         print("Usage: ./dac.py [url (string)]")
+
     else:
-        import pprint
-        linker = EntityLinker(model='nn', debug=True, features=True,
-                candidates=False)
+        linker = EntityLinker(model='svm', debug=True, features=True,
+                candidates=True)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
