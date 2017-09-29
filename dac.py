@@ -805,6 +805,7 @@ class Description():
         self.match_subjects()
         self.match_vectors()
         self.match_entities()
+        self.entity_similarity()
 
     def match_pref_label(self):
         '''
@@ -1168,6 +1169,7 @@ class Description():
         found = [e for e in entities if abstract.find(e) > -1]
         self.entity_match = math.tanh(len(found) * 0.25)
 
+    def entity_similarity(self):
         # Compare article entity vectors with candidate entity vector
         url = 'http://www.kbresearch.nl/word2vec/n-similarity?'
         wd_id = self.document.get('uri_wd')
