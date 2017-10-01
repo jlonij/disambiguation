@@ -232,10 +232,9 @@ class Context():
         '''
         Retrieve ocr, metadata, subjects and entities.
         '''
+        self.url = url
         self.ocr = self.get_ocr(url)
         self.entities = self.get_entities(url, tpta_url)
-        self.publ_date = self.get_metadata(url)
-        #self.subjects = self.get_subjects(self.ocr)
 
     def get_ocr(self, url):
         '''
@@ -287,14 +286,14 @@ class Context():
 
         return entities
 
-    def get_metadata(self, url):
+    def get_publ_year(self):
         '''
         Retrieve metadata (currently just publication date) with sru.
         '''
         payload = {}
         payload['operation'] = 'searchRetrieve'
         payload['x-collection'] = 'DDD_artikel'
-        payload['query'] = 'uniqueKey=' + url[url.find('ddd:'):-4]
+        payload['query'] = 'uniqueKey=' + self.url[self.url.find('ddd:'):-4]
 
         response = requests.get(JSRU_URL, params=payload, timeout=30)
         assert response.status_code == 200, 'Error retrieving metadata'
@@ -308,9 +307,11 @@ class Context():
 
         date_element = xml.find(path)
         if date_element is not None:
-            return date_element.text
+            self.publ_year = int(date_element.text[:4])
         else:
-            return None
+            self.publ_year = None
+
+        return self.publ_year
 
     def get_subjects(self):
         '''
@@ -325,7 +326,9 @@ class Context():
             window = [utilities.normalize(w) for w in utilities.tokenize(self.ocr)]
             if len(set(words) & set(window)) > 0:
                 subjects.append(subject)
+
         self.subjects = subjects
+        return self.subjects
 
 
 class Entity():
@@ -532,6 +535,7 @@ class Cluster():
         Initialize cluster.
         '''
         self.entities = entities
+        self.context = self.entities[0].context
 
     def link(self, solr_connection, solr_rows, model, min_prob, train):
         '''
@@ -561,9 +565,6 @@ class Cluster():
         self.quotes_total = self.get_total_quotes()
         self.type_ratios = self.get_type_ratios()
         self.window = self.get_window()
-        if not hasattr(self.entities[0].context, 'subjects'):
-            print('getting subjects')
-            self.entities[0].context.get_subjects()
 
         cand_list.rank(train)
         best_match = cand_list.ranked_candidates[0]
@@ -956,10 +957,13 @@ class Description():
         Compare publication year of the article with birth and death years in
         the entity description.
         '''
-        publ_date = self.cluster.entities[0].context.publ_date
-        if not publ_date:
+        if not hasattr(self.cluster.context, 'publ_year'):
+            publ_year = self.cluster.context.get_publ_year()
+        else:
+            publ_year = self.cluster.context.publ_year
+
+        if not publ_year:
             return
-        publ_year = int(publ_date[:4])
 
         birth_year = self.document.get('birth_year')
         death_year = self.document.get('death_year')
@@ -1121,7 +1125,11 @@ class Description():
         Match the subject areas identified for the article with the DBpedia
         abstract.
         '''
-        subjects = self.cluster.entities[0].context.subjects
+        if not hasattr(self.cluster.context, 'subjects'):
+            subjects = self.cluster.context.get_subjects()
+        else:
+            subjects = self.cluster.context.subjects
+
         if not subjects:
             return
 
