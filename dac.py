@@ -32,8 +32,8 @@ import utilities
 from lxml import etree
 from operator import attrgetter
 
-#TPTA_URL = 'http://tpta.kbresearch.nl/analyse?'
-TPTA_URL = 'http://145.100.59.209:8080/tpta2/analyse'
+TPTA_URL = 'http://tpta.kbresearch.nl/analyse?'
+#TPTA_URL = 'http://145.100.59.209:8080/tpta2/analyse'
 JSRU_URL = 'http://jsru.kb.nl/sru'
 SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
 FT_URL = 'http://www.kbresearch.nl/fasttext/sim/'
@@ -72,11 +72,12 @@ class EntityLinker():
         '''
         Link named entity mention(s) in an article to a DBpedia description.
         '''
-        # Get context information (article ocr, metadata and recognized entities)
-        #self.context = Context(url, self.tpta_url)
+        # Get context information (article ocr, metadata etc.)
         try:
             self.context = Context(url, self.tpta_url)
         except Exception as e:
+            if self.debug:
+                raise
             return {'status': 'error', 'message': 'Error retrieving context: '
                     + str(e)}
 
@@ -105,12 +106,12 @@ class EntityLinker():
 
         while clusters_to_link:
             cluster = clusters_to_link.pop()
-            #result = cluster.link(self.solr_connection, SOLR_ROWS,
-            #        self.model, MIN_PROB, self.train)
             try:
                 result = cluster.link(self.solr_connection, SOLR_ROWS,
                     self.model, MIN_PROB, self.train)
             except Exception as e:
+                if self.debug:
+                    raise
                 return {'status': 'error', 'message': 'Error linking entity: '
                         + str(e)}
 
@@ -234,7 +235,7 @@ class Context():
         self.ocr = self.get_ocr(url)
         self.entities = self.get_entities(url, tpta_url)
         self.publ_date = self.get_metadata(url)
-        self.subjects = self.get_subjects(self.ocr)
+        #self.subjects = self.get_subjects(self.ocr)
 
     def get_ocr(self, url):
         '''
@@ -311,7 +312,7 @@ class Context():
         else:
             return None
 
-    def get_subjects(self, ocr):
+    def get_subjects(self):
         '''
         Extract subjects from ocr (based on dictionary for now).
         '''
@@ -321,10 +322,10 @@ class Context():
             for role in dictionary.roles:
                 if subject in dictionary.roles[role]['subjects']:
                     words += dictionary.roles[role]['words']
-            window = [utilities.normalize(w) for w in utilities.tokenize(ocr)]
+            window = [utilities.normalize(w) for w in utilities.tokenize(self.ocr)]
             if len(set(words) & set(window)) > 0:
                 subjects.append(subject)
-        return subjects
+        self.subjects = subjects
 
 
 class Entity():
@@ -560,6 +561,9 @@ class Cluster():
         self.quotes_total = self.get_total_quotes()
         self.type_ratios = self.get_type_ratios()
         self.window = self.get_window()
+        if not hasattr(self.entities[0].context, 'subjects'):
+            print('getting subjects')
+            self.entities[0].context.get_subjects()
 
         cand_list.rank(train)
         best_match = cand_list.ranked_candidates[0]
@@ -805,7 +809,6 @@ class Description():
         self.match_subjects()
         self.match_vectors()
         self.match_entities()
-        self.entity_similarity()
 
     def match_pref_label(self):
         '''
@@ -1169,7 +1172,6 @@ class Description():
         found = [e for e in entities if abstract.find(e) > -1]
         self.entity_match = math.tanh(len(found) * 0.25)
 
-    def entity_similarity(self):
         # Compare article entity vectors with candidate entity vector
         url = 'http://www.kbresearch.nl/word2vec/n-similarity?'
         wd_id = self.document.get('uri_wd')
@@ -1301,7 +1303,7 @@ if __name__ == '__main__':
 
     else:
         linker = EntityLinker(model='svm', debug=True, features=True,
-                candidates=True)
+                candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
