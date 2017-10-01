@@ -560,10 +560,7 @@ class Cluster():
             self.result = Result("Name or date conflict", cand_list=cand_list)
             return self.result
 
-        # If any candidates remain, calculate their feature values and
-        # probability and select the best candidate
-        self.quotes_total = self.get_total_quotes()
-        self.type_ratios = self.get_type_ratios()
+        # If any candidates remain, calculate probabilities and select the best
         self.window = self.get_window()
 
         cand_list.rank(train)
@@ -574,17 +571,8 @@ class Cluster():
         else:
             self.result = Result("Probability too low for: " +
                 best_match.document.get('label'), best_match.prob, best_match,
-                    cand_list=cand_list)
+                cand_list=cand_list)
         return self.result
-
-    def get_total_quotes(self):
-        '''
-        Get the total number of quotes for all entities in the cluster.
-        '''
-        total_quotes = 0
-        for e in self.entities:
-            total_quotes += e.quotes
-        return total_quotes
 
     def get_type_ratios(self):
         '''
@@ -592,12 +580,15 @@ class Cluster():
         '''
         types = [e.tpta_type for e in self.entities if e.tpta_type]
         types += [e.alt_type for e in self.entities if e.alt_type]
-        if not types:
-            return None
 
-        type_ratios = {}
-        for t in list(set(types[:])):
-            type_ratios[t] = types.count(t) / float(len(types))
+        if types:
+            type_ratios = {}
+            for t in list(set(types[:])):
+                type_ratios[t] = types.count(t) / float(len(types))
+        else:
+            type_ratios = None
+
+        self.type_ratios = type_ratios
         return type_ratios
 
     def get_window(self):
@@ -684,7 +675,7 @@ class CandidateList():
         '''
         self.filtered_candidates = []
         for c in self.candidates:
-            c.calculate_rule_features()
+            c.set_rule_features()
             if c.name_conflict == 0 and c.date_match > -1:
                 self.filtered_candidates.append(c)
 
@@ -692,17 +683,8 @@ class CandidateList():
         '''
         Rank candidates according to trained model.
         '''
-        self.max_score = max([c.document.get('score') for c in
-            self.filtered_candidates])
-        self.sum_inlinks = sum([c.document.get('inlinks') for c in
-            self.filtered_candidates if c.document.get('inlinks')])
-        self.sum_outlinks = sum([c.document.get('outlinks') for c in
-            self.filtered_candidates if c.document.get('outlinks')])
-        self.sum_inlinks_newspapers = sum([c.document.get('inlinks_newspapers')
-            for c in self.filtered_candidates if c.document.get('inlinks_newspapers')])
-
         for c in self.filtered_candidates:
-            c.calculate_prob_features()
+            c.set_prob_features()
             if not train:
                 example = []
                 for j in range(len(self.model.features)):
@@ -732,7 +714,7 @@ class Description():
 
     def __init__(self, document, query_iteration, query_id, cand_list, cluster):
         '''
-        Set description attributes.
+        Initialize description.
         '''
         self.document = document
         self.query_iteration = query_iteration
@@ -745,73 +727,53 @@ class Description():
         for f in self.features:
             setattr(self, f, 0)
 
-    def calculate_rule_features(self):
+    def set_rule_features(self):
         '''
-        Calcutate the feature values needed for rule-based candidate filtering.
+        Set the feature values needed for rule-based candidate filtering.
         '''
-        self.match_pref_label()
-        self.match_alt_label()
-        self.match_last_part()
-        self.match_levenshtein()
-        self.get_name_conflict()
-        self.match_date()
+        # Date match
+        if self.set_date_match() > -1:
+            # String match
+            self.set_pref_label_match()
+            self.set_alt_label_match()
+            self.set_last_part_match()
+            self.set_name_conflict()
 
-    def calculate_prob_features(self):
+            # Not (yet) rule-based, but concerning string match as well
+            self.set_levenshtein()
+
+    def set_date_match(self):
         '''
-        Calculate the additional feature values needed for probability-based
-        candidate ranking.
+        Compare publication year of the article with birth and death years in
+        the entity description.
         '''
-        # Solr iteration
-        self.query_id_0 = 1 if self.query_id == 0 else 0
-        self.query_id_1 = 1 if self.query_id == 1 else 0
-        self.query_id_2 = 1 if self.query_id == 2 else 0
-        self.query_id_3 = 1 if self.query_id == 3 else 0
-        self.substitution = 1 if self.query_iteration == 1 else 0
+        if not hasattr(self.cluster.context, 'publ_year'):
+            publ_year = self.cluster.context.get_publ_year()
+        else:
+            publ_year = self.cluster.context.publ_year
 
-        # Solr position (relative to other remaining candidates)
-        pos = self.cand_list.filtered_candidates.index(self)
-        self.solr_position = 1.0 - math.tanh(pos * 0.25)
+        if not publ_year:
+            return 0
 
-        # Solr score (relative to other remaining candidates)
-        if self.cand_list.max_score:
-            self.solr_score = (self.document.get('score') /
-                float(self.cand_list.max_score))
+        birth_year = self.document.get('birth_year')
+        death_year = self.document.get('death_year')
+        if not birth_year:
+            return 0
+        if not death_year:
+            death_year = birth_year + 80
 
-        # Inlinks
-        inlinks = (self.document.get('inlinks')
-            if self.document.get('inlinks') else 0)
-        if self.cand_list.sum_inlinks:
-            self.inlinks_rel = inlinks / float(self.cand_list.sum_inlinks)
-        self.inlinks = math.tanh(inlinks * 0.001)
+        if publ_year < birth_year:
+            self.date_match = -1
+        elif publ_year < birth_year + 20:
+            self.date_match = 0.5
+        elif publ_year < death_year + 20:
+            self.date_match = 1
+        else:
+            self.date_match = 0.75
 
-        # Outlinks
-        outlinks = (self.document.get('outlinks')
-            if self.document.get('outlinks') else 0)
-        if self.cand_list.sum_outlinks:
-            self.outlinks_rel = outlinks / float(self.cand_list.sum_outlinks)
-        self.oulinks = math.tanh(outlinks * 0.005)
+        return self.date_match
 
-        # Inlinks newspapers
-        inlinks_newspapers = (self.document.get('inlinks_newspapers')
-            if self.document.get('inlinks_newspapers') else 0)
-        if self.cand_list.sum_inlinks_newspapers:
-            self.inlinks_newspapers_rel = (inlinks_newspapers /
-                float(self.cand_list.sum_inlinks_newspapers))
-        self.inlinks_newspapers = math.tanh(inlinks_newspapers * 0.001)
-
-        self.lang = 1 if self.document.get('lang') == 'nl' else -1
-        self.ambig = 1 if self.document.get('ambig') == 1 else -1
-        self.quotes = math.tanh(self.cluster.quotes_total * 0.25)
-
-        self.match_type()
-        self.match_role()
-        self.match_spec()
-        self.match_keywords()
-        self.match_subjects()
-        self.match_vectors()
-        self.match_entities()
-
-    def match_pref_label(self):
+    def set_pref_label_match(self):
         '''
         Match the main description label with the normalized entity.
         '''
@@ -832,7 +794,7 @@ class Description():
         else:
             self.non_matching.append(label)
 
-    def match_alt_label(self):
+    def set_alt_label_match(self):
         '''
         Match alternative labels with the normalized entity.
         '''
@@ -862,7 +824,7 @@ class Description():
         self.alt_label_end_match = math.tanh(alt_label_end_match * 0.25)
         self.alt_label_match = math.tanh(alt_label_match * 0.25)
 
-    def match_last_part(self):
+    def set_last_part_match(self):
         '''
         Match the last part of the stripped entity with all labels,
         making sure preceding parts (e.g. initials) don't conflict.
@@ -928,7 +890,7 @@ class Description():
         self.non_matching_labels = math.tanh((len(self.non_matching) -
             last_part_match) * 0.25)
 
-    def get_name_conflict(self):
+    def set_name_conflict(self):
         '''
         Determine if the description has a name conflict, i.e. not a single
         sufficiently matching label was found.
@@ -940,9 +902,9 @@ class Description():
         else:
             self.name_conflict = 0
 
-    def match_levenshtein(self):
+    def set_levenshtein(self):
         '''
-        Get the mean and max Levenshtein ratio for all labels.
+        Mean and max Levenshtein ratio for all labels.
         '''
         labels = [self.document.get('pref_label')]
         if self.document.get('alt_label'):
@@ -952,40 +914,101 @@ class Description():
         self.pref_lsr = ratios[0]
         self.mean_lsr = sum(ratios) / float(len(labels))
 
-    def match_date(self):
+    def set_prob_features(self):
         '''
-        Compare publication year of the article with birth and death years in
-        the entity description.
+        Set the additional feature values needed for probability-based
+        candidate ranking.
         '''
-        if not hasattr(self.cluster.context, 'publ_year'):
-            publ_year = self.cluster.context.get_publ_year()
-        else:
-            publ_year = self.cluster.context.publ_year
+        # Mention (context) features
+        self.set_quotes()
 
-        if not publ_year:
-            return
+        # Description features ('prior probability')
+        self.set_inlinks()
+        self.set_ambig()
 
-        birth_year = self.document.get('birth_year')
-        death_year = self.document.get('death_year')
-        if not birth_year:
-            return
-        if not death_year:
-            death_year = birth_year + 80
+        # Description - mention (context) match features
+        self.set_solr_properties()
+        self.set_language()
+        self.set_type_match()
+        self.set_role_match()
+        self.set_spec_match()
+        self.set_keyword_match()
+        self.set_subject_match()
+        self.set_vector_match()
+        self.set_entity_match()
 
-        if publ_year < birth_year:
-            self.date_match = -1
-        elif publ_year < birth_year + 20:
-            self.date_match = 0.5
-        elif publ_year < death_year + 20:
-            self.date_match = 1
-        else:
-            self.date_match = 0.75
+    def set_quotes(self):
+        '''
+        Count number of quotes surrounding entity mentions.
+        '''
+        if not hasattr(self.cluster, 'sum_quotes'):
+            self.cluster.sum_quotes = sum([e.quotes for e in
+                self.cluster.entities])
 
-    def match_type(self):
+        self.quotes = math.tanh(self.cluster.sum_quotes * 0.25)
+
+    def set_inlinks(self):
+        '''
+        Determine inlinks feature values.
+        '''
+        for link_type in ['inlinks', 'inlinks_newspapers']:
+            link_count = self.document.get(link_type)
+            if link_count:
+                setattr(self, link_type, math.tanh(link_count * 0.001))
+                if not hasattr(self.cand_list, 'sum_' + link_type):
+                    link_sum = sum([c.document.get(link_type) for c in
+                        self.cand_list.filtered_candidates if
+                        c.document.get(link_type)])
+                    setattr(self.cand_list, 'sum_' + link_type, link_sum)
+                else:
+                    link_sum = getattr(self.cand_list, 'sum_' + link_type)
+                if link_sum:
+                    link_count_rel = link_count / float(link_sum)
+                    setattr(self, link_type + '_rel', link_count_rel)
+
+    def set_ambig(self):
+        '''
+        See if the description label is ambiguous.
+        '''
+        self.ambig = 1 if self.document.get('ambig') == 1 else -1
+
+    def set_solr_properties(self):
+        '''
+        Determine Solr iteration, position and score.
+        '''
+        # Solr iteration
+        self.query_id_0 = 1 if self.query_id == 0 else 0
+        self.query_id_1 = 1 if self.query_id == 1 else 0
+        self.query_id_2 = 1 if self.query_id == 2 else 0
+        self.query_id_3 = 1 if self.query_id == 3 else 0
+        self.substitution = 1 if self.query_iteration == 1 else 0
+
+        # Solr position (relative to other remaining candidates)
+        pos = self.cand_list.filtered_candidates.index(self)
+        self.solr_position = 1.0 - math.tanh(pos * 0.25)
+
+        # Solr score (relative to other remaining candidates)
+        if not hasattr(self.cand_list, 'max_score'):
+            self.cand_list.max_score = max([c.document.get('score') for c in
+                self.cand_list.filtered_candidates])
+        if self.cand_list.max_score:
+            self.solr_score = (self.document.get('score') /
+                float(self.cand_list.max_score))
+
+    def set_language(self):
+        '''
+        See if description is available in Dutch.
+        '''
+        self.lang = 1 if self.document.get('lang') == 'nl' else -1
+
+    def set_type_match(self):
         '''
         Match entity and description type (person, location or organization).
         '''
-        type_ratios = self.cluster.type_ratios
+        if not hasattr(self.cluster, 'type_ratios'):
+            type_ratios = self.cluster.get_type_ratios()
+        else:
+            type_ratios = self.cluster.type_ratios
         if not type_ratios:
             return
 
@@ -1040,7 +1063,7 @@ class Description():
                 if 'Person' in schema_types:
                     self.type_match = -1
 
-    def match_role(self):
+    def set_role_match(self):
         '''
         Match entity and description role (e.g. minister, university, river).
         '''
@@ -1079,7 +1102,7 @@ class Description():
                         self.role_match = -1
                         return
 
-    def match_spec(self):
+    def set_spec_match(self):
         '''
         Find the specification between brackets in the description uri in
         the article.
@@ -1090,11 +1113,11 @@ class Description():
 
         spec_stem = spec[:int(math.ceil(len(spec) * 0.8))]
 
-        ocr = self.cluster.entities[0].context.ocr
+        ocr = self.cluster.context.ocr
         if utilities.normalize(ocr).find(spec_stem) > -1:
             self.spec_match = 1
 
-    def match_keywords(self):
+    def set_keyword_match(self):
         '''
         Match DBpedia category keywords with the article ocr.
         '''
@@ -1120,7 +1143,7 @@ class Description():
 
         self.keyword_match = math.tanh(key_match * 0.25)
 
-    def match_subjects(self):
+    def set_subject_match(self):
         '''
         Match the subject areas identified for the article with the DBpedia
         abstract.
@@ -1163,43 +1186,7 @@ class Description():
         elif subject_match < -1:
             self.subject_match = math.tanh((subject_match + 1) * 0.25)
 
-    def match_entities(self):
-        '''
-        Match other entities appearing in the article with DBpedia abstract.
-        '''
-        unwanted_entities = ['nederland', 'nederlands', 'nederlandse',
-            'amsterdam', 'amsterdams', 'amsterdamse']
-        unwanted_entities += [e.norm for e in self.cluster.entities]
-        unwanted_entities = list(set(unwanted_entities))
-
-        entities = [e.norm for e in self.cluster.entities[0].context.entities
-            if e.valid and e.norm not in unwanted_entities]
-        entities = list(set(entities))
-
-        abstract = utilities.normalize(self.document.get('abstract'))
-        found = [e for e in entities if abstract.find(e) > -1]
-        self.entity_match = math.tanh(len(found) * 0.25)
-
-        # Compare article entity vectors with candidate entity vector
-        url = 'http://www.kbresearch.nl/word2vec/n-similarity?'
-        wd_id = self.document.get('uri_wd')
-        if wd_id:
-            wd_id = wd_id.split('/')[-1]
-            params = {'source': ' '.join(entities), 'target': wd_id}
-            response = requests.get(url, params=params, timeout=30)
-            #print(response.url)
-            #print(response.text)
-            response = response.json()
-            if 'similarities' in response:
-                sim = response['similarities'][0]
-                if sim['max']:
-                    self.entity_similarity = sim['max']
-                if sim['top']:
-                    self.entity_similarity_top = sim['top']
-                if sim['mean']:
-                    self.entity_similarity_mean = sim['mean']
-
-    def match_vectors(self):
+    def set_vector_match(self):
         '''
         Get maximum and mean similarity for entity context and candidate
         description vector sets.
@@ -1244,6 +1231,42 @@ class Description():
         self.max_vec_sim = max(scores) - 0.35
         self.mean_vec_sim = (sum(scores) / len(scores)) - 0.15
         self.vec_match = math.tanh(len([s for s in scores if s >= 0.55]) * 0.25)
+
+    def set_entity_match(self):
+        '''
+        Match other entities appearing in the article with DBpedia abstract.
+        '''
+        unwanted_entities = ['nederland', 'nederlands', 'nederlandse',
+            'amsterdam', 'amsterdams', 'amsterdamse']
+        unwanted_entities += [e.norm for e in self.cluster.entities]
+        unwanted_entities = list(set(unwanted_entities))
+
+        entities = [e.norm for e in self.cluster.entities[0].context.entities
+            if e.valid and e.norm not in unwanted_entities]
+        entities = list(set(entities))
+
+        abstract = utilities.normalize(self.document.get('abstract'))
+        found = [e for e in entities if abstract.find(e) > -1]
+        self.entity_match = math.tanh(len(found) * 0.25)
+
+        # Compare article entity vectors with candidate entity vector
+        url = 'http://www.kbresearch.nl/word2vec/n-similarity?'
+        wd_id = self.document.get('uri_wd')
+        if wd_id:
+            wd_id = wd_id.split('/')[-1]
+            params = {'source': ' '.join(entities), 'target': wd_id}
+            response = requests.get(url, params=params, timeout=30)
+            #print(response.url)
+            #print(response.text)
+            response = response.json()
+            if 'similarities' in response:
+                sim = response['similarities'][0]
+                if sim['max']:
+                    self.entity_similarity = sim['max']
+                if sim['top']:
+                    self.entity_similarity_top = sim['top']
+                if sim['mean']:
+                    self.entity_similarity_mean = sim['mean']
 
 
 class Result():
