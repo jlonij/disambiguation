@@ -311,8 +311,6 @@ class Context():
         else:
             self.publ_year = None
 
-        return self.publ_year
-
     def get_subjects(self):
         '''
         Extract subjects from ocr (based on dictionary for now).
@@ -328,7 +326,6 @@ class Context():
                 subjects.append(subject)
 
         self.subjects = subjects
-        return self.subjects
 
 
 class Entity():
@@ -694,6 +691,23 @@ class CandidateList():
         self.ranked_candidates = sorted(self.filtered_candidates,
             key=attrgetter('prob'), reverse=True)
 
+    def set_max_score(self):
+        '''
+        Set the maximum Solr score of the filtered candidates.
+        '''
+        self.max_score = max([c.document.get('score') for c in
+            self.filtered_candidates])
+
+    def set_sum_inlinks(self):
+        '''
+        Set the sum of inlinks and inlinks_newspapers for the filtered
+        candidates.
+        '''
+        for link_type in ['inlinks', 'inlinks_newspapers']:
+            link_sum = sum([c.document.get(link_type) for c in
+                self.filtered_candidates if c.document.get(link_type)])
+            setattr(self, 'sum_' + link_type, link_sum)
+
 
 class Description():
     '''
@@ -748,10 +762,9 @@ class Description():
         the entity description.
         '''
         if not hasattr(self.cluster.context, 'publ_year'):
-            publ_year = self.cluster.context.get_publ_year()
-        else:
-            publ_year = self.cluster.context.publ_year
+            self.cluster.context.get_publ_year()
 
+        publ_year = self.cluster.context.publ_year
         if not publ_year:
             return 0
 
@@ -931,6 +944,8 @@ class Description():
         self.set_language()
         self.set_type_match()
         self.set_role_match()
+
+        # # Description - mention (context) match features: full text
         self.set_spec_match()
         self.set_keyword_match()
         self.set_subject_match()
@@ -956,12 +971,8 @@ class Description():
             if link_count:
                 setattr(self, link_type, math.tanh(link_count * 0.001))
                 if not hasattr(self.cand_list, 'sum_' + link_type):
-                    link_sum = sum([c.document.get(link_type) for c in
-                        self.cand_list.filtered_candidates if
-                        c.document.get(link_type)])
-                    setattr(self.cand_list, 'sum_' + link_type, link_sum)
-                else:
-                    link_sum = getattr(self.cand_list, 'sum_' + link_type)
+                    self.cand_list.set_sum_inlinks()
+                link_sum = getattr(self.cand_list, 'sum_' + link_type)
                 if link_sum:
                     link_count_rel = link_count / float(link_sum)
                     setattr(self, link_type + '_rel', link_count_rel)
@@ -989,8 +1000,7 @@ class Description():
 
         # Solr score (relative to other remaining candidates)
         if not hasattr(self.cand_list, 'max_score'):
-            self.cand_list.max_score = max([c.document.get('score') for c in
-                self.cand_list.filtered_candidates])
+            self.cand_list.set_max_score()
         if self.cand_list.max_score:
             self.solr_score = (self.document.get('score') /
                 float(self.cand_list.max_score))
@@ -1149,10 +1159,9 @@ class Description():
         abstract.
         '''
         if not hasattr(self.cluster.context, 'subjects'):
-            subjects = self.cluster.context.get_subjects()
-        else:
-            subjects = self.cluster.context.subjects
+            self.cluster.context.get_subjects()
 
+        subjects = self.cluster.context.subjects
         if not subjects:
             return
 
