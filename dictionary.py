@@ -83,7 +83,7 @@ roles = {
             'keeper', 'scheidsrechter', 'profvoetballer', 'schaatser', 'spits',
             'langebaanschaatser', 'schaker', 'voetballers', 'autocoureur',
             'middenvelder', 'coureur', 'voetbaltrainer', 'trainer', 'coach',
-            'voetbalcoach'],
+            'voetbalcoach', 'doelman'],
         'schema_types': ['Athlete', 'SoccerPlayer', 'Cyclist', 'SoccerManager',
             'TennisPlayer', 'Swimmer', 'Boxer', 'Wrestler', 'Speedskater',
             'Skier', 'WinterSportPlayer', 'GolfPlayer', 'RacingDriver',
