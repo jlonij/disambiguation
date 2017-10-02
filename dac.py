@@ -32,11 +32,12 @@ import utilities
 from lxml import etree
 from operator import attrgetter
 
-TPTA_URL = 'http://tpta.kbresearch.nl/analyse?'
 #TPTA_URL = 'http://145.100.59.209:8080/tpta2/analyse'
+TPTA_URL = 'http://tpta.kbresearch.nl/analyse?'
 JSRU_URL = 'http://jsru.kb.nl/sru'
 SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
-FT_URL = 'http://www.kbresearch.nl/fasttext/sim/'
+FASTTEXT_URL = 'http://www.kbresearch.nl/fasttext/sim/'
+WORD2VEC_URL = 'http://www.kbresearch.nl/word2vec/n-similarity?'
 
 SOLR_ROWS = 25
 MIN_PROB = 0.5
@@ -233,6 +234,7 @@ class Context():
         Retrieve ocr, metadata, subjects and entities.
         '''
         self.url = url
+
         self.ocr = self.get_ocr(url)
         self.entities = self.get_entities(url, tpta_url)
 
@@ -327,6 +329,13 @@ class Context():
 
         self.subjects = subjects
 
+    def normalize_ocr(self):
+        self.ocr_norm = utilities.normalize(self.ocr)
+
+    def tokenize_ocr(self):
+        self.ocr_bow = [w for t in utilities.tokenize(self.ocr) for w in
+            utilities.normalize(t).split()]
+        self.ocr_bow = list(set(self.ocr_bow))
 
 class Entity():
     '''
@@ -558,8 +567,6 @@ class Cluster():
             return self.result
 
         # If any candidates remain, calculate probabilities and select the best
-        self.window = self.get_window()
-
         cand_list.rank(train)
         best_match = cand_list.ranked_candidates[0]
         if best_match.prob >= min_prob:
@@ -586,15 +593,15 @@ class Cluster():
             type_ratios = None
 
         self.type_ratios = type_ratios
-        return type_ratios
 
     def get_window(self):
         '''
         Get combined window of all cluster entities, excluding entity parts.
         '''
-        entity_parts = []
-        for e in self.entities:
-            entity_parts.extend(e.stripped.split())
+        if not hasattr(self, 'entity_parts'):
+            self.get_entity_parts()
+
+        entity_parts = self.entity_parts
 
         window = []
         for e in self.entities:
@@ -607,9 +614,22 @@ class Cluster():
                 window.append(e.role_form)
 
         window = [w for w in window if len(w) > 4 and w not in entity_parts
-            and not w.startswith('amsterdam') and not w.startswith('nederland')]
+            and w not in dictionary.unwanted]
 
-        return window
+        self.window = window
+
+    def get_entity_parts(self):
+        self.entity_parts = list(set([p for e in self.entities for p in
+            e.stripped.split()]))
+
+    def get_context_entity_parts(self):
+        if not hasattr(self, 'entity_parts'):
+            self.get_entity_parts()
+
+        context_entity_parts = [p for e in self.context.entities for p in
+            e.norm.split() if p not in self.entity_parts and p not in
+            dictionary.unwanted and len(p) > 4 and e.valid]
+        self.context_entity_parts = list(set(context_entity_parts))
 
 
 class CandidateList():
@@ -945,12 +965,13 @@ class Description():
         self.set_type_match()
         self.set_role_match()
 
-        # # Description - mention (context) match features: full text
+        # Description - mention (context) match features: full text
         self.set_spec_match()
         self.set_keyword_match()
         self.set_subject_match()
         self.set_vector_match()
         self.set_entity_match()
+        self.set_entity_vector_match()
 
     def set_quotes(self):
         '''
@@ -1016,9 +1037,9 @@ class Description():
         Match entity and description type (person, location or organization).
         '''
         if not hasattr(self.cluster, 'type_ratios'):
-            type_ratios = self.cluster.get_type_ratios()
-        else:
-            type_ratios = self.cluster.type_ratios
+            self.cluster.get_type_ratios()
+
+        type_ratios = self.cluster.type_ratios
         if not type_ratios:
             return
 
@@ -1031,10 +1052,9 @@ class Description():
         # If no types available, try to deduce a type from the first sentence
         # of the abstract
         if not schema_types:
-            abstract = self.document.get('abstract')
-            sentence = utilities.segment(abstract).next()
-            bow = [utilities.normalize(t) for t in
-                utilities.tokenize(sentence, False)]
+            if not hasattr(self, 'abstract_bow'):
+                self.tokenize_abstract()
+            bow = self.abstract_bow[:25]
 
             cand_types = []
             for role in [r for r in dictionary.roles if
@@ -1095,10 +1115,10 @@ class Description():
                         return
 
         # Match first sentence abstract
-        abstract = self.document.get('abstract')
-        sentence = utilities.segment(abstract).next()
-        bow = [utilities.normalize(t) for t in
-            utilities.tokenize(sentence, False)]
+        if not hasattr(self, 'abstract_bow'):
+            self.tokenize_abstract()
+        bow = self.abstract_bow[:25]
+
         for role in roles:
             if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
                 self.role_match = 1
@@ -1118,13 +1138,16 @@ class Description():
         the article.
         '''
         spec = self.document.get('spec')
-        if not spec:
+        if spec:
+            spec_stem = spec[:int(math.ceil(len(spec) * 0.8))]
+        else:
             return
 
-        spec_stem = spec[:int(math.ceil(len(spec) * 0.8))]
+        if not hasattr(self.cluster.context, 'ocr_norm'):
+            self.cluster.context.normalize_ocr()
 
-        ocr = self.cluster.context.ocr
-        if utilities.normalize(ocr).find(spec_stem) > -1:
+        ocr = self.cluster.context.ocr_norm
+        if ocr.find(spec_stem) > -1:
             self.spec_match = 1
 
     def set_keyword_match(self):
@@ -1134,23 +1157,16 @@ class Description():
         if not self.document.get('keyword'):
             return
 
-        unwanted_keys = ['nederland', 'nederlands', 'nederlandse', 'amsterdam',
-            'amsterdams', 'amsterdamse']
         key_stems = [w[:int(math.ceil(len(w) * 0.8))] for w in
-            self.document.get('keyword') if w not in unwanted_keys]
+            self.document.get('keyword') if w not in dictionary.unwanted]
         if not key_stems:
             return
 
-        ocr = self.cluster.entities[0].context.ocr
-        bow = [utilities.normalize(t) for t in utilities.tokenize(ocr)]
+        if not hasattr(self.cluster.context, 'ocr_bow'):
+            self.cluster.context.tokenize_ocr()
 
-        key_match = 0
-        for s in key_stems:
-            for w in bow:
-                if w.startswith(s):
-                    key_match += 1
-                    break
-
+        bow = self.cluster.context.ocr_bow
+        key_match = len([w for w in bow for s in key_stems if w.startswith(s)])
         self.keyword_match = math.tanh(key_match * 0.25)
 
     def set_subject_match(self):
@@ -1165,8 +1181,9 @@ class Description():
         if not subjects:
             return
 
-        abstract = self.document.get('abstract')
-        bow = [utilities.normalize(t) for t in utilities.tokenize(abstract)]
+        if not hasattr(self, 'abstract_bow'):
+            self.tokenize_abstract()
+        bow = self.abstract_bow
 
         subject_match = 0
         for subject in subjects:
@@ -1197,38 +1214,28 @@ class Description():
 
     def set_vector_match(self):
         '''
-        Get maximum and mean similarity for entity context and candidate
-        description vector sets.
+        Get maximum and mean similarity for entity context words and candidate
+        abstract and keyword vectors.
         '''
-        if not self.cluster.window:
-            return
         if not self.document.get('lang') == 'nl':
             return
 
-        entity_parts = []
-        for e in self.cluster.entities:
-            entity_parts.extend(e.stripped.split())
+        if not hasattr(self.cluster, 'window'):
+            self.cluster.get_window()
+        if not self.cluster.window:
+            return
 
-        bow = []
+        if not hasattr(self, 'abstract_bow'):
+            self.tokenize_abstract()
+        bow = [w for w in self.abstract_bow[:25] if len(w) > 4 and w not in
+            self.cluster.entity_parts and w not in dictionary.unwanted]
         if self.document.get('keyword'):
-            bow.extend(self.document.get('keyword'))
-
-        abstract = self.document.get('abstract')
-        sentence = utilities.segment(abstract).next()
-        for t in utilities.tokenize(sentence, False):
-            norm = utilities.normalize(t)
-            bow.extend(norm.split())
-
-        bow = [t for t in bow if len(t) > 4 and t not in entity_parts]
-        for t in bow[:]:
-            for u in dictionary.uninformative:
-                if t.startswith(u):
-                    bow.remove(t)
-
+            bow += [w for w in self.document.get('keyword') if len(w) > 4 and w not
+                in self.cluster.entity_parts and w not in dictionary.unwanted]
         if not bow:
             return
 
-        url = FT_URL + ','.join(list(set(self.cluster.window)))
+        url = FASTTEXT_URL + ','.join(list(set(self.cluster.window)))
         url += '/' + ','.join(list(set(bow)))
 
         response = requests.get(url)
@@ -1245,37 +1252,58 @@ class Description():
         '''
         Match other entities appearing in the article with DBpedia abstract.
         '''
-        unwanted_entities = ['nederland', 'nederlands', 'nederlandse',
-            'amsterdam', 'amsterdams', 'amsterdamse']
-        unwanted_entities += [e.norm for e in self.cluster.entities]
-        unwanted_entities = list(set(unwanted_entities))
+        if not hasattr(self.cluster, 'entity_parts'):
+            self.cluster.get_entity_parts()
+        if not hasattr(self.cluster, 'context_entity_parts'):
+            self.cluster.get_context_entity_parts()
+        if not self.cluster.context_entity_parts:
+            return
 
-        entities = [e.norm for e in self.cluster.entities[0].context.entities
-            if e.valid and e.norm not in unwanted_entities]
-        entities = list(set(entities))
+        if not hasattr(self, 'abstract_bow'):
+            self.tokenize_abstract()
+        bow = [t for t in self.abstract_bow if len(t) > 4]
 
-        abstract = utilities.normalize(self.document.get('abstract'))
-        found = [e for e in entities if abstract.find(e) > -1]
-        self.entity_match = math.tanh(len(found) * 0.25)
+        entity_match = len(set(self.cluster.context_entity_parts) & set(bow))
+        self.entity_match = math.tanh(entity_match * 0.25)
 
-        # Compare article entity vectors with candidate entity vector
-        url = 'http://www.kbresearch.nl/word2vec/n-similarity?'
+    def set_entity_vector_match(self):
+        '''
+        Compare article entity vectors with candidate entity vector.
+        '''
         wd_id = self.document.get('uri_wd')
-        if wd_id:
-            wd_id = wd_id.split('/')[-1]
-            params = {'source': ' '.join(entities), 'target': wd_id}
-            response = requests.get(url, params=params, timeout=30)
-            #print(response.url)
-            #print(response.text)
-            response = response.json()
-            if 'similarities' in response:
-                sim = response['similarities'][0]
-                if sim['max']:
-                    self.entity_similarity = sim['max']
-                if sim['top']:
-                    self.entity_similarity_top = sim['top']
-                if sim['mean']:
-                    self.entity_similarity_mean = sim['mean']
+        if not wd_id:
+            return
+        wd_id = wd_id.split('/')[-1]
+
+        if not hasattr(self.cluster, 'context_entity_parts'):
+            self.cluster.get_context_entity_parts()
+        if not self.cluster.context_entity_parts:
+            return
+
+        params = {'source': ' '.join(self.cluster.context_entity_parts),
+            'target': wd_id}
+        response = requests.get(WORD2VEC_URL, params=params, timeout=30)
+        assert response.status_code == 200, 'Error retrieving entity vectors'
+
+        data = response.json()
+
+        if 'similarities' in data:
+            sim = data['similarities'][0]
+            if sim['max']:
+                self.entity_similarity = sim['max']
+            if sim['top']:
+                self.entity_similarity_top = sim['top']
+            if sim['mean']:
+                self.entity_similarity_mean = sim['mean']
+
+    def tokenize_abstract(self):
+        '''
+        Tokenize and normalize DBpedia abstract.
+        '''
+        abstract = self.document.get('abstract')
+        self.abstract_bow = [w for t in utilities.tokenize(abstract) for w in
+            utilities.normalize(t).split()]
+        self.abstract_bow = list(set(self.abstract_bow))
 
 
 class Result():

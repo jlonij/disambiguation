@@ -17,7 +17,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-uninformative = ['nederland', 'holland', 'amsterdam']
+unwanted = ['nederland', 'nederlands', 'nederlandse', 'holland', 'hollands',
+    'hollandse', 'amsterdam', 'amsterdams', 'amsterdamse']
 
 days = ['maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag',
     'zondag']
