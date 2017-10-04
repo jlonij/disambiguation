@@ -34,18 +34,20 @@ class LinearSVM:
         abs_path = os.path.dirname(os.path.realpath(__file__))
         model_file = os.path.join(abs_path, 'models', 'model.pkl')
         self.clf = joblib.load(model_file)
+
         self.features = [
             'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
             'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
             'last_part_match', 'non_matching_labels', 'name_conflict', 'pref_lsr',
-            'mean_lsr', 'date_match', 'query_id_0', 'query_id_1', 'query_id_2',
-            'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
-            'inlinks_rel', 'outlinks', 'outlinks_rel', 'inlinks_newspapers',
-            'inlinks_newspapers_rel', 'lang', 'ambig', 'quotes', 'type_match',
-            'role_match', 'spec_match', 'keyword_match', 'subject_match',
-            'entity_match', 'entity_similarity', 'entity_similarity_top',
-            'entity_similarity_mean', 'max_vec_sim', 'mean_vec_sim', 'vec_match'
-            ]
+            'mean_lsr', 'wd_lsr', 'date_match', 'query_id_0', 'query_id_1',
+            'query_id_2', 'query_id_3', 'substitution', 'solr_position',
+            'solr_score', 'inlinks', 'inlinks_rel', 'inlinks_newspapers',
+            'inlinks_newspapers_rel', 'outlinks', 'outlinks_rel', 'lang', 'ambig',
+            'quotes', 'type_match', 'role_match', 'spec_match', 'keyword_match',
+            'subject_match', 'max_vec_sim', 'mean_vec_sim', 'top_vec_sim',
+            'entity_match', 'max_entity_vec_sim', 'mean_entity_vec_sim',
+            'top_entity_vec_sim'
+        ]
 
     def predict(self, example):
         dec = self.clf.decision_function([example])[0]
@@ -60,18 +62,20 @@ class NeuralNet:
         abs_path = os.path.dirname(os.path.realpath(__file__))
         model_file = os.path.join(abs_path, 'models', 'model.h5')
         self.model = load_model(model_file)
+
         self.features = [
             'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
             'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
             'last_part_match', 'non_matching_labels', 'name_conflict', 'pref_lsr',
-            'mean_lsr', 'date_match', 'query_id_0', 'query_id_1', 'query_id_2',
-            'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
-            'inlinks_rel', 'outlinks', 'outlinks_rel', 'inlinks_newspapers',
-            'inlinks_newspapers_rel', 'lang', 'ambig', 'quotes', 'type_match',
-            'role_match', 'spec_match', 'keyword_match', 'subject_match',
-            'entity_match', 'entity_similarity', 'entity_similarity_top',
-            'entity_similarity_mean', 'max_vec_sim', 'mean_vec_sim', 'vec_match'
-            ]
+            'mean_lsr', 'wd_lsr', 'date_match', 'query_id_0', 'query_id_1',
+            'query_id_2', 'query_id_3', 'substitution', 'solr_position',
+            'solr_score', 'inlinks', 'inlinks_rel', 'inlinks_newspapers',
+            'inlinks_newspapers_rel', 'outlinks', 'outlinks_rel', 'lang', 'ambig',
+            'quotes', 'type_match', 'role_match', 'spec_match', 'keyword_match',
+            'subject_match', 'max_vec_sim', 'mean_vec_sim', 'top_vec_sim',
+            'entity_match', 'max_entity_vec_sim', 'mean_entity_vec_sim',
+            'top_entity_vec_sim'
+        ]
 
     def predict(self, example):
         example = np.array([example], dtype=np.float32)

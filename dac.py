@@ -23,21 +23,24 @@ import dictionary
 import Levenshtein
 import math
 import models
+import numpy as np
 import re
 import requests
+import scipy
 import solr
 import sys
 import utilities
 
 from lxml import etree
 from operator import attrgetter
+from sklearn.metrics.pairwise import cosine_similarity
 
-#TPTA_URL = 'http://145.100.59.209:8080/tpta2/analyse'
-TPTA_URL = 'http://tpta.kbresearch.nl/analyse?'
 JSRU_URL = 'http://jsru.kb.nl/sru'
+
+TPTA_URL = 'http://tpta.kbresearch.nl/analyse?'
 SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
-FASTTEXT_URL = 'http://www.kbresearch.nl/fasttext/sim/'
-WORD2VEC_URL = 'http://www.kbresearch.nl/word2vec/n-similarity?'
+WORD2VEC_URL = 'http://www.kbresearch.nl/word2vec/vectors?'
+FASTTEXT_URL = 'http://www.kbresearch.nl/fasttext/vectors?'
 
 SOLR_ROWS = 25
 MIN_PROB = 0.5
@@ -336,6 +339,7 @@ class Context():
         self.ocr_bow = [w for t in utilities.tokenize(self.ocr) for w in
             utilities.normalize(t).split()]
         self.ocr_bow = list(set(self.ocr_bow))
+
 
 class Entity():
     '''
@@ -723,7 +727,7 @@ class CandidateList():
         Set the sum of inlinks and inlinks_newspapers for the filtered
         candidates.
         '''
-        for link_type in ['inlinks', 'inlinks_newspapers']:
+        for link_type in ['inlinks', 'inlinks_newspapers', 'outlinks']:
             link_sum = sum([c.document.get(link_type) for c in
                 self.filtered_candidates if c.document.get(link_type)])
             setattr(self, 'sum_' + link_type, link_sum)
@@ -733,17 +737,19 @@ class Description():
     '''
     Description of a link candidate.
     '''
+
     features = [
         'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
         'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
         'last_part_match', 'non_matching_labels', 'name_conflict', 'pref_lsr',
-        'mean_lsr', 'date_match', 'query_id_0', 'query_id_1', 'query_id_2',
-        'query_id_3', 'substitution', 'solr_position', 'solr_score', 'inlinks',
-        'inlinks_rel', 'outlinks', 'outlinks_rel', 'inlinks_newspapers',
-        'inlinks_newspapers_rel', 'lang', 'ambig', 'quotes', 'type_match',
-        'role_match', 'spec_match', 'keyword_match', 'subject_match',
-        'entity_match', 'entity_similarity', 'entity_similarity_top',
-        'entity_similarity_mean', 'max_vec_sim', 'mean_vec_sim', 'vec_match'
+        'mean_lsr', 'wd_lsr', 'date_match', 'query_id_0', 'query_id_1',
+        'query_id_2', 'query_id_3', 'substitution', 'solr_position',
+        'solr_score', 'inlinks', 'inlinks_rel', 'inlinks_newspapers',
+        'inlinks_newspapers_rel', 'outlinks', 'outlinks_rel', 'lang', 'ambig',
+        'quotes', 'type_match', 'role_match', 'spec_match', 'keyword_match',
+        'subject_match', 'max_vec_sim', 'mean_vec_sim', 'top_vec_sim',
+        'entity_match', 'max_entity_vec_sim', 'mean_entity_vec_sim',
+        'top_entity_vec_sim'
     ]
 
     def __init__(self, document, query_iteration, query_id, cand_list, cluster):
@@ -942,10 +948,17 @@ class Description():
         labels = [self.document.get('pref_label')]
         if self.document.get('alt_label'):
             labels += self.document.get('alt_label')
+
         ne = self.cluster.entities[0].norm
+
         ratios = [Levenshtein.ratio(ne, l) for l in labels]
         self.pref_lsr = ratios[0]
         self.mean_lsr = sum(ratios) / float(len(labels))
+
+        if self.document.get('wd_alt_label'):
+            labels = self.document.get('wd_alt_label')
+            ratios = [Levenshtein.ratio(ne, l) for l in labels]
+            self.wd_lsr = (sum(ratios) / float(len(labels))) - 0.5
 
     def set_prob_features(self):
         '''
@@ -987,7 +1000,7 @@ class Description():
         '''
         Determine inlinks feature values.
         '''
-        for link_type in ['inlinks', 'inlinks_newspapers']:
+        for link_type in ['inlinks', 'inlinks_newspapers', 'outlinks']:
             link_count = self.document.get(link_type)
             if link_count:
                 setattr(self, link_type, math.tanh(link_count * 0.001))
@@ -997,6 +1010,7 @@ class Description():
                 if link_sum:
                     link_count_rel = link_count / float(link_sum)
                     setattr(self, link_type + '_rel', link_count_rel)
+
 
     def set_ambig(self):
         '''
@@ -1213,10 +1227,6 @@ class Description():
             self.subject_match = math.tanh((subject_match + 1) * 0.25)
 
     def set_vector_match(self):
-        '''
-        Get maximum and mean similarity for entity context words and candidate
-        abstract and keyword vectors.
-        '''
         if not self.document.get('lang') == 'nl':
             return
 
@@ -1235,18 +1245,22 @@ class Description():
         if not bow:
             return
 
-        url = FASTTEXT_URL + ','.join(list(set(self.cluster.window)))
-        url += '/' + ','.join(list(set(bow)))
+        if not hasattr(self.cluster, 'window_vectors'):
+            self.cluster.window_vectors = self.get_vectors(self.cluster.window,
+                    service=FASTTEXT_URL)
+        if not self.cluster.window_vectors:
+            return
 
-        response = requests.get(url)
-        assert response.status_code == 200, 'Error retrieving word vectors'
+        cand_vectors = self.get_vectors(bow, service=FASTTEXT_URL)
+        if not cand_vectors:
+            return
 
-        data = response.json()
-        scores = data['scores']
+        sims = cosine_similarity(np.array(self.cluster.window_vectors),
+            np.array(cand_vectors))
 
-        self.max_vec_sim = max(scores) - 0.35
-        self.mean_vec_sim = (sum(scores) / len(scores)) - 0.15
-        self.vec_match = math.tanh(len([s for s in scores if s >= 0.55]) * 0.25)
+        self.max_vec_sim = sims.max() - 0.25
+        self.mean_vec_sim = sims.mean()
+        self.top_vec_sim = math.tanh((sims > 0.5).sum() * 0.25)
 
     def set_entity_match(self):
         '''
@@ -1267,12 +1281,10 @@ class Description():
         self.entity_match = math.tanh(entity_match * 0.25)
 
     def set_entity_vector_match(self):
-        '''
-        Compare article entity vectors with candidate entity vector.
-        '''
         wd_id = self.document.get('uri_wd')
         if not wd_id:
             return
+
         wd_id = wd_id.split('/')[-1]
 
         if not hasattr(self.cluster, 'context_entity_parts'):
@@ -1280,21 +1292,21 @@ class Description():
         if not self.cluster.context_entity_parts:
             return
 
-        params = {'source': ' '.join(self.cluster.context_entity_parts),
-            'target': wd_id}
-        response = requests.get(WORD2VEC_URL, params=params, timeout=30)
-        assert response.status_code == 200, 'Error retrieving entity vectors'
+        if not hasattr(self.cluster, 'context_entity_vectors'):
+            self.cluster.context_entity_vectors = self.get_vectors(
+                    self.cluster.context_entity_parts)
+        if not self.cluster.context_entity_vectors:
+            return
 
-        data = response.json()
+        cand_vectors = self.get_vectors([wd_id])
+        if not cand_vectors:
+            return
 
-        if 'similarities' in data:
-            sim = data['similarities'][0]
-            if sim['max']:
-                self.entity_similarity = sim['max']
-            if sim['top']:
-                self.entity_similarity_top = sim['top']
-            if sim['mean']:
-                self.entity_similarity_mean = sim['mean']
+        sims = cosine_similarity(np.array(self.cluster.context_entity_vectors),
+            np.array(cand_vectors))
+        self.max_entity_vec_sim = sims.max() - 0.25
+        self.mean_entity_vec_sim = sims.mean() - 0.2
+        self.top_entity_vec_sim = math.tanh((sims > 0.5).sum() * 0.25)
 
     def tokenize_abstract(self):
         '''
@@ -1304,6 +1316,13 @@ class Description():
         self.abstract_bow = [w for t in utilities.tokenize(abstract) for w in
             utilities.normalize(t).split()]
         self.abstract_bow = list(set(self.abstract_bow))
+
+    def get_vectors(self, wordlist, service=WORD2VEC_URL):
+        payload = {'source': ' '.join(wordlist)}
+        response = requests.get(service, params=payload, timeout=30)
+        assert response.status_code == 200, 'Error retrieving word embedding vectors'
+        data = response.json()
+        return data['vectors']
 
 
 class Result():
