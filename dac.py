@@ -39,12 +39,10 @@ JSRU_URL = 'http://jsru.kb.nl/sru'
 
 TPTA_URL = 'http://tpta.kbresearch.nl/analyse?'
 SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
-WORD2VEC_URL = 'http://www.kbresearch.nl/word2vec/vectors?'
-FASTTEXT_URL = 'http://www.kbresearch.nl/fasttext/vectors?'
+W2V_URL = 'http://www.kbresearch.nl/word2vec/vectors?'
 
 SOLR_ROWS = 25
 MIN_PROB = 0.5
-
 
 class EntityLinker():
     '''
@@ -741,15 +739,16 @@ class Description():
     features = [
         'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
         'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
-        'last_part_match', 'non_matching_labels', 'name_conflict', 'pref_lsr',
-        'mean_lsr', 'wd_lsr', 'date_match', 'query_id_0', 'query_id_1',
-        'query_id_2', 'query_id_3', 'substitution', 'solr_position',
-        'solr_score', 'inlinks', 'inlinks_rel', 'inlinks_newspapers',
-        'inlinks_newspapers_rel', 'outlinks', 'outlinks_rel', 'lang', 'ambig',
-        'quotes', 'type_match', 'role_match', 'spec_match', 'keyword_match',
-        'subject_match', 'max_vec_sim', 'mean_vec_sim', 'top_vec_sim',
-        'entity_match', 'max_entity_vec_sim', 'mean_entity_vec_sim',
-        'top_entity_vec_sim'
+        'last_part_match', 'first_part_match', 'non_matching_labels',
+        'name_conflict', 'pref_lsr', 'mean_lsr', 'wd_lsr', 'date_match',
+        'query_id_0', 'query_id_1', 'query_id_2', 'query_id_3', 'substitution',
+        'solr_position', 'solr_score', 'inlinks', 'inlinks_rel',
+        'inlinks_newspapers', 'inlinks_newspapers_rel', 'outlinks',
+        'outlinks_rel', 'lang', 'ambig', 'quotes', 'type_match', 'role_match',
+        'spec_match', 'keyword_match', 'subject_match', 'max_vec_sim',
+        'mean_vec_sim', 'top_vec_sim', 'entity_match',
+        'entity_match_newspapers', 'max_entity_vec_sim',
+        'mean_entity_vec_sim', 'top_entity_vec_sim'
     ]
 
     def __init__(self, document, query_iteration, query_id, cand_list, cluster):
@@ -777,6 +776,7 @@ class Description():
             self.set_pref_label_match()
             self.set_alt_label_match()
             self.set_last_part_match()
+            self.set_first_part_match()
             self.set_name_conflict()
 
             # Not (yet) rule-based, but concerning string match as well
@@ -929,13 +929,40 @@ class Description():
         self.non_matching_labels = math.tanh((len(self.non_matching) -
             last_part_match) * 0.25)
 
+    def set_first_part_match(self):
+        ne = self.cluster.entities[0].norm
+        if len(ne.split()) > 1:
+            return
+
+        last_part = self.document.get('last_part')
+        if not last_part:
+            return
+
+        labels = [self.document.get('pref_label')]
+        if self.document.get('wd_alt_label'):
+            labels += self.document.get('wd_alt_label')
+        labels = [l for l in labels if len(l.split()) > 1 and l.split()[0] == ne]
+        if not labels:
+            return
+
+        if not hasattr(self.cluster.context, 'ocr_norm'):
+            self.cluster.context.normalize_ocr()
+        ocr = self.cluster.context.ocr_norm
+
+        self.first_part_match = -1
+        for l in labels:
+            if ocr.find(' '.join(l.split()[1:])) > -1:
+                self.first_part_match = 1
+                return
+
     def set_name_conflict(self):
         '''
         Determine if the description has a name conflict, i.e. not a single
         sufficiently matching label was found.
         '''
         features = ['pref_label_exact_match', 'pref_label_end_match',
-            'alt_label_exact_match', 'alt_label_end_match', 'last_part_match']
+            'alt_label_exact_match', 'alt_label_end_match', 'last_part_match',
+            'first_part_match']
         if sum([getattr(self, f) for f in features]) == 0:
             self.name_conflict = 1
         else:
@@ -984,6 +1011,7 @@ class Description():
         self.set_subject_match()
         self.set_vector_match()
         self.set_entity_match()
+        self.set_entity_match_newspapers()
         self.set_entity_vector_match()
 
     def set_quotes(self):
@@ -1247,11 +1275,11 @@ class Description():
 
         if not hasattr(self.cluster, 'window_vectors'):
             self.cluster.window_vectors = self.get_vectors(self.cluster.window,
-                    service=FASTTEXT_URL)
+                    service=W2V_URL)
         if not self.cluster.window_vectors:
             return
 
-        cand_vectors = self.get_vectors(bow, service=FASTTEXT_URL)
+        cand_vectors = self.get_vectors(bow, service=W2V_URL)
         if not cand_vectors:
             return
 
@@ -1279,6 +1307,56 @@ class Description():
 
         entity_match = len(set(self.cluster.context_entity_parts) & set(bow))
         self.entity_match = math.tanh(entity_match * 0.25)
+
+    def set_entity_match_newspapers(self):
+        if self.ambig == 1:
+            return
+
+        if not self.document.get('inlinks_newspapers'):
+            return
+
+        types = []
+        if self.document.get('schema_type'):
+            types += self.document.get('schema_type')
+        if self.document.get('dbo_type'):
+            types += self.document.get('dbo_type')
+        if not 'Person' in types:
+            return
+
+        pref_label = self.document.get('pref_label')
+
+        context_entities = [e.norm for e in self.cluster.context.entities if
+            e.norm.find(self.cluster.entities[0].norm) == -1 and
+            e.norm.find(pref_label) == -1]
+        if not context_entities:
+            return
+
+        query = '"' + pref_label + '" AND ('
+        for i, e in enumerate(context_entities):
+            if i > 0:
+                query += ' OR '
+            query += '"' + e + '"'
+        query += ')'
+
+        payload = {}
+        payload['operation'] = 'searchRetrieve'
+        payload['x-collection'] = 'DDD_artikel'
+        payload['maximumRecords'] = 0
+        payload['query'] = query
+
+        try:
+            response = requests.get(JSRU_URL, params=payload, timeout=60)
+            #assert response.status_code == 200, 'Error retrieving newspapers match'
+        except:
+            return
+
+        xml = etree.fromstring(response.content)
+
+        tag = '{http://www.loc.gov/zing/srw/}numberOfRecords'
+        num_records = int(xml.find(tag).text)
+
+        self.entity_match_newspapers = (num_records /
+            float(self.document.get('inlinks_newspapers')))
 
     def set_entity_vector_match(self):
         wd_id = self.document.get('uri_wd')
@@ -1317,7 +1395,7 @@ class Description():
             utilities.normalize(t).split()]
         self.abstract_bow = list(set(self.abstract_bow))
 
-    def get_vectors(self, wordlist, service=WORD2VEC_URL):
+    def get_vectors(self, wordlist, service=W2V_URL):
         payload = {'source': ' '.join(wordlist)}
         response = requests.get(service, params=payload, timeout=30)
         assert response.status_code == 200, 'Error retrieving word embedding vectors'
@@ -1389,7 +1467,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='svm', debug=True, features=True,
+        linker = EntityLinker(model='svm', debug=True, features=False,
                 candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
