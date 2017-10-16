@@ -36,21 +36,16 @@ from lxml import etree
 from operator import attrgetter
 from sklearn.metrics.pairwise import cosine_similarity
 
-conf = config.parse_config()
-
-
-#JSRU_URL = 'http://jsru.kb.nl/sru'
-#TPTA_URL = 'http://tpta.kbresearch.nl/analyse?'
-#SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
-#W2V_URL = 'http://www.kbresearch.nl/word2vec/vectors?'
+conf = conf.parse_config()
 
 JSRU_URL = conf.get("JSRU_URL")
+
 TPTA_URL = conf.get("TPTA_URL")
 SOLR_URL = conf.get("SOLR_URL")
 W2V_URL = conf.get("W2V_URL")
 
-SOLR_ROWS = 25
-MIN_PROB = 0.5
+SOLR_ROWS = int(conf.get("SOLR_ROWS"))
+MIN_PROB = float(conf.get("MIN_PROB"))
 
 class EntityLinker():
     '''
@@ -1323,15 +1318,13 @@ class Description():
         if not self.document.get('inlinks_newspapers'):
             return
 
-        types = []
-        if self.document.get('schema_type'):
-            types += self.document.get('schema_type')
-        if self.document.get('dbo_type'):
-            types += self.document.get('dbo_type')
-        if not 'Person' in types:
+        last_part = self.document.get('last_part')
+        if not last_part:
             return
 
         pref_label = self.document.get('pref_label')
+        if self.pref_label_exact_match or not self.pref_label_match:
+            return
 
         context_entities = [e.norm for e in self.cluster.context.entities if
             e.norm.find(self.cluster.entities[0].norm) == -1 and

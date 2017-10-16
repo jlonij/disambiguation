@@ -1,6 +1,10 @@
-{"TPTA_URL" : "http://145.100.59.209:8080/tpta2/analyse",
-"JSRU_URL" : "http://jsru.kb.nl/sru",
-"SOLR_URL" : "http://145.100.59.209:8081/solr/dbpedia",
+{
+"TPTA_URL" : "http://145.100.59.209:8080/tpta2/analyse",
+"JSRU_URL" : "http://tpta.kbresearch.nl/analyse?",
+"SOLR_URL" : "http://linksolr1.kbresearch.nl/dbpedia",
 "VEC_URL" : "http://145.100.59.209:12345/sim/",
-"W2V_URL" : "http://www.kbresearch.nl/word2vec/vectors?"
+"W2V_URL" : "http://www.kbresearch.nl/word2vec/vectors?",
+"SOLR_ROWS" : "25",
+"MIN_PROB" : "0.5"
+
 }

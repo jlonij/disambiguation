@@ -5,6 +5,7 @@
 
 RewriteEngine on
 RewriteBase /dac
+RewriteCond %{REQUEST_URI} !^/dac/config.json
 RewriteCond %{REQUEST_URI} !^/robots.txt
 RewriteCond %{REQUEST_URI} !^/static
 RewriteCond %{REQUEST_URI} !^(/.*)+web.py
