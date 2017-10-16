@@ -30,16 +30,24 @@ import scipy
 import solr
 import sys
 import utilities
+import config
 
 from lxml import etree
 from operator import attrgetter
 from sklearn.metrics.pairwise import cosine_similarity
 
-JSRU_URL = 'http://jsru.kb.nl/sru'
+conf = config.parse_config()
 
-TPTA_URL = 'http://tpta.kbresearch.nl/analyse?'
-SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
-W2V_URL = 'http://www.kbresearch.nl/word2vec/vectors?'
+
+#JSRU_URL = 'http://jsru.kb.nl/sru'
+#TPTA_URL = 'http://tpta.kbresearch.nl/analyse?'
+#SOLR_URL = 'http://linksolr1.kbresearch.nl/dbpedia'
+#W2V_URL = 'http://www.kbresearch.nl/word2vec/vectors?'
+
+JSRU_URL = conf.get("JSRU_URL")
+TPTA_URL = conf.get("TPTA_URL")
+SOLR_URL = conf.get("SOLR_URL")
+W2V_URL = conf.get("W2V_URL")
 
 SOLR_ROWS = 25
 MIN_PROB = 0.5
