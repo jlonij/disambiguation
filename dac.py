@@ -36,7 +36,7 @@ from lxml import etree
 from operator import attrgetter
 from sklearn.metrics.pairwise import cosine_similarity
 
-conf = conf.parse_config()
+conf = config.parse_config()
 
 JSRU_URL = conf.get("JSRU_URL")
 
@@ -66,7 +66,7 @@ class EntityLinker():
         elif model == 'svm':
             self.model = models.LinearSVM()
         else:
-            self.model = models.LinearSVM()
+            self.model = models.NeuralNet()
 
         self.debug = debug
         self.features = features
@@ -1323,7 +1323,9 @@ class Description():
             return
 
         pref_label = self.document.get('pref_label')
-        if self.pref_label_exact_match or not self.pref_label_match:
+        if self.pref_label_exact_match:
+            return
+        if not (self.pref_label_match or self.pref_label_end_match):
             return
 
         context_entities = [e.norm for e in self.cluster.context.entities if
