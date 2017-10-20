@@ -19,59 +19,61 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+import config
 import dictionary
+import json
 import Levenshtein
 import math
 import models
 import numpy as np
+import os
 import re
 import requests
 import scipy
 import solr
 import sys
 import utilities
-import config
 
 from lxml import etree
 from operator import attrgetter
 from sklearn.metrics.pairwise import cosine_similarity
 
-conf = config.parse_config()
+conf = config.parse_config(local=True)
 
 JSRU_URL = conf.get("JSRU_URL")
-
 TPTA_URL = conf.get("TPTA_URL")
 SOLR_URL = conf.get("SOLR_URL")
 W2V_URL = conf.get("W2V_URL")
+SOLR_ROWS = conf.get("SOLR_ROWS")
+MIN_PROB = conf.get("MIN_PROB")
 
-SOLR_ROWS = int(conf.get("SOLR_ROWS"))
-MIN_PROB = float(conf.get("MIN_PROB"))
 
 class EntityLinker():
     '''
     Link named entity mention(s) in an article to a DBpedia description.
     '''
 
-    def __init__(self, tpta_url=None, solr_url=None, model=None, debug=False,
-            features=False, candidates=False, train=False):
+    def __init__(self, tpta_url=None, solr_url=None, debug=False, train=False,
+        features=False, candidates=False, model=None):
         '''
         Initialize the disambiguation model and Solr connection.
         '''
         self.tpta_url = tpta_url if tpta_url else TPTA_URL
         self.solr_url = solr_url if solr_url else SOLR_URL
+
         self.solr_connection = solr.SolrConnection(self.solr_url)
 
-        if model == 'nn':
-            self.model = models.NeuralNet()
+        self.debug = debug
+        self.train = train
+        self.features = features
+        self.candidates = candidates
+
+        if train:
+            self.model = models.Model()
         elif model == 'svm':
             self.model = models.LinearSVM()
         else:
             self.model = models.NeuralNet()
-
-        self.debug = debug
-        self.features = features
-        self.candidates = candidates
-        self.train = train
 
     def link(self, url, ne=None):
         '''
@@ -642,7 +644,7 @@ class CandidateList():
     List of candidate links for an entity cluster.
     '''
 
-    def __init__(self, solr_connection, solr_rows, cluster, model=None):
+    def __init__(self, solr_connection, solr_rows, cluster, model):
         '''
         Query the Solr index and generate initial list of candidates.
         '''
@@ -693,7 +695,7 @@ class CandidateList():
 
     def filter(self):
         '''
-        Filter descriptions according to hard criteria, e.g. name conlfict.
+        Filter descriptions according to hard criteria, e.g. name conflict.
         '''
         self.filtered_candidates = []
         for c in self.candidates:
@@ -703,7 +705,8 @@ class CandidateList():
 
     def rank(self, train):
         '''
-        Rank candidates according to trained model.
+        Rank candidates according to trained model. Only calculate features
+        values in training mode.
         '''
         for c in self.filtered_candidates:
             c.set_prob_features()
@@ -738,22 +741,6 @@ class Description():
     '''
     Description of a link candidate.
     '''
-
-    features = [
-        'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
-        'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
-        'last_part_match', 'first_part_match', 'non_matching_labels',
-        'name_conflict', 'pref_lsr', 'mean_lsr', 'wd_lsr', 'date_match',
-        'query_id_0', 'query_id_1', 'query_id_2', 'query_id_3', 'substitution',
-        'solr_position', 'solr_score', 'inlinks', 'inlinks_rel',
-        'inlinks_newspapers', 'inlinks_newspapers_rel', 'outlinks',
-        'outlinks_rel', 'lang', 'ambig', 'quotes', 'type_match', 'role_match',
-        'spec_match', 'keyword_match', 'subject_match', 'max_vec_sim',
-        'mean_vec_sim', 'top_vec_sim', 'entity_match',
-        'entity_match_newspapers', 'max_entity_vec_sim',
-        'mean_entity_vec_sim', 'top_entity_vec_sim'
-    ]
-
     def __init__(self, document, query_iteration, query_id, cand_list, cluster):
         '''
         Initialize description.
@@ -763,8 +750,9 @@ class Description():
         self.query_id = query_id
         self.cand_list = cand_list
         self.cluster = cluster
+        self.prob = 0.0
 
-        self.prob = 0
+        self.features = self.cand_list.model.features
 
         for f in self.features:
             setattr(self, f, 0)
@@ -1471,9 +1459,8 @@ if __name__ == '__main__':
 
     else:
         linker = EntityLinker(model='svm', debug=True, features=False,
-                candidates=False)
+                candidates=False, train=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
             pprint.pprint(linker.link(sys.argv[1]))
-

@@ -110,4 +110,3 @@ def tokenize(text, segment=True):
     for s in sentences:
         tokens += [t for t in word_tokenizer(s) if len(t) > 1]
     return tokens
-

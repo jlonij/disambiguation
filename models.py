@@ -19,68 +19,48 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+import json
 import math
-import os
-
 import numpy as np
+import os
 
 from keras.models import load_model
 from sklearn.externals import joblib
 
-class LinearSVM:
+abs_path = os.path.dirname(os.path.realpath(__file__))
 
+class Model:
     def __init__(self):
+        self.features = self.load_features('features.json')
 
-        abs_path = os.path.dirname(os.path.realpath(__file__))
-        model_file = os.path.join(abs_path, 'models', 'model.pkl')
-        self.clf = joblib.load(model_file)
+    def load_features(self, feature_file):
+        path = os.path.join(abs_path, 'features', feature_file)
+        return json.load(open(path))['features']
 
-        self.features = [
-            'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
-            'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
-            'last_part_match', 'first_part_match', 'non_matching_labels',
-            'name_conflict', 'pref_lsr', 'mean_lsr', 'wd_lsr', 'date_match',
-            'query_id_0', 'query_id_1', 'query_id_2', 'query_id_3',
-            'substitution', 'solr_position', 'solr_score', 'inlinks',
-            'inlinks_rel', 'inlinks_newspapers', 'inlinks_newspapers_rel',
-            'outlinks', 'outlinks_rel', 'lang', 'ambig', 'quotes', 'type_match',
-            'role_match', 'spec_match', 'keyword_match', 'subject_match',
-            'max_vec_sim', 'mean_vec_sim', 'top_vec_sim', 'entity_match',
-            'entity_match_newspapers', 'max_entity_vec_sim',
-            'mean_entity_vec_sim', 'top_entity_vec_sim'
-        ]
+class LinearSVM(Model):
+    def __init__(self):
+        self.clf = self.load_model('model.pkl')
+        self.features = self.load_features('svm.json')
+
+    def load_model(self, model_file):
+        path = os.path.join(abs_path, 'models', model_file)
+        return joblib.load(path)
 
     def predict(self, example):
         dec = self.clf.decision_function([example])[0]
         prob = 1 / (1 + math.exp(dec * -1))
         return prob
 
-
-class NeuralNet:
-
+class NeuralNet(Model):
     def __init__(self):
+        self.model = self.load_model('model.h5')
+        self.features = self.load_features('nn.json')
 
-        abs_path = os.path.dirname(os.path.realpath(__file__))
-        model_file = os.path.join(abs_path, 'models', 'model.h5')
-        self.model = load_model(model_file)
-
-        self.features = [
-            'pref_label_exact_match', 'pref_label_end_match', 'pref_label_match',
-            'alt_label_exact_match', 'alt_label_end_match', 'alt_label_match',
-            'last_part_match', 'first_part_match', 'non_matching_labels',
-            'name_conflict', 'pref_lsr', 'mean_lsr', 'wd_lsr', 'date_match',
-            'query_id_0', 'query_id_1', 'query_id_2', 'query_id_3',
-            'substitution', 'solr_position', 'solr_score', 'inlinks',
-            'inlinks_rel', 'inlinks_newspapers', 'inlinks_newspapers_rel',
-            'outlinks', 'outlinks_rel', 'lang', 'ambig', 'quotes', 'type_match',
-            'role_match', 'spec_match', 'keyword_match', 'subject_match',
-            'max_vec_sim', 'mean_vec_sim', 'top_vec_sim', 'entity_match',
-            'entity_match_newspapers', 'max_entity_vec_sim',
-            'mean_entity_vec_sim', 'top_entity_vec_sim'
-        ]
+    def load_model(self, model_file):
+        model_file = os.path.join(abs_path, 'models', model_file)
+        return load_model(model_file)
 
     def predict(self, example):
         example = np.array([example], dtype=np.float32)
         prob = self.model.predict(example, batch_size=1)
         return float(prob[0][0])
-
