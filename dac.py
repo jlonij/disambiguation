@@ -54,7 +54,7 @@ class EntityLinker():
     '''
 
     def __init__(self, tpta_url=None, solr_url=None, debug=False, train=False,
-        features=False, candidates=False, model=None):
+            features=False, candidates=False, model=None):
         '''
         Initialize the disambiguation model and Solr connection.
         '''
