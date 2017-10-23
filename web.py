@@ -142,9 +142,10 @@ def index():
 
     if result['status'] == 'ok':
         result['linkedNEs'] = array_to_utf(result['linkedNEs'])
+        result = json.dumps(result, sort_keys=True)
 
     if callback:
-        result = unicode(callback) + u'(' + json.dumps(result) + u');'
+        result = unicode(callback) + u'(' + result + u');'
 
     response.set_header('Content-Type', 'application/json')
     return result
