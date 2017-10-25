@@ -329,7 +329,8 @@ class Context():
             for role in dictionary.roles:
                 if subject in dictionary.roles[role]['subjects']:
                     words += dictionary.roles[role]['words']
-            window = [utilities.normalize(w) for w in utilities.tokenize(self.ocr)]
+            window = [utilities.normalize(w) for w in
+                utilities.tokenize(self.ocr)]
             if len(set(words) & set(window)) > 0:
                 subjects.append(subject)
 
@@ -700,7 +701,7 @@ class CandidateList():
         self.filtered_candidates = []
         for c in self.candidates:
             c.set_rule_features()
-            if c.name_conflict == 0 and c.date_match > -1:
+            if c.match_str_conflict == 0 and c.match_txt_date > -1:
                 self.filtered_candidates.append(c)
 
     def rank(self, train):
@@ -731,7 +732,7 @@ class CandidateList():
         Set the sum of inlinks and inlinks_newspapers for the filtered
         candidates.
         '''
-        for link_type in ['inlinks', 'inlinks_newspapers', 'outlinks']:
+        for link_type in ['inlinks', 'inlinks_newspapers']:
             link_sum = sum([c.document.get(link_type) for c in
                 self.filtered_candidates if c.document.get(link_type)])
             setattr(self, 'sum_' + link_type, link_sum)
@@ -761,17 +762,14 @@ class Description():
         '''
         Set the feature values needed for rule-based candidate filtering.
         '''
-        # Date match
+        # Date conflict
         if self.set_date_match() > -1:
-            # String match
+            # Name conflict
             self.set_pref_label_match()
             self.set_alt_label_match()
             self.set_last_part_match()
             self.set_first_part_match()
             self.set_name_conflict()
-
-            # Not (yet) rule-based, but concerning string match as well
-            self.set_levenshtein()
 
     def set_date_match(self):
         '''
@@ -793,15 +791,15 @@ class Description():
             death_year = birth_year + 80
 
         if publ_year < birth_year:
-            self.date_match = -1
+            self.match_txt_date = -1
         elif publ_year < birth_year + 20:
-            self.date_match = 0.5
+            self.match_txt_date = 0.5
         elif publ_year < death_year + 20:
-            self.date_match = 1
+            self.match_txt_date = 1
         else:
-            self.date_match = 0.75
+            self.match_txt_date = 0.75
 
-        return self.date_match
+        return self.match_txt_date
 
     def set_pref_label_match(self):
         '''
@@ -814,11 +812,11 @@ class Description():
 
         if len(set(ne.split()) - set(label.split())) == 0:
             if label == ne:
-                self.pref_label_exact_match = 1
+                self.match_str_pref_label_exact = 1
             elif label.endswith(ne):
-                self.pref_label_end_match = 1
+                self.match_str_pref_label_end = 1
             elif label.find(ne) > -1:
-                self.pref_label_match = 1
+                self.match_str_pref_label = 1
             else:
                 self.non_matching.append(label)
         else:
@@ -850,9 +848,9 @@ class Description():
             else:
                 self.non_matching.append(l)
 
-        self.alt_label_exact_match = math.tanh(alt_label_exact_match * 0.25)
-        self.alt_label_end_match = math.tanh(alt_label_end_match * 0.25)
-        self.alt_label_match = math.tanh(alt_label_match * 0.25)
+        self.match_str_alt_label_exact = math.tanh(alt_label_exact_match * 0.25)
+        self.match_str_alt_label_end = math.tanh(alt_label_end_match * 0.25)
+        self.match_str_alt_label = math.tanh(alt_label_match * 0.25)
 
     def set_last_part_match(self):
         '''
@@ -916,8 +914,8 @@ class Description():
                 if not conflict:
                     last_part_match += 1
 
-        self.last_part_match = math.tanh(last_part_match * 0.25)
-        self.non_matching_labels = math.tanh((len(self.non_matching) -
+        self.match_str_last_part = math.tanh(last_part_match * 0.25)
+        self.match_str_non_matching = math.tanh((len(self.non_matching) -
             last_part_match) * 0.25)
 
     def set_first_part_match(self):
@@ -932,7 +930,8 @@ class Description():
         labels = [self.document.get('pref_label')]
         if self.document.get('wd_alt_label'):
             labels += self.document.get('wd_alt_label')
-        labels = [l for l in labels if len(l.split()) > 1 and l.split()[0] == ne]
+        labels = [l for l in labels if len(l.split()) > 1 and
+            l.split()[0] == ne]
         if not labels:
             return
 
@@ -940,10 +939,10 @@ class Description():
             self.cluster.context.normalize_ocr()
         ocr = self.cluster.context.ocr_norm
 
-        self.first_part_match = -1
+        self.match_str_first_part = -1
         for l in labels:
             if ocr.find(' '.join(l.split()[1:])) > -1:
-                self.first_part_match = 1
+                self.match_str_first_part = 1
                 return
 
     def set_name_conflict(self):
@@ -951,52 +950,35 @@ class Description():
         Determine if the description has a name conflict, i.e. not a single
         sufficiently matching label was found.
         '''
-        features = ['pref_label_exact_match', 'pref_label_end_match',
-            'alt_label_exact_match', 'alt_label_end_match', 'last_part_match',
-            'first_part_match']
+        features = ['match_str_pref_label_exact', 'match_str_pref_label_end',
+            'match_str_alt_label_exact', 'match_str_alt_label_end',
+            'match_str_last_part', 'match_str_first_part']
+
         if sum([getattr(self, f) for f in features]) == 0:
-            self.name_conflict = 1
+            self.match_str_conflict = 1
         else:
-            self.name_conflict = 0
-
-    def set_levenshtein(self):
-        '''
-        Mean and max Levenshtein ratio for all labels.
-        '''
-        labels = [self.document.get('pref_label')]
-        if self.document.get('alt_label'):
-            labels += self.document.get('alt_label')
-
-        ne = self.cluster.entities[0].norm
-
-        ratios = [Levenshtein.ratio(ne, l) for l in labels]
-        self.pref_lsr = ratios[0]
-        self.mean_lsr = sum(ratios) / float(len(labels))
-
-        if self.document.get('wd_alt_label'):
-            labels = self.document.get('wd_alt_label')
-            ratios = [Levenshtein.ratio(ne, l) for l in labels]
-            self.wd_lsr = (sum(ratios) / float(len(labels))) - 0.5
+            self.match_str_conflict = 0
 
     def set_prob_features(self):
         '''
         Set the additional feature values needed for probability-based
         candidate ranking.
         '''
-        # Mention (context) features
+        # Mention representation
         self.set_quotes()
 
-        # Description features ('prior probability')
+        # Description representation
         self.set_inlinks()
         self.set_ambig()
-
-        # Description - mention (context) match features
-        self.set_solr_properties()
         self.set_language()
+
+        # Mention - description string match
+        self.set_levenshtein()
+        self.set_solr_properties()
+
+        # Mention description context match
         self.set_type_match()
         self.set_role_match()
-
-        # Description - mention (context) match features: full text
         self.set_spec_match()
         self.set_keyword_match()
         self.set_subject_match()
@@ -1009,66 +991,107 @@ class Description():
         '''
         Count number of quotes surrounding entity mentions.
         '''
+        if 'entity_quotes' not in self.features:
+            return
+
         if not hasattr(self.cluster, 'sum_quotes'):
             self.cluster.sum_quotes = sum([e.quotes for e in
                 self.cluster.entities])
 
-        self.quotes = math.tanh(self.cluster.sum_quotes * 0.25)
+        self.entity_quotes = math.tanh(self.cluster.sum_quotes * 0.25)
 
     def set_inlinks(self):
         '''
         Determine inlinks feature values.
         '''
-        for link_type in ['inlinks', 'inlinks_newspapers', 'outlinks']:
+        if not [f for f in self.features if f.startswith('candidate_inlinks')]:
+            return
+
+        for link_type in ['inlinks', 'inlinks_newspapers']:
             link_count = self.document.get(link_type)
             if link_count:
-                setattr(self, link_type, math.tanh(link_count * 0.001))
+                setattr(self, 'candidate_' + link_type,
+                    math.tanh(link_count * 0.001))
                 if not hasattr(self.cand_list, 'sum_' + link_type):
                     self.cand_list.set_sum_inlinks()
                 link_sum = getattr(self.cand_list, 'sum_' + link_type)
                 if link_sum:
                     link_count_rel = link_count / float(link_sum)
-                    setattr(self, link_type + '_rel', link_count_rel)
-
+                    setattr(self, 'candidate_' + link_type + '_rel',
+                        link_count_rel)
 
     def set_ambig(self):
         '''
-        See if the description label is ambiguous.
+        Determine if the description label is ambiguous.
         '''
-        self.ambig = 1 if self.document.get('ambig') == 1 else -1
+        if 'candidate_ambig' not in self.features:
+            return
+
+        self.candidate_ambig = 1 if self.document.get('ambig') == 1 else -1
+
+    def set_language(self):
+        '''
+        Determine if description is available in Dutch.
+        '''
+        if 'candidate_lang' not in self.features:
+            return
+
+        self.candidate_lang = 1 if self.document.get('lang') == 'nl' else -1
+
+    def set_levenshtein(self):
+        '''
+        Mean and max Levenshtein ratio for all labels.
+        '''
+        if not [f for f in self.features if f.startswith('match_str_lsr')]:
+            return
+
+        labels = [self.document.get('pref_label')]
+        if self.document.get('alt_label'):
+            labels += self.document.get('alt_label')
+
+        ne = self.cluster.entities[0].norm
+
+        ratios = [Levenshtein.ratio(ne, l) for l in labels]
+        self.match_str_lsr_pref = ratios[0]
+        self.match_str_lsr_mean = sum(ratios) / float(len(labels))
+
+        if self.document.get('wd_alt_label'):
+            labels = self.document.get('wd_alt_label')
+            ratios = [Levenshtein.ratio(ne, l) for l in labels]
+            self.match_str_lsr_wd = (sum(ratios) / float(len(labels))) - 0.5
 
     def set_solr_properties(self):
         '''
         Determine Solr iteration, position and score.
         '''
+        if not [f for f in self.features if f.startswith('match_str_solr')]:
+            return
+
         # Solr iteration
-        self.query_id_0 = 1 if self.query_id == 0 else 0
-        self.query_id_1 = 1 if self.query_id == 1 else 0
-        self.query_id_2 = 1 if self.query_id == 2 else 0
-        self.query_id_3 = 1 if self.query_id == 3 else 0
-        self.substitution = 1 if self.query_iteration == 1 else 0
+        self.match_str_solr_query_0 = 1 if self.query_id == 0 else 0
+        self.match_str_solr_query_1 = 1 if self.query_id == 1 else 0
+        self.match_str_solr_query_2 = 1 if self.query_id == 2 else 0
+        self.match_str_solr_query_3 = 1 if self.query_id == 3 else 0
+        self.match_str_solr_substitution = 1 if self.query_iteration == 1 else 0
 
         # Solr position (relative to other remaining candidates)
         pos = self.cand_list.filtered_candidates.index(self)
-        self.solr_position = 1.0 - math.tanh(pos * 0.25)
+        self.match_str_solr_position = 1.0 - math.tanh(pos * 0.25)
 
         # Solr score (relative to other remaining candidates)
         if not hasattr(self.cand_list, 'max_score'):
             self.cand_list.set_max_score()
         if self.cand_list.max_score:
-            self.solr_score = (self.document.get('score') /
+            self.match_str_solr_score = (self.document.get('score') /
                 float(self.cand_list.max_score))
-
-    def set_language(self):
-        '''
-        See if description is available in Dutch.
-        '''
-        self.lang = 1 if self.document.get('lang') == 'nl' else -1
 
     def set_type_match(self):
         '''
         Match entity and description type (person, location or organization).
         '''
+        if not 'match_txt_type' in self.features:
+            return
+
         if not hasattr(self.cluster, 'type_ratios'):
             self.cluster.get_type_ratios()
 
@@ -1107,9 +1130,9 @@ class Description():
             if r in dictionary.types:
                 for t in dictionary.types[r]['schema_types']:
                     if t in schema_types:
-                        self.type_match += type_ratios[r]
+                        self.match_txt_type += type_ratios[r]
                         break
-        if self.type_match:
+        if self.match_txt_type:
             return
 
         if len(type_ratios) == 1:
@@ -1118,18 +1141,21 @@ class Description():
                 for other in [t for t in dictionary.types if t != 'person']:
                     for t in dictionary.types[other]['schema_types']:
                         if t in schema_types:
-                            self.type_match = -1
+                            self.match_txt_type = -1
                             return
 
             # Non-matching: locations and organizations can't be persons
             elif 'location' in type_ratios or 'organisation' in type_ratios:
                 if 'Person' in schema_types:
-                    self.type_match = -1
+                    self.match_txt_type = -1
 
     def set_role_match(self):
         '''
         Match entity and description role (e.g. minister, university, river).
         '''
+        if not 'match_txt_role' in self.features:
+            return
+
         roles = {e.role for e in self.cluster.entities if e.role}
         if not roles:
             return
@@ -1144,7 +1170,7 @@ class Description():
             for role in roles:
                 for t in dictionary.roles[role]['schema_types']:
                     if t in schema_types:
-                        self.role_match = 1
+                        self.match_txt_role = 1
                         return
 
         # Match first sentence abstract
@@ -1154,7 +1180,7 @@ class Description():
 
         for role in roles:
             if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
-                self.role_match = 1
+                self.match_txt_role = 1
                 return
 
         # Check for conflict
@@ -1162,7 +1188,7 @@ class Description():
             for role in [r for r in dictionary.roles if r not in roles]:
                 for t in dictionary.roles[role]['schema_types']:
                     if t in schema_types:
-                        self.role_match = -1
+                        self.match_txt_role = -1
                         return
 
     def set_spec_match(self):
@@ -1170,6 +1196,9 @@ class Description():
         Find the specification between brackets in the description uri in
         the article.
         '''
+        if not 'match_txt_spec' in self.features:
+            return
+
         spec = self.document.get('spec')
         if spec:
             spec_stem = spec[:int(math.ceil(len(spec) * 0.8))]
@@ -1181,12 +1210,15 @@ class Description():
 
         ocr = self.cluster.context.ocr_norm
         if ocr.find(spec_stem) > -1:
-            self.spec_match = 1
+            self.match_txt_spec = 1
 
     def set_keyword_match(self):
         '''
         Match DBpedia category keywords with the article ocr.
         '''
+        if not 'match_txt_keyword' in self.features:
+            return
+
         if not self.document.get('keyword'):
             return
 
@@ -1200,13 +1232,16 @@ class Description():
 
         bow = self.cluster.context.ocr_bow
         key_match = len([w for w in bow for s in key_stems if w.startswith(s)])
-        self.keyword_match = math.tanh(key_match * 0.25)
+        self.match_txt_keyword = math.tanh(key_match * 0.25)
 
     def set_subject_match(self):
         '''
         Match the subject areas identified for the article with the DBpedia
         abstract.
         '''
+        if not 'match_txt_subject' in self.features:
+            return
+
         if not hasattr(self.cluster.context, 'subjects'):
             self.cluster.context.get_subjects()
 
@@ -1241,11 +1276,17 @@ class Description():
                     subject_match = -1
 
         if subject_match > 0:
-            self.subject_match = math.tanh(subject_match * 0.25)
+            self.match_txt_subject = math.tanh(subject_match * 0.25)
         elif subject_match < -1:
-            self.subject_match = math.tanh((subject_match + 1) * 0.25)
+            self.match_txt_subject = math.tanh((subject_match + 1) * 0.25)
 
     def set_vector_match(self):
+        '''
+        Match context word vectors with abstract word vectors.
+        '''
+        if not [f for f in self.features if f.startswith('match_txt_vec')]:
+            return
+
         if not self.document.get('lang') == 'nl':
             return
 
@@ -1259,8 +1300,9 @@ class Description():
         bow = [w for w in self.abstract_bow[:25] if len(w) > 4 and w not in
             self.cluster.entity_parts and w not in dictionary.unwanted]
         if self.document.get('keyword'):
-            bow += [w for w in self.document.get('keyword') if len(w) > 4 and w not
-                in self.cluster.entity_parts and w not in dictionary.unwanted]
+            bow += [w for w in self.document.get('keyword') if len(w) > 4 and w
+                not in self.cluster.entity_parts and w not in
+                dictionary.unwanted]
         if not bow:
             return
 
@@ -1277,14 +1319,16 @@ class Description():
         sims = cosine_similarity(np.array(self.cluster.window_vectors),
             np.array(cand_vectors))
 
-        self.max_vec_sim = sims.max() - 0.25
-        self.mean_vec_sim = sims.mean()
-        self.top_vec_sim = math.tanh((sims > 0.5).sum() * 0.25)
+        self.match_txt_vec_max = sims.max() - 0.25
+        self.match_txt_vec_mean = sims.mean()
 
     def set_entity_match(self):
         '''
         Match other entities appearing in the article with DBpedia abstract.
         '''
+        if not 'match_txt_entities' in self.features:
+            return
+
         if not hasattr(self.cluster, 'entity_parts'):
             self.cluster.get_entity_parts()
         if not hasattr(self.cluster, 'context_entity_parts'):
@@ -1297,10 +1341,17 @@ class Description():
         bow = [t for t in self.abstract_bow if len(t) > 4]
 
         entity_match = len(set(self.cluster.context_entity_parts) & set(bow))
-        self.entity_match = math.tanh(entity_match * 0.25)
+        self.match_txt_entities = math.tanh(entity_match * 0.25)
 
     def set_entity_match_newspapers(self):
-        if self.ambig == 1:
+        '''
+        Search number of newspaper articles where candidate pref label appears
+        together with other entities appearing in the article.
+        '''
+        if not 'match_txt_entities_newspapers' in self.features:
+            return
+
+        if self.document.get('ambig') == 1:
             return
 
         if not self.document.get('inlinks_newspapers'):
@@ -1311,9 +1362,9 @@ class Description():
             return
 
         pref_label = self.document.get('pref_label')
-        if self.pref_label_exact_match:
+        if self.match_str_pref_label_exact:
             return
-        if not (self.pref_label_match or self.pref_label_end_match):
+        if not (self.match_str_pref_label_end or self.match_str_pref_label):
             return
 
         context_entities = [e.norm for e in self.cluster.context.entities if
@@ -1337,7 +1388,6 @@ class Description():
 
         try:
             response = requests.get(JSRU_URL, params=payload, timeout=60)
-            #assert response.status_code == 200, 'Error retrieving newspapers match'
         except:
             return
 
@@ -1346,10 +1396,17 @@ class Description():
         tag = '{http://www.loc.gov/zing/srw/}numberOfRecords'
         num_records = int(xml.find(tag).text)
 
-        self.entity_match_newspapers = (num_records /
+        self.match_txt_entities_newspapers = (num_records /
             float(self.document.get('inlinks_newspapers')))
 
     def set_entity_vector_match(self):
+        '''
+        Match word vectors for other entities in the article with entity vector.
+        '''
+        if not [f for f in self.features if
+                f.startswith('match_txt_entity_vec')]:
+            return
+
         wd_id = self.document.get('uri_wd')
         if not wd_id:
             return
@@ -1373,9 +1430,8 @@ class Description():
 
         sims = cosine_similarity(np.array(self.cluster.context_entity_vectors),
             np.array(cand_vectors))
-        self.max_entity_vec_sim = sims.max() - 0.25
-        self.mean_entity_vec_sim = sims.mean() - 0.2
-        self.top_entity_vec_sim = math.tanh((sims > 0.5).sum() * 0.25)
+        self.match_txt_entity_vec_max = sims.max() - 0.25
+        self.match_txt_entity_vec_mean = sims.mean() - 0.2
 
     def tokenize_abstract(self):
         '''
@@ -1387,9 +1443,12 @@ class Description():
         self.abstract_bow = list(set(self.abstract_bow))
 
     def get_vectors(self, wordlist, service=W2V_URL):
+        '''
+        Get word vectors for given word list.
+        '''
         payload = {'source': ' '.join(wordlist)}
-        response = requests.get(service, params=payload, timeout=30)
-        assert response.status_code == 200, 'Error retrieving word embedding vectors'
+        response = requests.get(service, params=payload, timeout=90)
+        assert response.status_code == 200, 'Error retrieving word vectors'
         data = response.json()
         return data['vectors']
 
@@ -1458,8 +1517,8 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='svm', debug=True, features=False,
-                candidates=False, train=False)
+        linker = EntityLinker(model='svm', debug=True, features=True,
+                candidates=True, train=True)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
