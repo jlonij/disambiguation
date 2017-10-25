@@ -39,7 +39,7 @@ class Model:
 
 class LinearSVM(Model):
     def __init__(self):
-        self.clf = self.load_model('model.pkl')
+        self.clf = self.load_model('svm.pkl')
         self.features = self.load_features('svm.json')
 
     def load_model(self, model_file):
@@ -53,7 +53,7 @@ class LinearSVM(Model):
 
 class NeuralNet(Model):
     def __init__(self):
-        self.model = self.load_model('model.h5')
+        self.model = self.load_model('nn.h5')
         self.features = self.load_features('nn.json')
 
     def load_model(self, model_file):

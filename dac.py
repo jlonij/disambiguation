@@ -1447,7 +1447,7 @@ class Description():
         Get word vectors for given word list.
         '''
         payload = {'source': ' '.join(wordlist)}
-        response = requests.get(service, params=payload, timeout=90)
+        response = requests.get(service, params=payload, timeout=180)
         assert response.status_code == 200, 'Error retrieving word vectors'
         data = response.json()
         return data['vectors']
@@ -1517,8 +1517,8 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='svm', debug=True, features=True,
-                candidates=True, train=True)
+        linker = EntityLinker(model='nn', debug=True, train=False,
+            features=False, candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
