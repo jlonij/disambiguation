@@ -64,3 +64,35 @@ class NeuralNet(Model):
         example = np.array([example], dtype=np.float32)
         prob = self.model.predict(example, batch_size=1)
         return float(prob[0][0])
+
+class BranchedNeuralNet(Model):
+    def __init__(self):
+        self.model = self.load_model('bnn.h5')
+        self.features = self.load_features('bnn.json')
+
+        self.entity_features = [f for f in self.features if
+            f.startswith('entity')]
+        self.candidate_features = [f for f in self.features if
+            f.startswith('candidate')]
+        self.match_features = [f for f in self.features if
+            f.startswith('match')]
+
+        self.c_start = len(self.entity_features)
+        self.m_start = (len(self.entity_features) +
+            len(self.candidate_features))
+
+    def load_model(self, model_file):
+        model_file = os.path.join(abs_path, 'models', model_file)
+        return load_model(model_file)
+
+    def predict(self, example):
+        example_list = []
+        example_list.append(np.array([example[:self.c_start]],
+            dtype=np.float32))
+        example_list.append(np.array([example[self.c_start:self.m_start]],
+            dtype=np.float32))
+        example_list.append(np.array([example[self.m_start:]],
+            dtype=np.float32))
+
+        prob = self.model.predict(example_list, batch_size=1)
+        return float(prob[0][0])

@@ -72,6 +72,10 @@ class EntityLinker():
             self.model = models.Model()
         elif model == 'svm':
             self.model = models.LinearSVM()
+        elif model == 'nn':
+            self.model = models.NeuralNet()
+        elif model == 'bnn':
+            self.model = models.BranchedNeuralNet()
         else:
             self.model = models.NeuralNet()
 
@@ -1517,7 +1521,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='nn', debug=True, train=False,
+        linker = EntityLinker(model='bnn', debug=True, train=False,
             features=False, candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
