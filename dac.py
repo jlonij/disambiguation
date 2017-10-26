@@ -1402,34 +1402,41 @@ class Description():
 
     def set_entity_match_newspapers(self):
         '''
-        Search number of newspaper articles where candidate pref label appears
-        together with other entities appearing in the article.
+        Get number of newspaper articles where candidate pref label appears
+        together with other entity mentions in the article.
         '''
         if not 'match_txt_entities_newspapers' in self.features:
             return
 
+        # Candidate has to be person
+        if not self.document.get('last_part'):
+            return
+
+        # Candidate pref label can't be ambiguous
         if self.document.get('ambig') == 1:
             return
 
+        # Candidate pref label has to appear in newspapers on its own
         if not self.document.get('inlinks_newspapers'):
             return
 
-        last_part = self.document.get('last_part')
-        if not last_part:
-            return
-
+        # Normalized entity has to differ from pref label
         pref_label = self.document.get('pref_label')
         if self.match_str_pref_label_exact:
             return
-        if not (self.match_str_pref_label_end or self.match_str_pref_label):
+        # But partly match or last part match
+        if not (self.match_str_pref_label_end or self.match_str_pref_label or
+                self.match_str_last_part):
             return
 
+        # Other entity mentions have to be available from context
         context_entities = [e.norm for e in self.cluster.context.entities if
             e.norm.find(self.cluster.entities[0].norm) == -1 and
             e.norm.find(pref_label) == -1]
         if not context_entities:
             return
 
+        # Query for co-occurence
         query = '"' + pref_label + '" AND ('
         for i, e in enumerate(context_entities):
             if i > 0:
@@ -1445,16 +1452,13 @@ class Description():
 
         try:
             response = requests.get(JSRU_URL, params=payload, timeout=60)
+            xml = etree.fromstring(response.content)
+            tag = '{http://www.loc.gov/zing/srw/}numberOfRecords'
+            num_records = int(xml.find(tag).text)
+            self.match_txt_entities_newspapers = (num_records /
+                    float(self.document.get('inlinks_newspapers')))
         except:
             return
-
-        xml = etree.fromstring(response.content)
-
-        tag = '{http://www.loc.gov/zing/srw/}numberOfRecords'
-        num_records = int(xml.find(tag).text)
-
-        self.match_txt_entities_newspapers = (num_records /
-            float(self.document.get('inlinks_newspapers')))
 
     def set_entity_vector_match(self):
         '''
@@ -1575,7 +1579,7 @@ if __name__ == '__main__':
 
     else:
         linker = EntityLinker(model='bnn', debug=True, train=True,
-            features=True, candidates=False)
+            features=True, candidates=True)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
