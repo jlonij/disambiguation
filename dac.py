@@ -932,7 +932,9 @@ class Description():
         if not last_part:
             return
 
-        labels = self.non_matching
+        labels = [self.document.get('pref_label')]
+        if self.document.get('wd_alt_label'):
+            labels.extend(self.document.get('wd_alt_label'))
         labels = [l for l in labels if len(l.split()) > 1 and
             l.split()[0] == ne]
         if not labels:
@@ -946,7 +948,6 @@ class Description():
         for l in labels[:]:
             if ocr.find(' '.join(l.split()[1:])) > -1:
                 self.match_str_first_part = 1
-                self.non_matching.remove(l)
 
     def set_non_matching(self):
         self.match_str_non_matching = math.tanh(len(self.non_matching) * 0.25)
