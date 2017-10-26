@@ -65,7 +65,7 @@ class NeuralNet(Model):
         prob = self.model.predict(example, batch_size=1)
         return float(prob[0][0])
 
-class BranchedNeuralNet(Model):
+class BranchingNeuralNet(Model):
     def __init__(self):
         self.model = self.load_model('bnn.h5')
         self.features = self.load_features('bnn.json')
@@ -96,3 +96,4 @@ class BranchedNeuralNet(Model):
 
         prob = self.model.predict(example_list, batch_size=1)
         return float(prob[0][0])
+

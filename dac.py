@@ -75,7 +75,7 @@ class EntityLinker():
         elif model == 'nn':
             self.model = models.NeuralNet()
         elif model == 'bnn':
-            self.model = models.BranchedNeuralNet()
+            self.model = models.BranchingNeuralNet()
         else:
             self.model = models.NeuralNet()
 
@@ -768,11 +768,13 @@ class Description():
         '''
         # Date conflict
         if self.set_date_match() > -1:
+
             # Name conflict
             self.set_pref_label_match()
             self.set_alt_label_match()
             self.set_last_part_match()
             self.set_first_part_match()
+            self.set_non_matching()
             self.set_name_conflict()
 
     def set_date_match(self):
@@ -871,7 +873,7 @@ class Description():
         #    return
 
         last_part_match = 0
-        for l in labels:
+        for l in labels[:]:
 
             if len(ne.split()) > len(l.split()):
                 continue
@@ -917,10 +919,9 @@ class Description():
 
                 if not conflict:
                     last_part_match += 1
+                    self.non_matching.remove(l)
 
         self.match_str_last_part = math.tanh(last_part_match * 0.25)
-        self.match_str_non_matching = math.tanh((len(self.non_matching) -
-            last_part_match) * 0.25)
 
     def set_first_part_match(self):
         ne = self.cluster.entities[0].norm
@@ -931,9 +932,7 @@ class Description():
         if not last_part:
             return
 
-        labels = [self.document.get('pref_label')]
-        if self.document.get('wd_alt_label'):
-            labels += self.document.get('wd_alt_label')
+        labels = self.non_matching
         labels = [l for l in labels if len(l.split()) > 1 and
             l.split()[0] == ne]
         if not labels:
@@ -944,10 +943,13 @@ class Description():
         ocr = self.cluster.context.ocr_norm
 
         self.match_str_first_part = -1
-        for l in labels:
+        for l in labels[:]:
             if ocr.find(' '.join(l.split()[1:])) > -1:
                 self.match_str_first_part = 1
-                return
+                self.non_matching.remove(l)
+
+    def set_non_matching(self):
+        self.match_str_non_matching = math.tanh(len(self.non_matching) * 0.25)
 
     def set_name_conflict(self):
         '''
@@ -969,18 +971,20 @@ class Description():
         candidate ranking.
         '''
         # Mention representation
-        self.set_quotes()
+        self.set_entity_quotes()
+        self.set_entity_type()
 
         # Description representation
-        self.set_inlinks()
-        self.set_ambig()
-        self.set_language()
+        self.set_candidate_inlinks()
+        self.set_candidate_ambig()
+        self.set_candidate_lang()
+        self.set_candidate_type()
 
         # Mention - description string match
         self.set_levenshtein()
         self.set_solr_properties()
 
-        # Mention description context match
+        # Mention - description context match
         self.set_type_match()
         self.set_role_match()
         self.set_spec_match()
@@ -991,7 +995,7 @@ class Description():
         self.set_entity_match_newspapers()
         self.set_entity_vector_match()
 
-    def set_quotes(self):
+    def set_entity_quotes(self):
         '''
         Count number of quotes surrounding entity mentions.
         '''
@@ -1004,7 +1008,24 @@ class Description():
 
         self.entity_quotes = math.tanh(self.cluster.sum_quotes * 0.25)
 
-    def set_inlinks(self):
+    def set_entity_type(self):
+        '''
+        Set entity type features.
+        '''
+        if not [f for f in self.features if f.startswith('entity_type')]:
+            return
+
+        if not hasattr(self.cluster, 'type_ratios'):
+            self.cluster.get_type_ratios()
+
+        type_ratios = self.cluster.type_ratios
+        if not type_ratios:
+            return
+
+        for tr in type_ratios:
+            setattr(self, 'entity_type_' + tr, type_ratios[tr])
+
+    def set_candidate_inlinks(self):
         '''
         Determine inlinks feature values.
         '''
@@ -1024,7 +1045,7 @@ class Description():
                     setattr(self, 'candidate_' + link_type + '_rel',
                         link_count_rel)
 
-    def set_ambig(self):
+    def set_candidate_ambig(self):
         '''
         Determine if the description label is ambiguous.
         '''
@@ -1033,7 +1054,7 @@ class Description():
 
         self.candidate_ambig = 1 if self.document.get('ambig') == 1 else -1
 
-    def set_language(self):
+    def set_candidate_lang(self):
         '''
         Determine if description is available in Dutch.
         '''
@@ -1041,6 +1062,27 @@ class Description():
             return
 
         self.candidate_lang = 1 if self.document.get('lang') == 'nl' else -1
+
+    def set_candidate_type(self):
+        '''
+        Set candidate type features.
+        '''
+        if not [f for f in self.features if f.startswith('candidate_type')]:
+            return
+
+        schema_types = []
+        if self.document.get('schema_type'):
+            schema_types += self.document.get('schema_type')
+        if self.document.get('dbo_type'):
+            schema_types += self.document.get('dbo_type')
+        if not schema_types:
+            return
+
+        for t in dictionary.types:
+            for s in schema_types:
+                if s in dictionary.types[t]['schema_types']:
+                    setattr(self, 'candidate_type_' + t, 1)
+                    break
 
     def set_levenshtein(self):
         '''
@@ -1522,7 +1564,7 @@ if __name__ == '__main__':
 
     else:
         linker = EntityLinker(model='bnn', debug=True, train=False,
-            features=False, candidates=False)
+            features=True, candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
