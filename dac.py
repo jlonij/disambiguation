@@ -1091,20 +1091,31 @@ class Description():
         if not [f for f in self.features if f.startswith('match_str_lsr')]:
             return
 
-        labels = [self.document.get('pref_label')]
-        if self.document.get('alt_label'):
-            labels += self.document.get('alt_label')
-
         ne = self.cluster.entities[0].norm
 
-        ratios = [Levenshtein.ratio(ne, l) for l in labels]
-        self.match_str_lsr_pref = ratios[0]
-        self.match_str_lsr_mean = sum(ratios) / float(len(labels))
+        # Pref label
+        l = self.document.get('pref_label')
+        self.match_str_lsr_pref = Levenshtein.ratio(ne, l) * 2 - 1
 
+        # Wikidata alt labels
         if self.document.get('wd_alt_label'):
-            labels = self.document.get('wd_alt_label')
-            ratios = [Levenshtein.ratio(ne, l) for l in labels]
-            self.match_str_lsr_wd = (sum(ratios) / float(len(labels))) - 0.5
+            wd_labels = self.document.get('wd_alt_label')
+            ratios = [Levenshtein.ratio(ne, l) for l in wd_labels]
+            self.match_str_lsr_wd_max = max(ratios) * 2 - 1
+            self.match_str_lsr_wd_mean = ((sum(ratios) / float(len(wd_labels)))
+                * 2 - 1)
+        else:
+            wd_labels = []
+
+        # Any other alt labels
+        if self.document.get('alt_label'):
+            labels = self.document.get('alt_label')
+            labels = [l for l in labels if l not in wd_labels]
+            if labels:
+                ratios = [Levenshtein.ratio(ne, l) for l in labels]
+                self.match_str_lsr_alt_max = max(ratios) * 2 - 1
+                self.match_str_lsr_alt_mean = (sum(ratios) /
+                        float(len(labels))) * 2 - 1
 
     def set_solr_properties(self):
         '''
@@ -1563,7 +1574,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='bnn', debug=True, train=False,
+        linker = EntityLinker(model='bnn', debug=True, train=True,
             features=True, candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
