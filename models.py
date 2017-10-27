@@ -66,7 +66,9 @@ class NeuralNet(Model):
         return float(prob[0][0])
 
 class BranchingNeuralNet(Model):
+
     def __init__(self):
+        self.threshold = 0.3
         self.model = self.load_model('bnn.h5')
         self.features = self.load_features('bnn.json')
 
