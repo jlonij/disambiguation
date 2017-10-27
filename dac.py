@@ -73,8 +73,8 @@ class EntityLinker():
         else:
             self.model = models.NeuralNet()
 
-        self.min_prob = (self.model.threshold if self.model.threshold
-            else MIN_PROB)
+        self.min_prob = (self.model.threshold if hasattr(self.model,
+            'threshold') else MIN_PROB)
 
         self.tpta_url = tpta_url if tpta_url else TPTA_URL
         self.solr_url = solr_url if solr_url else SOLR_URL
@@ -718,10 +718,12 @@ class CandidateList():
         '''
         for c in self.filtered_candidates:
             c.set_prob_features()
+
             if not train:
                 example = []
                 for j in range(len(self.model.features)):
-                    example.append(float(getattr(c, self.model.features[j])))
+                    feature = getattr(c, self.model.features[j])
+                    example.append(float(feature))
                 c.prob = self.model.predict(example)
 
         self.ranked_candidates = sorted(self.filtered_candidates,
@@ -977,12 +979,14 @@ class Description():
         # Mention representation
         self.set_entity_quotes()
         self.set_entity_type()
+        self.set_entity_vec()
 
         # Description representation
         self.set_candidate_inlinks()
         self.set_candidate_ambig()
         self.set_candidate_lang()
         self.set_candidate_type()
+        self.set_candidate_vec()
 
         # Mention - description string match
         self.set_levenshtein()
@@ -1028,6 +1032,28 @@ class Description():
 
         for tr in type_ratios:
             setattr(self, 'entity_type_' + tr, type_ratios[tr])
+
+    def set_entity_vec(self):
+        if not 'entity_vec_0' in self.features:
+            return
+
+        if not self.document.get('lang') == 'nl':
+            return
+
+        if not hasattr(self.cluster, 'window'):
+            self.cluster.get_window()
+        if not self.cluster.window:
+            return
+
+        if not hasattr(self.cluster, 'window_vectors'):
+            self.cluster.window_vectors = self.get_vectors(self.cluster.window)
+        if not self.cluster.window_vectors:
+            return
+
+        window_vectors = np.array(self.cluster.window_vectors)
+        entity_vector = np.mean(window_vectors, axis=0).tolist()
+        for i, v in enumerate(entity_vector):
+            setattr(self, 'entity_vec_' + str(i), v)
 
     def set_candidate_inlinks(self):
         '''
@@ -1087,6 +1113,21 @@ class Description():
                 if s in dictionary.types[t]['schema_types']:
                     setattr(self, 'candidate_type_' + t, 1)
                     break
+
+    def set_candidate_vec(self):
+        if not 'candidate_vec_0' in self.features:
+            return
+
+        if not self.document.get('uri_wd'):
+            return
+        wd_id = self.document.get('uri_wd').split('/')[-1]
+
+        cand_vectors = self.get_vectors([wd_id])
+        if not cand_vectors:
+            return
+
+        for i, v in enumerate(cand_vectors[0]):
+            setattr(self, 'candidate_vec_' + str(i), v)
 
     def set_levenshtein(self):
         '''
@@ -1368,8 +1409,7 @@ class Description():
             return
 
         if not hasattr(self.cluster, 'window_vectors'):
-            self.cluster.window_vectors = self.get_vectors(self.cluster.window,
-                    service=W2V_URL)
+            self.cluster.window_vectors = self.get_vectors(self.cluster.window)
         if not self.cluster.window_vectors:
             return
 
@@ -1582,8 +1622,8 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='bnn', debug=True, train=False,
-            features=False, candidates=False)
+        linker = EntityLinker(model='bnn', debug=True, train=True,
+            features=True, candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
