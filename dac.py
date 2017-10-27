@@ -39,13 +39,12 @@ from operator import attrgetter
 from sklearn.metrics.pairwise import cosine_similarity
 
 conf = config.parse_config(local=True)
-
 JSRU_URL = conf.get("JSRU_URL")
 TPTA_URL = conf.get("TPTA_URL")
 SOLR_URL = conf.get("SOLR_URL")
 W2V_URL = conf.get("W2V_URL")
-SOLR_ROWS = conf.get("SOLR_ROWS")
-MIN_PROB = conf.get("MIN_PROB")
+SOLR_ROWS = 25
+MIN_PROB = 0.5
 
 
 class EntityLinker():
@@ -53,20 +52,15 @@ class EntityLinker():
     Link named entity mention(s) in an article to a DBpedia description.
     '''
 
-    def __init__(self, tpta_url=None, solr_url=None, debug=False, train=False,
-            features=False, candidates=False, model=None):
+    def __init__(self, debug=False, features=False, candidates=False,
+        train=False, model=None, tpta_url=None, solr_url=None):
         '''
         Initialize the disambiguation model and Solr connection.
         '''
-        self.tpta_url = tpta_url if tpta_url else TPTA_URL
-        self.solr_url = solr_url if solr_url else SOLR_URL
-
-        self.solr_connection = solr.SolrConnection(self.solr_url)
-
         self.debug = debug
-        self.train = train
         self.features = features
         self.candidates = candidates
+        self.train = train
 
         if train:
             self.model = models.Model()
@@ -78,6 +72,15 @@ class EntityLinker():
             self.model = models.BranchingNeuralNet()
         else:
             self.model = models.NeuralNet()
+
+        self.min_prob = (self.model.threshold if self.model.threshold
+            else MIN_PROB)
+
+        self.tpta_url = tpta_url if tpta_url else TPTA_URL
+        self.solr_url = solr_url if solr_url else SOLR_URL
+
+        self.solr_rows = SOLR_ROWS
+        self.solr_connection = solr.SolrConnection(self.solr_url)
 
     def link(self, url, ne=None):
         '''
@@ -118,8 +121,8 @@ class EntityLinker():
         while clusters_to_link:
             cluster = clusters_to_link.pop()
             try:
-                result = cluster.link(self.solr_connection, SOLR_ROWS,
-                    self.model, MIN_PROB, self.train)
+                result = cluster.link(self.solr_connection, self.solr_rows,
+                    self.model, self.min_prob, self.train)
             except Exception as e:
                 if self.debug:
                     raise
@@ -1520,7 +1523,7 @@ class Result():
     The link result for an entity cluster.
     '''
 
-    def __init__(self, reason, prob=0, description=None, cand_list=None):
+    def __init__(self, reason, prob=0.0, description=None, cand_list=None):
         '''
         Set the result attributes.
         '''
@@ -1537,7 +1540,7 @@ class Result():
             self.features = {}
             for f in description.features:
                 self.features[f] = float(getattr(description, f))
-            if self.prob >= MIN_PROB:
+            if self.reason == 'Predicted link':
                 self.link = description.document.get('id')
                 self.label = description.document.get('label')
 
@@ -1579,8 +1582,8 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='bnn', debug=True, train=True,
-            features=True, candidates=True)
+        linker = EntityLinker(model='bnn', debug=True, train=False,
+            features=False, candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
