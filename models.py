@@ -68,7 +68,7 @@ class NeuralNet(Model):
 class BranchingNeuralNet(Model):
 
     def __init__(self):
-        self.threshold = 0.5
+        self.threshold = 0.3
         self.model = self.load_model('bnn.h5')
         self.features = self.load_features('bnn.json')
 
