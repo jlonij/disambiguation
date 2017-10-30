@@ -1040,20 +1040,14 @@ class Description():
         if not self.document.get('lang') == 'nl':
             return
 
-        if not hasattr(self.cluster, 'window'):
-            self.cluster.get_window()
-        if not self.cluster.window:
+        if not self.cluster.entities[0].window_left:
             return
 
-        if not hasattr(self.cluster, 'window_vectors'):
-            self.cluster.window_vectors = self.get_vectors(self.cluster.window)
-        if not self.cluster.window_vectors:
-            return
-
-        window_vectors = np.array(self.cluster.window_vectors)
-        entity_vector = np.mean(window_vectors, axis=0).tolist()
-        for i, v in enumerate(entity_vector):
-            setattr(self, 'entity_vec_' + str(i), v)
+        entity_vec = self.get_vectors(
+                [self.cluster.entities[0].window_left[-1]])
+        if entity_vec:
+            for i, v in enumerate(entity_vec[0]):
+                setattr(self, 'entity_vec_' + str(i), v)
 
     def set_candidate_inlinks(self):
         '''
@@ -1120,13 +1114,13 @@ class Description():
 
         if not self.document.get('uri_wd'):
             return
-        wd_id = self.document.get('uri_wd').split('/')[-1]
 
-        cand_vectors = self.get_vectors([wd_id])
-        if not cand_vectors:
+        wd_id = self.document.get('uri_wd').split('/')[-1]
+        cand_vector = self.get_vectors([wd_id])
+        if not cand_vector:
             return
 
-        for i, v in enumerate(cand_vectors[0]):
+        for i, v in enumerate(cand_vector[0]):
             setattr(self, 'candidate_vec_' + str(i), v)
 
     def set_levenshtein(self):
@@ -1623,7 +1617,7 @@ if __name__ == '__main__':
 
     else:
         linker = EntityLinker(model='bnn', debug=True, train=True,
-            features=True, candidates=False)
+            features=False, candidates=True)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
