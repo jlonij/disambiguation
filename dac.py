@@ -39,6 +39,7 @@ from operator import attrgetter
 from sklearn.metrics.pairwise import cosine_similarity
 
 conf = config.parse_config(local=True)
+
 JSRU_URL = conf.get("JSRU_URL")
 TPTA_URL = conf.get("TPTA_URL")
 SOLR_URL = conf.get("SOLR_URL")
@@ -771,10 +772,10 @@ class Description():
         '''
         Set the feature values needed for rule-based candidate filtering.
         '''
-        # Date conflict
+        # Date conflict (date match)
         if self.set_date_match() > -1:
 
-            # Name conflict
+            # Name conflict (string match)
             self.set_pref_label_match()
             self.set_alt_label_match()
             self.set_last_part_match()
@@ -929,6 +930,9 @@ class Description():
         self.match_str_last_part = math.tanh(last_part_match * 0.25)
 
     def set_first_part_match(self):
+        '''
+        Look for last name in surrounding text.
+        '''
         ne = self.cluster.entities[0].norm
         if len(ne.split()) > 1:
             return
@@ -955,6 +959,9 @@ class Description():
                 self.match_str_first_part = 1
 
     def set_non_matching(self):
+        '''
+        Count total number of non matching labels.
+        '''
         self.match_str_non_matching = math.tanh(len(self.non_matching) * 0.25)
 
     def set_name_conflict(self):
@@ -978,15 +985,11 @@ class Description():
         '''
         # Mention representation
         self.set_entity_quotes()
-        self.set_entity_type()
-        self.set_entity_vec()
 
         # Description representation
         self.set_candidate_inlinks()
         self.set_candidate_ambig()
         self.set_candidate_lang()
-        self.set_candidate_type()
-        self.set_candidate_vec()
 
         # Mention - description string match
         self.set_levenshtein()
@@ -1015,39 +1018,6 @@ class Description():
                 self.cluster.entities])
 
         self.entity_quotes = math.tanh(self.cluster.sum_quotes * 0.25)
-
-    def set_entity_type(self):
-        '''
-        Set entity type features.
-        '''
-        if not [f for f in self.features if f.startswith('entity_type')]:
-            return
-
-        if not hasattr(self.cluster, 'type_ratios'):
-            self.cluster.get_type_ratios()
-
-        type_ratios = self.cluster.type_ratios
-        if not type_ratios:
-            return
-
-        for tr in type_ratios:
-            setattr(self, 'entity_type_' + tr, type_ratios[tr])
-
-    def set_entity_vec(self):
-        if not 'entity_vec_0' in self.features:
-            return
-
-        if not self.document.get('lang') == 'nl':
-            return
-
-        if not self.cluster.entities[0].window_left:
-            return
-
-        entity_vec = self.get_vectors(
-                [self.cluster.entities[0].window_left[-1]])
-        if entity_vec:
-            for i, v in enumerate(entity_vec[0]):
-                setattr(self, 'entity_vec_' + str(i), v)
 
     def set_candidate_inlinks(self):
         '''
@@ -1087,42 +1057,6 @@ class Description():
 
         self.candidate_lang = 1 if self.document.get('lang') == 'nl' else -1
 
-    def set_candidate_type(self):
-        '''
-        Set candidate type features.
-        '''
-        if not [f for f in self.features if f.startswith('candidate_type')]:
-            return
-
-        schema_types = []
-        if self.document.get('schema_type'):
-            schema_types += self.document.get('schema_type')
-        if self.document.get('dbo_type'):
-            schema_types += self.document.get('dbo_type')
-        if not schema_types:
-            return
-
-        for t in dictionary.types:
-            for s in schema_types:
-                if s in dictionary.types[t]['schema_types']:
-                    setattr(self, 'candidate_type_' + t, 1)
-                    break
-
-    def set_candidate_vec(self):
-        if not 'candidate_vec_0' in self.features:
-            return
-
-        if not self.document.get('uri_wd'):
-            return
-
-        wd_id = self.document.get('uri_wd').split('/')[-1]
-        cand_vector = self.get_vectors([wd_id])
-        if not cand_vector:
-            return
-
-        for i, v in enumerate(cand_vector[0]):
-            setattr(self, 'candidate_vec_' + str(i), v)
-
     def set_levenshtein(self):
         '''
         Mean and max Levenshtein ratio for all labels.
@@ -1134,15 +1068,15 @@ class Description():
 
         # Pref label
         l = self.document.get('pref_label')
-        self.match_str_lsr_pref = Levenshtein.ratio(ne, l) * 2 - 1
+        self.match_str_lsr_pref = Levenshtein.ratio(ne, l)
 
         # Wikidata alt labels
         if self.document.get('wd_alt_label'):
             wd_labels = self.document.get('wd_alt_label')
             ratios = [Levenshtein.ratio(ne, l) for l in wd_labels]
-            self.match_str_lsr_wd_max = max(ratios) * 2 - 1
-            self.match_str_lsr_wd_mean = ((sum(ratios) / float(len(wd_labels)))
-                * 2 - 1)
+            self.match_str_lsr_wd_max = max(ratios)
+            self.match_str_lsr_wd_mean = (sum(ratios) /
+                float(len(wd_labels)))
         else:
             wd_labels = []
 
@@ -1152,9 +1086,9 @@ class Description():
             labels = [l for l in labels if l not in wd_labels]
             if labels:
                 ratios = [Levenshtein.ratio(ne, l) for l in labels]
-                self.match_str_lsr_alt_max = max(ratios) * 2 - 1
+                self.match_str_lsr_alt_max = max(ratios)
                 self.match_str_lsr_alt_mean = (sum(ratios) /
-                        float(len(labels))) * 2 - 1
+                        float(len(labels)))
 
     def set_solr_properties(self):
         '''
@@ -1185,21 +1119,38 @@ class Description():
         '''
         Match entity and description type (person, location or organization).
         '''
-        if not 'match_txt_type' in self.features:
+        etf = [f for f in self.features if f.startswith('entity_type')]
+        ctf = [f for f in self.features if f.startswith('candidate_type')]
+        mtf = [f for f in self.features if f.startswith('match_txt_type')]
+        if not (etf or ctf or mtf):
             return
 
         if not hasattr(self.cluster, 'type_ratios'):
             self.cluster.get_type_ratios()
-
         type_ratios = self.cluster.type_ratios
-        if not type_ratios:
-            return
+
+        # Set entity type features
+        if type_ratios and etf:
+            for tr in type_ratios:
+                setattr(self, 'entity_type_' + tr, type_ratios[tr])
 
         schema_types = []
         if self.document.get('schema_type'):
             schema_types += self.document.get('schema_type')
         if self.document.get('dbo_type'):
             schema_types += self.document.get('dbo_type')
+
+        # Set candidate type features
+        if schema_types and ctf:
+            for t in dictionary.types:
+                for s in schema_types:
+                    if s in dictionary.types[t]['schema_types']:
+                        setattr(self, 'candidate_type_' + t, 1)
+                        break
+
+        # Set type match feature
+        if not mtf or not type_ratios:
+            return
 
         # If no types available, try to deduce a type from the first sentence
         # of the abstract
@@ -1380,15 +1331,33 @@ class Description():
         '''
         Match context word vectors with abstract word vectors.
         '''
-        if not [f for f in self.features if f.startswith('match_txt_vec')]:
+        if not self.document.get('lang') == 'nl':
             return
 
-        if not self.document.get('lang') == 'nl':
+        evf = [f for f in self.features if f.startswith('entity_vec')]
+        mvf = [f for f in self.features if f.startswith('match_txt_vec')]
+        if not (evf or mvf):
             return
 
         if not hasattr(self.cluster, 'window'):
             self.cluster.get_window()
         if not self.cluster.window:
+            return
+
+        if not hasattr(self.cluster, 'window_vectors'):
+            self.cluster.window_vectors = self.get_vectors(self.cluster.window)
+        if not self.cluster.window_vectors:
+            return
+
+        if evf:
+            # Take mean of window vectors for now, need to find better
+            # representation
+            window_vectors_array = np.array(self.cluster.window_vectors)
+            entity_vector = np.mean(window_vectors_array, axis=0).tolist()
+            for i, v in enumerate(entity_vector):
+                setattr(self, 'entity_vec_' + str(i), v)
+
+        if not mvf:
             return
 
         if not hasattr(self, 'abstract_bow'):
@@ -1402,19 +1371,14 @@ class Description():
         if not bow:
             return
 
-        if not hasattr(self.cluster, 'window_vectors'):
-            self.cluster.window_vectors = self.get_vectors(self.cluster.window)
-        if not self.cluster.window_vectors:
-            return
-
-        cand_vectors = self.get_vectors(bow, service=W2V_URL)
+        cand_vectors = self.get_vectors(bow)
         if not cand_vectors:
             return
 
         sims = cosine_similarity(np.array(self.cluster.window_vectors),
             np.array(cand_vectors))
 
-        self.match_txt_vec_max = sims.max() - 0.25
+        self.match_txt_vec_max = sims.max()
         self.match_txt_vec_mean = sims.mean()
 
     def set_entity_match(self):
@@ -1502,15 +1466,26 @@ class Description():
         '''
         Match word vectors for other entities in the article with entity vector.
         '''
-        if not [f for f in self.features if
-                f.startswith('match_txt_entity_vec')]:
+        cvf = [f for f in self.features if f.startswith('candidate_vec')]
+        mvf = [f for f in self.features if f.startswith('match_txt_entity_vec')]
+        if not (cvf or mvf):
             return
 
-        wd_id = self.document.get('uri_wd')
-        if not wd_id:
+        if not self.document.get('uri_wd'):
             return
 
-        wd_id = wd_id.split('/')[-1]
+        wd_id = self.document.get('uri_wd').split('/')[-1]
+
+        cand_vectors = self.get_vectors([wd_id])
+        if not cand_vectors:
+            return
+
+        if cvf:
+            for i, v in enumerate(cand_vectors[0]):
+                setattr(self, 'candidate_vec_' + str(i), v)
+
+        if not mvf:
+            return
 
         if not hasattr(self.cluster, 'context_entity_parts'):
             self.cluster.get_context_entity_parts()
@@ -1523,14 +1498,10 @@ class Description():
         if not self.cluster.context_entity_vectors:
             return
 
-        cand_vectors = self.get_vectors([wd_id])
-        if not cand_vectors:
-            return
-
         sims = cosine_similarity(np.array(self.cluster.context_entity_vectors),
             np.array(cand_vectors))
-        self.match_txt_entity_vec_max = sims.max() - 0.25
-        self.match_txt_entity_vec_mean = sims.mean() - 0.2
+        self.match_txt_entity_vec_max = sims.max()
+        self.match_txt_entity_vec_mean = sims.mean()
 
     def tokenize_abstract(self):
         '''
