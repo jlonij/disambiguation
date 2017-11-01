@@ -513,6 +513,10 @@ class Entity():
         '''
         subs = []
 
+        # Replace oo with o
+        if self.stripped.find('oo') > -1:
+            subs.append(self.stripped.replace('oo', 'o'))
+
         # Replace y with ij
         if self.stripped.find('y') > -1:
             subs.append(self.stripped.replace('y', 'ij'))
@@ -522,9 +526,9 @@ class Entity():
             subs.append(self.stripped[:-1])
 
         # Replace sch(e) with s(e)
-        pattern = r'(^|\s)([a-zA-Z]{2,})sch(e?)($|\s)'
+        pattern = r'(^|\s)([a-zA-Z]{2,})sch(e?)'
         if re.search(pattern, self.stripped):
-            subs.append(re.sub(pattern, r'\1\2s\3\4', self.stripped))
+            subs.append(re.sub(pattern, r'\1\2s\3', self.stripped))
 
         # Replace trailing v with w
         pattern = r'(^|\s)([a-zA-Z]{2,})v($|\s)'
