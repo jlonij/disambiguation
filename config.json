@@ -1,6 +1,6 @@
 {
     "JSRU_URL": "http://jsru.kb.nl/sru?",
-    "TPTA_URL": "http://tpta.kbresearch.nl/analyse?",
+    "TPTA_URL": "http://kbresearch.nl/tpta/analyse?",
     "SOLR_URL": "http://linksolr1.kbresearch.nl/dbpedia",
     "W2V_URL": "http://www.kbresearch.nl/word2vec/vectors?",
     "SOLR_ROWS": 25,
