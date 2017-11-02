@@ -23,6 +23,8 @@ import os
 import sys
 import json
 
+import socket
+
 from bottle import abort
 from bottle import default_app
 from bottle import request
@@ -44,6 +46,8 @@ global stats
 stats = {}
 stats['urls_total'] = 0
 stats['links_total'] = 0
+
+hostname = socket.gethostname()
 
 def mk_md5sums():
     find = "find . -type f -not -path \*.pyc -not -path \*.swp "
@@ -138,9 +142,12 @@ def index():
             candidates=candidates)
         result = linker.link(url, ne)
     except Exception as e:
-        result = {'status': 'error', 'message': str(e)}
+        result = {'status': 'error',
+                  'hostname': hostname,
+                  'message': str(e)}
 
     if result['status'] == 'ok':
+        result['hostname'] = hostname
         result['linkedNEs'] = array_to_utf(result['linkedNEs'])
         result = json.dumps(result, sort_keys=True)
 
