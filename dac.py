@@ -40,10 +40,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 conf = config.parse_config(local=True)
 
-JSRU_URL = conf.get("JSRU_URL")
 TPTA_URL = conf.get("TPTA_URL")
+JSRU_URL = conf.get("JSRU_URL")
 SOLR_URL = conf.get("SOLR_URL")
 W2V_URL = conf.get("W2V_URL")
+
 SOLR_ROWS = 25
 MIN_PROB = 0.5
 
@@ -87,27 +88,24 @@ class EntityLinker():
         '''
         Link named entity mention(s) in an article to a DBpedia description.
         '''
-        # Get context information (article ocr, metadata etc.)
+        if ne:
+            ne = ne.decode('utf-8')
+
+        # Get context information (article metadata, ocr, entities)
         try:
-            self.context = Context(url, self.tpta_url)
+            self.context = Context(url, ne, self.tpta_url)
         except Exception as e:
             if self.debug:
                 raise
             return {'status': 'error', 'message': 'Error retrieving context: '
                     + str(e)}
 
-        # If a specific ne was requested, search for a corresponding entity in
-        # the list of recognized entities
+        # If a specific ne was requested, select it from the list of entities
         if ne:
-            ne = ne.decode('utf-8')
             entity_to_link = None
             for entity in self.context.entities:
                 if ne == entity.text:
                     entity_to_link = entity
-            # If not found, create new one
-            if not entity_to_link:
-                entity_to_link = Entity(ne, None, self.context)
-                self.context.entities.append(entity_to_link)
 
         # Group related entities into clusters
         clusters_to_link = self.get_clusters(self.context.entities)
@@ -243,64 +241,64 @@ class Context():
     The context information for an entity.
     '''
 
-    def __init__(self, url, tpta_url):
+    def __init__(self, url, ne, tpta_url):
         '''
         Retrieve ocr, metadata, subjects and entities.
         '''
         self.url = url
+        self.ne = ne
+        self.tpta_url = tpta_url
 
-        self.ocr = self.get_ocr(url)
-        self.entities = self.get_entities(url, tpta_url)
+        self.get_entities()
 
-    def get_ocr(self, url):
+    def get_entities(self):
         '''
-        Retrieve ocr from resolver url.
-        '''
-        response = requests.get(url, timeout=30)
-        assert response.status_code == 200, 'Error retrieving OCR'
-
-        xml = etree.fromstring(response.content)
-        ocr = etree.tostring(xml, encoding='utf8',
-            method='text').decode('utf-8')
-        ocr = ' '.join(ocr.split())
-
-        return ocr
-
-    def get_entities(self, url, tpta_url):
-        '''
-        Retrieve entities from the NER service and instantiate an
-        entity object for each one.
+        Retrieve entities and ocr from the NER service.
         '''
         payload = {}
-        payload['lang'] = 'nl'
-        payload['url'] = url
+        payload['url'] = self.url
+        payload['context'] = 20
 
-        response = requests.get(tpta_url, params=payload, timeout=30)
+        if self.ne:
+            payload['ne'] = self.ne
+
+        response = requests.get(self.tpta_url, params=payload, timeout=300)
         assert response.status_code == 200, 'TPTA error'
 
-        xml = etree.fromstring(response.content)
-        error_node = xml.find('error')
-        if error_node is not None:
-            raise Exception('TPTA error: ' + error_node.text)
+        response.encoding = 'utf-8'
+        data = response.json()
+        assert 'entities' in data, 'TPTA error retrieving entities'
+        assert 'text' in data, 'TPTA error retrieving OCR'
 
+        # Article ocr
+        ocr = data['text'][0]['title']
+        ocr += u' ' + data['text'][0]['p']
+        self.ocr = ocr
+
+        # Article entities
         entities = []
 
-        entity_nodes = xml.find('entities')
-        if entity_nodes is not None:
-            # Keep track of the position of each entity in the document so that
-            # entity mentions with identical surface forms can be kept apart
-            doc_pos = 0
-            for node in entity_nodes:
-                if node.text and len(node.text) > 1:
-                    if isinstance(node.text, str):
-                        t = node.text.decode('utf-8')
-                    else:
-                        t = node.text
-                    entity = Entity(t, node.tag, self, doc_pos)
-                    doc_pos = entity.end_pos if entity.end_pos > -1 else doc_pos
-                    entities.append(entity)
+        # Regular entities first
+        for e in [e for e in data['entities'] if e['type'] != 'param']:
+            if len(e['ne']) > 1:
+                entity = Entity(e['ne'], e['type'], e['ne_context'],
+                    e['left_context'], e['right_context'], self)
+                entities.append(entity)
 
-        return entities
+        # User requested entity
+        if self.ne:
+            if self.ne not in [e.text for e in entities]:
+                occurences = [e for e in data['entities'] if e['type'] ==
+                    'param' and e['pos'] > -1]
+                if occurences:
+                    e = occurences[0]
+                    entity = Entity(e['ne'], None, e['ne_context'],
+                        e['left_context'], e['right_context'], self)
+                else:
+                    entity = Entity(e['ne'], None, e['ne'], '', '', self)
+                entities.append(entity)
+
+        self.entities = entities
 
     def get_publ_year(self):
         '''
@@ -358,68 +356,34 @@ class Entity():
     An entity mention occuring in an article.
     '''
 
-    def __init__(self, text, tpta_type=None, context=None, doc_pos=0):
+    def __init__(self, text, tpta_type, ne_context, left_context,
+            right_context, context):
         '''
         Gather information about the entity and its immediate surroundings.
         '''
         self.text = text
         self.tpta_type = tpta_type
+        self.ne_context = ne_context
+        self.left_context = left_context
+        self.right_context = right_context
         self.context = context
-        self.doc_pos = doc_pos
 
+        # Tokenize context
+        self.window_left = utilities.tokenize(left_context)
+        self.window_right = utilities.tokenize(right_context)
+
+        # Clean, analyze entity string
         self.norm = utilities.normalize(self.text)
-
-        self.start_pos, self.end_pos = self.get_position(self.text,
-            self.context.ocr, self.doc_pos)
-        self.window_left, self.window_right = self.get_window(self.context.ocr,
-            start_pos=self.start_pos, end_pos=self.end_pos, size=20)
-
-        self.quotes = self.get_quotes()
-
         self.title, self.title_form = self.get_title()
         self.role, self.role_form = self.get_role()
-
         self.stripped = self.strip_titles()
         self.last_part = utilities.get_last_part(self.stripped)
-        self.valid = self.is_valid()
 
-        self.alt_type = self.get_alt_type()
-
-    def get_position(self, phrase, document, doc_pos=None):
-        '''
-        Find the start and end position of the mention in the article.
-        '''
-        start_pos = document.find(phrase, doc_pos)
-        end_pos = start_pos + len(phrase)
-        if start_pos >= 0 and end_pos <= len(document):
-            return start_pos, end_pos
-        else:
-            return -1, -1
-
-    def get_window(self, document, start_pos=None, end_pos=None, size=None):
-        '''
-        Get the words appearing to the left and right of the entity.
-        '''
-        left_bow = []
-        right_bow = []
-
-        if start_pos >= 0 and end_pos <= len(document):
-            left_space_pos = document.rfind(' ', 0, start_pos)
-            left_new_line_pos = document.rfind('\n', 0, start_pos)
-            left_pos = max([left_space_pos, left_new_line_pos])
-            if left_pos > 0:
-                left_bow = utilities.tokenize(document[:left_pos])
-            right_space_pos = document.find(' ', end_pos)
-            right_new_line_pos = document.find('\n', end_pos)
-            right_pos = min([right_space_pos, right_new_line_pos])
-            if right_pos > 0:
-                right_bow = utilities.tokenize(document[right_space_pos:])
-
-        if size:
-            left_bow = left_bow[-size:]
-            right_bow = right_bow[:size]
-
-        return left_bow, right_bow
+        # Check result validity
+        if self.is_valid():
+            # Get some additional info
+            self.quotes = self.get_quotes()
+            self.alt_type = self.get_alt_type()
 
     def get_quotes(self):
         '''
@@ -427,11 +391,8 @@ class Entity():
         '''
         quotes = 0
         quote_chars = [u'"', u"'", u'„', u'”', u'‚', u'’']
-        for pos in [self.start_pos - 1, self.start_pos, self.end_pos - 1,
-                self.end_pos]:
-            if pos >= 0 and pos < len(self.context.ocr):
-                if self.context.ocr[pos] in quote_chars:
-                    quotes += 1
+        for q in quote_chars:
+            quotes += self.ne_context.count(q)
         return quotes
 
     def get_title(self):
@@ -453,7 +414,7 @@ class Entity():
         words = [self.norm.split()[0]]
         if self.window_left:
             words.append(utilities.normalize(self.window_left[-1]))
-        if self.window_right and self.context.ocr[self.end_pos] == ',':
+        if self.window_right and self.ne_context[-1] == ',':
             words.append(utilities.normalize(self.window_right[0]))
         for word in words:
             for role in dictionary.roles:
@@ -477,7 +438,9 @@ class Entity():
         '''
         if [w for w in self.stripped.split() if len(w) >= 2]:
             if self.last_part and not self.is_date():
+                self.valid = True
                 return True
+        self.valid = False
         return False
 
     def is_date(self):
@@ -1591,8 +1554,8 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='bnn', debug=True, train=True,
-            features=False, candidates=True)
+        linker = EntityLinker(model='bnn', debug=True, train=False,
+            features=True, candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
