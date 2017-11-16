@@ -88,8 +88,9 @@ class EntityLinker():
         except Exception as e:
             if self.debug:
                 raise
-            return {'status': 'error', 'message': 'Error retrieving context: '
-                    + str(e)}
+            else:
+                return {'status': 'error', 'message':
+                    'Error retrieving context: ' + str(e)}
 
         # If a specific ne was requested, select it from the list of entities
         if ne:
@@ -115,16 +116,17 @@ class EntityLinker():
             except Exception as e:
                 if self.debug:
                     raise
-                return {'status': 'error', 'message': 'Error linking entity: '
-                        + str(e)}
+                else:
+                    return {'status': 'error', 'message':
+                        'Error linking entity: ' + str(e)}
 
             # If a cluster consists of multiple entities and could not be linked
             # or was not linked to a person, split it up and return the parts to
             # the queue. If not, add the cluster to the linked list.
-            dependencies = [e for e in cluster.entities if e.norm !=
+            sub_entities = [e for e in cluster.entities if e.norm !=
                 cluster.entities[0].norm]
 
-            if dependencies:
+            if sub_entities:
                 types = []
                 if result.description:
                     if result.description.document.get('schema_type'):
@@ -133,8 +135,8 @@ class EntityLinker():
                         types += result.description.document.get('dbo_type')
                 if not result.description or 'Person' not in types:
                     new_clusters = [Cluster([e for e in cluster.entities if e
-                        not in dependencies])]
-                    new_clusters.extend(self.get_clusters(dependencies))
+                        not in sub_entities])]
+                    new_clusters.extend(self.get_clusters(sub_entities))
 
                     # If linking a specific ne, only return the new cluster
                     # containing that ne to the queue
@@ -231,7 +233,7 @@ class Context():
     The context information for an entity.
     '''
 
-    def __init__(self, url, ne):
+    def __init__(self, url, ne=None):
         '''
         Retrieve ocr, metadata, subjects and entities.
         '''
@@ -345,8 +347,8 @@ class Entity():
     An entity mention occuring in an article.
     '''
 
-    def __init__(self, text, tpta_type, ne_context, left_context,
-            right_context, context):
+    def __init__(self, text, tpta_type, ne_context=None, left_context=None,
+            right_context=None, context=None):
         '''
         Gather information about the entity and its immediate surroundings.
         '''
@@ -856,14 +858,16 @@ class Description():
                         if len(part) > 1 and part in target[target_pos:-1]:
                             target_pos = target.index(part) + 1
 
-                        # First names may differ with one character
+                        # First names may differ with one character, but not
+                        # the first character
                         elif len(part) > 1 and len([p for p in
-                                target[target_pos:-1] if Levenshtein.distance(p,
-                                part) == 1]) > 0:
+                                target[target_pos:-1] if p[0] == part[0] and
+                                Levenshtein.distance(p, part) == 1]) > 0:
                             for p in target[target_pos:-1]:
-                                if Levenshtein.distance(p, part) == 1:
-                                    target_pos = target.index(p) + 1
-                                    break
+                                if p[0] == part[0]:
+                                    if Levenshtein.distance(p, part) == 1:
+                                        target_pos = target.index(p) + 1
+                                        break
 
                         # Initials
                         elif len(part) <= 1 and part[0] in [p[0] for p in
