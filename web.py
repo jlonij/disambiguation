@@ -20,10 +20,9 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import socket
 import sys
 import json
-
-import socket
 
 from bottle import abort
 from bottle import default_app
@@ -35,7 +34,6 @@ from bottle import template
 
 abs_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, abs_path)
-
 import dac
 
 # Path to doctests output (from cron)
@@ -85,8 +83,6 @@ def info():
         test_report = ''
 
     resp = {'sums': mk_md5sums(),
-            'solr': SOLR_URL,
-            'tpta': TPTA_URL,
             'test_errors': test_errors(),
             'test_report': test_report,
             'test_report_stamp': test_report_stamp,
@@ -135,20 +131,21 @@ def index():
     callback = request.params.get('callback')
 
     if not url:
-        abort(400, "No fitting argument (\"url=...\") given.")
+        abort(400, 'No fitting argument ("url=...") given.')
 
     try:
-        linker = dac.EntityLinker(model=model, debug=debug, features=features,
-            candidates=candidates)
+        linker = dac.EntityLinker(model=model, debug=debug,
+            features=features, candidates=candidates)
         result = linker.link(url, ne)
     except Exception as e:
-        result = {'status': 'error',
-                  'hostname': hostname,
-                  'message': str(e)}
+        result = []
+        result['status'] = 'error'
+        result['message'] = str(e)
+        result['hostname'] = hostname
 
     if result['status'] == 'ok':
-        result['hostname'] = hostname
         result['linkedNEs'] = array_to_utf(result['linkedNEs'])
+        result['hostname'] = hostname
         result = json.dumps(result, sort_keys=True)
 
     if callback:
@@ -161,4 +158,3 @@ if __name__ == '__main__':
     run(host='localhost', port=5002)
 else:
     application = default_app()
-

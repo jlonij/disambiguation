@@ -45,26 +45,21 @@ JSRU_URL = conf.get("JSRU_URL")
 SOLR_URL = conf.get("SOLR_URL")
 W2V_URL = conf.get("W2V_URL")
 
+WINDOW = 20
 SOLR_ROWS = 25
 MIN_PROB = 0.5
-
 
 class EntityLinker():
     '''
     Link named entity mention(s) in an article to a DBpedia description.
     '''
 
-    def __init__(self, debug=False, features=False, candidates=False,
-        train=False, model=None, tpta_url=None, solr_url=None):
+    def __init__(self, model=None, debug=False, features=False,
+        candidates=False):
         '''
         Initialize the disambiguation model and Solr connection.
         '''
-        self.debug = debug
-        self.features = features
-        self.candidates = candidates
-        self.train = train
-
-        if train:
+        if model == 'train':
             self.model = models.Model()
         elif model == 'svm':
             self.model = models.LinearSVM()
@@ -75,25 +70,21 @@ class EntityLinker():
         else:
             self.model = models.NeuralNet()
 
-        self.min_prob = (self.model.threshold if hasattr(self.model,
-            'threshold') else MIN_PROB)
+        self.debug = debug
+        self.features = features
+        self.candidates = candidates
 
-        self.tpta_url = tpta_url if tpta_url else TPTA_URL
-        self.solr_url = solr_url if solr_url else SOLR_URL
-
-        self.solr_rows = SOLR_ROWS
-        self.solr_connection = solr.SolrConnection(self.solr_url)
+        self.solr_connection = solr.SolrConnection(SOLR_URL)
 
     def link(self, url, ne=None):
         '''
         Link named entity mention(s) in an article to a DBpedia description.
         '''
-        if ne:
-            ne = ne.decode('utf-8')
-
         # Get context information (article metadata, ocr, entities)
+        ne = ne.decode('utf-8') if ne else None
+
         try:
-            self.context = Context(url, ne, self.tpta_url)
+            self.context = Context(url, ne)
         except Exception as e:
             if self.debug:
                 raise
@@ -120,8 +111,7 @@ class EntityLinker():
         while clusters_to_link:
             cluster = clusters_to_link.pop()
             try:
-                result = cluster.link(self.solr_connection, self.solr_rows,
-                    self.model, self.min_prob, self.train)
+                result = cluster.link(self.solr_connection, self.model)
             except Exception as e:
                 if self.debug:
                     raise
@@ -241,28 +231,27 @@ class Context():
     The context information for an entity.
     '''
 
-    def __init__(self, url, ne, tpta_url):
+    def __init__(self, url, ne):
         '''
         Retrieve ocr, metadata, subjects and entities.
         '''
         self.url = url
         self.ne = ne
-        self.tpta_url = tpta_url
 
-        self.get_entities()
+        # Article ocr and enitities are retrieved right away; other context
+        # information such as metadata later if needed.
+        self.get_ner_response()
 
-    def get_entities(self):
+    def get_ner_response(self):
         '''
-        Retrieve entities and ocr from the NER service.
+        Retrieve article ocr and recognized entities from NER service.
         '''
         payload = {}
         payload['url'] = self.url
-        payload['context'] = 20
+        payload['ne'] = self.ne
+        payload['context'] = WINDOW
 
-        if self.ne:
-            payload['ne'] = self.ne
-
-        response = requests.get(self.tpta_url, params=payload, timeout=300)
+        response = requests.get(TPTA_URL, params=payload, timeout=300)
         assert response.status_code == 200, 'TPTA error'
 
         response.encoding = 'utf-8'
@@ -526,7 +515,7 @@ class Cluster():
         self.entities = entities
         self.context = self.entities[0].context
 
-    def link(self, solr_connection, solr_rows, model, min_prob, train):
+    def link(self, solr_connection, model):
         '''
         Get the link result for the cluster.
         '''
@@ -536,7 +525,7 @@ class Cluster():
             return self.result
 
         # If entity is valid, try to query Solr for candidate descriptions
-        cand_list = CandidateList(solr_connection, solr_rows, self, model)
+        cand_list = CandidateList(self, solr_connection, model)
 
         # Check the number of descriptions found
         if len(cand_list.candidates) == 0:
@@ -550,9 +539,9 @@ class Cluster():
             return self.result
 
         # If any candidates remain, calculate probabilities and select the best
-        cand_list.rank(train)
+        cand_list.rank()
         best_match = cand_list.ranked_candidates[0]
-        if best_match.prob >= min_prob:
+        if best_match.prob >= MIN_PROB:
             self.result = Result("Predicted link", best_match.prob, best_match,
                 cand_list=cand_list)
         else:
@@ -620,14 +609,13 @@ class CandidateList():
     List of candidate links for an entity cluster.
     '''
 
-    def __init__(self, solr_connection, solr_rows, cluster, model):
+    def __init__(self, cluster, solr_connection, model):
         '''
         Query the Solr index and generate initial list of candidates.
         '''
-        self.solr_connection = solr_connection
-        self.solr_rows = solr_rows
-        self.model = model
         self.cluster = cluster
+        self.solr_connection = solr_connection
+        self.model = model
 
         candidates = []
 
@@ -653,10 +641,10 @@ class CandidateList():
             self.queries = queries
 
             for query_id, query in enumerate(queries):
-                if not len(candidates) < solr_rows:
+                if not len(candidates) < SOLR_ROWS:
                     break
                 else:
-                    rows = solr_rows - len(candidates)
+                    rows = SOLR_ROWS - len(candidates)
 
                 solr_response = solr_connection.query(q=query, rows=rows,
                     indent='on', sort='lang,inlinks', sort_order='desc')
@@ -679,15 +667,15 @@ class CandidateList():
             if c.match_str_conflict == 0 and c.match_txt_date > -1:
                 self.filtered_candidates.append(c)
 
-    def rank(self, train):
+    def rank(self):
         '''
-        Rank candidates according to trained model. Only calculate features
-        values in training mode.
+        Rank candidates according to trained model.
         '''
         for c in self.filtered_candidates:
             c.set_prob_features()
 
-            if not train:
+            # Only calculate prob if not in training mode
+            if self.model.__class__.__name__ != 'Model':
                 example = []
                 for j in range(len(self.model.features)):
                     feature = getattr(c, self.model.features[j])
@@ -1479,12 +1467,12 @@ class Description():
             utilities.normalize(t).split()]
         self.abstract_bow = list(set(self.abstract_bow))
 
-    def get_vectors(self, wordlist, service=W2V_URL):
+    def get_vectors(self, wordlist):
         '''
         Get word vectors for given word list.
         '''
         payload = {'source': ' '.join(wordlist)}
-        response = requests.get(service, params=payload, timeout=180)
+        response = requests.get(W2V_URL, params=payload, timeout=180)
         assert response.status_code == 200, 'Error retrieving word vectors'
         data = response.json()
         return data['vectors']
@@ -1554,8 +1542,8 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='bnn', debug=True, train=False,
-            features=True, candidates=False)
+        linker = EntityLinker(model='nn', debug=True, features=False,
+            candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
