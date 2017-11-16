@@ -123,8 +123,8 @@ class EntityLinker():
             # If a cluster consists of multiple entities and could not be linked
             # or was not linked to a person, split it up and return the parts to
             # the queue. If not, add the cluster to the linked list.
-            sub_entities = [e for e in cluster.entities if e.norm !=
-                cluster.entities[0].norm]
+            sub_entities = [e for e in cluster.entities if
+                Levenshtein.distance(e.norm, cluster.entities[0].norm) > 2]
 
             if sub_entities:
                 '''
@@ -152,7 +152,6 @@ class EntityLinker():
                     clusters_linked.append(cluster)
             else:
                 clusters_linked.append(cluster)
-
 
         # Return the result for each (unique) entity
         results = []
@@ -200,11 +199,17 @@ class EntityLinker():
                         cluster.entities.append(entity)
                         return clusters
 
+                # Possesive
+                if entity.norm + 's' == e.norm:
+                    cluster.entities.insert(0, entity)
+                    return clusters
+
         # Find candidate clusters that partially match an entity
         candidates = []
         for cluster in clusters:
             for e in cluster.entities:
                 if len(entity.norm) > 0 and len(e.norm) > 0:
+
                     # Last parts are the same
                     if entity.norm.split()[-1] == e.norm.split()[-1]:
                         # Any preceding parts are the same
@@ -213,6 +218,7 @@ class EntityLinker():
                             if len(e.norm.split()) > len(entity.norm.split()):
                                 candidates.append(cluster)
                                 break
+
                     # First parts are the same
                     elif entity.norm.split()[0] == e.norm.split()[0]:
                         # Entity norm consists of exactly one word (first name)
@@ -1532,7 +1538,7 @@ class Result():
         result = {}
         result['reason'] = self.reason
         if self.prob:
-            result['prob'] = self.prob
+            result['prob'] = '{0:.10f}'.format(self.prob)
         if self.link:
             result['link'] = self.link
         if self.label:
