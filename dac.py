@@ -127,6 +127,7 @@ class EntityLinker():
                 cluster.entities[0].norm]
 
             if sub_entities:
+                '''
                 types = []
                 if result.description:
                     if result.description.document.get('schema_type'):
@@ -134,6 +135,8 @@ class EntityLinker():
                     if result.description.document.get('dbo_type'):
                         types += result.description.document.get('dbo_type')
                 if not result.description or 'Person' not in types:
+                '''
+                if not result.description:
                     new_clusters = [Cluster([e for e in cluster.entities if e
                         not in sub_entities])]
                     new_clusters.extend(self.get_clusters(sub_entities))
@@ -149,6 +152,7 @@ class EntityLinker():
                     clusters_linked.append(cluster)
             else:
                 clusters_linked.append(cluster)
+
 
         # Return the result for each (unique) entity
         results = []
@@ -321,14 +325,16 @@ class Context():
         Extract subjects from ocr (based on dictionary for now).
         '''
         subjects = []
+
+        if not hasattr(self, 'ocr_bow'):
+            self.tokenize_ocr()
+
         for subject in dictionary.subjects:
             words = dictionary.subjects[subject]
             for role in dictionary.roles:
                 if subject in dictionary.roles[role]['subjects']:
                     words += dictionary.roles[role]['words']
-            window = [utilities.normalize(w) for w in
-                utilities.tokenize(self.ocr)]
-            if len(set(words) & set(window)) > 0:
+            if len(set(words) & set(self.ocr_bow)) > 0:
                 subjects.append(subject)
 
         self.subjects = subjects
@@ -337,9 +343,7 @@ class Context():
         self.ocr_norm = utilities.normalize(self.ocr)
 
     def tokenize_ocr(self):
-        self.ocr_bow = [w for t in utilities.tokenize(self.ocr) for w in
-            utilities.normalize(t).split()]
-        self.ocr_bow = list(set(self.ocr_bow))
+        self.ocr_bow = utilities.tokenize(self.ocr, unique=True)
 
 
 class Entity():
@@ -392,7 +396,7 @@ class Entity():
         '''
         words = [self.norm.split()[0]]
         if self.window_left:
-            words.append(utilities.normalize(self.window_left[-1]))
+            words.append(self.window_left[-1])
         for word in words:
             if word in dictionary.titles:
                 return True, word
@@ -404,9 +408,9 @@ class Entity():
         '''
         words = [self.norm.split()[0]]
         if self.window_left:
-            words.append(utilities.normalize(self.window_left[-1]))
+            words.append(self.window_left[-1])
         if self.window_right and self.ne_context[-1] == ',':
-            words.append(utilities.normalize(self.window_right[0]))
+            words.append(self.window_right[0])
         for word in words:
             for role in dictionary.roles:
                 if word in dictionary.roles[role]['words']:
@@ -455,7 +459,7 @@ class Entity():
                 return dictionary.roles[self.role]['types'][0]
 
         if self.window_left:
-            prev_word = utilities.normalize(self.window_left[-1])
+            prev_word = self.window_left[-1]
             if prev_word in ['in', 'te', 'uit']:
                 return 'location'
 
@@ -579,9 +583,9 @@ class Cluster():
 
         window = []
         for e in self.entities:
-            for w in e.window_left + e.window_right:
-                norm = utilities.normalize(w)
-                window.extend(norm.split())
+            window += e.window_left
+            window += e.window_right
+
             if e.title:
                 window.append(e.title_form)
             if e.role:
@@ -589,6 +593,7 @@ class Cluster():
 
         window = [w for w in window if len(w) > 4 and w not in entity_parts
             and w not in dictionary.unwanted]
+        window = list(set(window))
 
         self.window = window
 
@@ -603,6 +608,7 @@ class Cluster():
         context_entity_parts = [p for e in self.context.entities for p in
             e.norm.split() if p not in self.entity_parts and p not in
             dictionary.unwanted and len(p) > 4 and e.valid]
+
         self.context_entity_parts = list(set(context_entity_parts))
 
 
@@ -913,9 +919,10 @@ class Description():
         ocr = self.cluster.context.ocr_norm
 
         self.match_str_first_part = -1
-        for l in labels[:]:
+        for l in labels:
             if ocr.find(' '.join(l.split()[1:])) > -1:
                 self.match_str_first_part = 1
+                break
 
     def set_non_matching(self):
         '''
@@ -1466,17 +1473,15 @@ class Description():
         '''
         Tokenize and normalize DBpedia abstract.
         '''
-        abstract = self.document.get('abstract')
-        self.abstract_bow = [w for t in utilities.tokenize(abstract) for w in
-            utilities.normalize(t).split()]
-        self.abstract_bow = list(set(self.abstract_bow))
+        self.abstract_bow = utilities.tokenize(self.document.get('abstract'),
+            unique=True)
 
     def get_vectors(self, wordlist):
         '''
         Get word vectors for given word list.
         '''
         payload = {'source': ' '.join(wordlist)}
-        response = requests.get(W2V_URL, params=payload, timeout=180)
+        response = requests.get(W2V_URL, params=payload, timeout=300)
         assert response.status_code == 200, 'Error retrieving word vectors'
         data = response.json()
         return data['vectors']

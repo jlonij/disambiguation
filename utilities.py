@@ -100,13 +100,25 @@ def segment(text):
     '''
     return split_multi(text)
 
-def tokenize(text, segment=True):
+def tokenize(text, segment=True, norm=True, unique=False, min_len=2):
     '''
     Tokenize text using SegTok segmenter and tokenizer.
     '''
     sentences = split_multi(text) if segment else [text]
 
     tokens = []
+
     for s in sentences:
-        tokens += [t for t in word_tokenizer(s) if len(t) > 1]
+        if norm:
+            tokens += [w for t in word_tokenizer(s) for w in
+                normalize(t).split()]
+        else:
+            tokens += word_tokenizer(s)
+
+    if unique:
+        tokens = list(set(tokens))
+
+    if min_len:
+        tokens = [t for t in tokens if len(t) >= min_len]
+
     return tokens
