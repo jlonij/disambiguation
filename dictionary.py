@@ -305,7 +305,7 @@ subjects = {
         'koningshuis', 'koninklijk huis', 'troon', 'rijk',
         'keizerrijk', 'monarchie', 'leger', 'oorlog', 'troepen',
         'strijdkrachten', 'militair', 'militaire', 'partij', 'politie',
-        'overheid', 'ministerie'],
+        'overheid', 'ministerie', 'zetel', 'zetels', 'staat'],
     'sports': ['sport', 'voetbal', 'wielersport', 'speler', 'spelers',
         'sporten', 'wedstrijden', 'goal', 'goals'],
     'culture': ['kunst', 'cultuur', 'muziek', 'toneel', 'theater', 'cinema',
