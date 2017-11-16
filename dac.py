@@ -298,7 +298,7 @@ class Context():
         payload = {}
         payload['operation'] = 'searchRetrieve'
         payload['x-collection'] = 'DDD_artikel'
-        payload['query'] = 'uniqueKey=' + self.url[self.url.find('ddd:'):-4]
+        payload['query'] = 'uniqueKey=' + self.url.split('urn=')[-1][:-4]
 
         response = requests.get(JSRU_URL, params=payload, timeout=30)
         assert response.status_code == 200, 'Error retrieving metadata'
