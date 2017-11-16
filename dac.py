@@ -181,6 +181,7 @@ class EntityLinker():
         # Assign each entity to a cluster
         for entity in sorted_entities:
             clusters = self.cluster(entity, clusters)
+
         return clusters
 
     def cluster(self, entity, clusters):
@@ -272,8 +273,11 @@ class Context():
         assert 'text' in data, 'TPTA error retrieving OCR'
 
         # Article ocr
-        ocr = data['text'][0]['title']
-        ocr += u' ' + data['text'][0]['p']
+        ocr = ''
+        if 'title' in data['text'][0]:
+            ocr += data['text'][0]['title']
+        if 'p' in data['text'][0]:
+            ocr += u' ' + data['text'][0]['p']
         self.ocr = ocr
 
         # Article entities
@@ -386,21 +390,13 @@ class Entity():
             self.quotes = self.get_quotes()
             self.alt_type = self.get_alt_type()
 
-    def get_quotes(self):
-        '''
-        Count quote characters surrounding the entity.
-        '''
-        quotes = 0
-        quote_chars = [u'"', u"'", u'„', u'”', u'‚', u'’']
-        for q in quote_chars:
-            quotes += self.ne_context.count(q)
-        return quotes
-
     def get_title(self):
         '''
         Check for titles near the beginning of the entity.
         '''
-        words = [self.norm.split()[0]]
+        words = []
+        if len(self.norm.split()) > 1:
+            words.append(self.norm.split()[0])
         if self.window_left:
             words.append(self.window_left[-1])
         for word in words:
@@ -412,7 +408,9 @@ class Entity():
         '''
         Check for roles near the beginning and end of the entity.
         '''
-        words = [self.norm.split()[0]]
+        words = []
+        if len(self.norm.split()) > 1:
+            words.append(self.norm.split()[0])
         if self.window_left:
             words.append(self.window_left[-1])
         if self.window_right and self.ne_context[-1] == ',':
@@ -452,6 +450,16 @@ class Entity():
             if [w for w in self.norm.split() if w.isdigit()]:
                 return True
         return False
+
+    def get_quotes(self):
+        '''
+        Count quote characters surrounding the entity.
+        '''
+        quotes = 0
+        quote_chars = [u'"', u"'", u'„', u'”', u'‚', u'’']
+        for q in quote_chars:
+            quotes += self.ne_context.count(q)
+        return quotes
 
     def get_alt_type(self):
         '''
