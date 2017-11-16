@@ -56,7 +56,7 @@ roles = {
             'partijleider', 'burgemeester', 'staatssecretaris', 'president',
             'wethouder', 'consul', 'ambassadeur', 'gemeenteraadslid',
             'diplomaat', 'fractieleider', 'politicus', 'politica', 'politici',
-            'staatsman'],
+            'staatsman', 'rijkspresident', 'kanselier', 'bondskanselier'],
         'schema_types': ['Politician', 'OfficeHolder', 'Judge',
             'MemberOfParliament', 'President', 'PrimeMinister',
             'Governor', 'Congressman', 'Mayor'],
