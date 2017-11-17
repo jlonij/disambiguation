@@ -493,6 +493,10 @@ class Entity():
         if self.stripped.find('y') > -1:
             subs.append(self.stripped.replace('y', 'ij'))
 
+        # Replace ae with aa
+        if self.stripped.find('ae') > -1:
+            subs.append(self.stripped.replace('ae', 'aa'))
+
         # Remove trailing s
         if self.stripped.endswith('s'):
             subs.append(self.stripped[:-1])
