@@ -181,6 +181,8 @@ class EntityLinker():
         # Assign each entity to a cluster
         for entity in sorted_entities:
             clusters = self.cluster(entity, clusters)
+        # Merge possessives
+        clusters = self.merge_possessives(clusters)
 
         return clusters
 
@@ -199,11 +201,6 @@ class EntityLinker():
                     if entity.norm == e.norm:
                         cluster.entities.append(entity)
                         return clusters
-
-                # Possesive
-                if entity.norm + 's' == e.norm:
-                    cluster.entities.insert(0, entity)
-                    return clusters
 
         # Find candidate clusters that partially match an entity
         candidates = []
@@ -234,9 +231,31 @@ class EntityLinker():
 
         if len(candidates) == 1:
             candidates[0].entities.append(entity)
-        else:
-            clusters.append(Cluster([entity]))
+            return clusters
+
+        clusters.append(Cluster([entity]))
         return clusters
+
+    def merge_possessives(self, clusters):
+        '''
+        Try to add possessive forms to existing clusters.
+        '''
+        new_clusters = [c for c in clusters if c.entities[0].norm[-1] != 's']
+        poss_clusters = [c for c in clusters if c.entities[0].norm[-1] == 's']
+
+        for p in poss_clusters:
+            merge = False
+            for n in new_clusters:
+                if (p.entities[0].valid and n.entities[0].valid and
+                        n.entities[0].norm.split()[-1] + 's' ==
+                        p.entities[0].norm.split()[-1]):
+                    n.entities.extend(p.entities)
+                    merge = True
+                    break
+            if not merge:
+                new_clusters.append(p)
+
+        return new_clusters
 
 
 class Context():
