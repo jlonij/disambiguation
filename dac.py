@@ -202,6 +202,11 @@ class EntityLinker():
                         cluster.entities.append(entity)
                         return clusters
 
+                # Possesive
+                if entity.norm + 's' == e.norm:
+                    cluster.entities.insert(0, entity)
+                    return clusters
+
         # Find candidate clusters that partially match an entity
         candidates = []
         for cluster in clusters:
