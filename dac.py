@@ -1003,6 +1003,7 @@ class Description():
 
         # Mention - description string match
         self.set_levenshtein()
+        self.set_abbr_match()
         self.set_solr_properties()
 
         # Mention - description context match
@@ -1084,9 +1085,9 @@ class Description():
         if self.document.get('wd_alt_label'):
             wd_labels = self.document.get('wd_alt_label')
             ratios = [Levenshtein.ratio(ne, l) for l in wd_labels]
-            self.match_str_lsr_wd_max = max(ratios)
+            self.match_str_lsr_wd_max = max(ratios) - 0.5
             self.match_str_lsr_wd_mean = (sum(ratios) /
-                float(len(wd_labels)))
+                float(len(wd_labels))) - 0.375
         else:
             wd_labels = []
 
@@ -1096,9 +1097,41 @@ class Description():
             labels = [l for l in labels if l not in wd_labels]
             if labels:
                 ratios = [Levenshtein.ratio(ne, l) for l in labels]
-                self.match_str_lsr_alt_max = max(ratios)
+                self.match_str_lsr_alt_max = max(ratios) - 0.5
                 self.match_str_lsr_alt_mean = (sum(ratios) /
-                        float(len(labels)))
+                        float(len(labels))) - 0.375
+
+    def set_abbr_match(self):
+        '''
+        Match abbreviations with labels, initials of labels, abstract.
+        '''
+        if not [f for f in self.features if f.startswith('match_str_abbr')]:
+            return
+
+        ne = self.cluster.entities[0]
+        if (ne.text.isupper() and len(ne.norm) <= 5 and
+                len(ne.norm.split()) == 1):
+
+            # Exactly match pref or alt label
+            if (self.match_str_pref_label_exact or
+                    self.match_str_alt_label_exact):
+                self.match_str_abbr_labels = 1
+
+            # Matches initials of pref or alt label
+            labels = [self.document.get('pref_label')]
+            if self.document.get('alt_label'):
+                labels += self.document.get('alt_label')
+            for l in labels:
+                initials = ''.join([t[0] for t in l.split()])
+                if ne.norm == initials:
+                    self.match_str_abbr_initials = 1
+                    break
+
+            # Appears in abstract
+            if not hasattr(self, 'abstract_bow'):
+                self.tokenize_abstract()
+            if ne.norm in self.abstract_bow[:50]:
+                self.match_str_abbr_abstract = 1
 
     def set_solr_properties(self):
         '''
@@ -1388,8 +1421,8 @@ class Description():
         sims = cosine_similarity(np.array(self.cluster.window_vectors),
             np.array(cand_vectors))
 
-        self.match_txt_vec_max = sims.max()
-        self.match_txt_vec_mean = sims.mean()
+        self.match_txt_vec_max = sims.max() - 0.375
+        self.match_txt_vec_mean = sims.mean() - 0.0625
 
     def set_entity_match(self):
         '''
@@ -1510,8 +1543,8 @@ class Description():
 
         sims = cosine_similarity(np.array(self.cluster.context_entity_vectors),
             np.array(cand_vectors))
-        self.match_txt_entity_vec_max = sims.max()
-        self.match_txt_entity_vec_mean = sims.mean()
+        self.match_txt_entity_vec_max = sims.max() - 0.375
+        self.match_txt_entity_vec_mean = sims.mean() - 0.125
 
     def tokenize_abstract(self):
         '''
@@ -1595,7 +1628,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='nn', debug=True, features=False,
+        linker = EntityLinker(model='train', debug=True, features=False,
             candidates=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
