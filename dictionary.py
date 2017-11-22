@@ -73,7 +73,7 @@ roles = {
         },
     'military_person': {
         'words': ['generaal', 'majoor', 'luitenant', 'kolonel',
-            'kapitein', 'bevelhebber'],
+            'kapitein', 'bevelhebber', 'obergruppenfuhrer'],
         'schema_types': ['MilitaryPerson'],
         'subjects': ['politics'],
         'types': ['person']
