@@ -779,14 +779,14 @@ class Description():
         '''
         Set the feature values needed for rule-based candidate filtering.
         '''
-        # Date conflict (date match)
+        # Date conflict
         if self.set_date_match() > -1:
 
-            # Name conflict (string match)
+            # Name conflict
             self.set_pref_label_match()
             self.set_alt_label_match()
             self.set_last_part_match()
-            self.set_first_part_match()
+            self.set_txt_last_part_match()
             self.set_non_matching()
             self.set_name_conflict()
 
@@ -938,7 +938,7 @@ class Description():
 
         self.match_str_last_part = math.tanh(last_part_match * 0.25)
 
-    def set_first_part_match(self):
+    def set_txt_last_part_match(self):
         '''
         Look for last name in surrounding text.
         '''
@@ -962,10 +962,10 @@ class Description():
             self.cluster.context.normalize_ocr()
         ocr = self.cluster.context.ocr_norm
 
-        self.match_str_first_part = -1
+        self.match_txt_last_part = -1
         for l in labels:
             if ocr.find(' '.join(l.split()[1:])) > -1:
-                self.match_str_first_part = 1
+                self.match_txt_last_part = 1
                 break
 
     def set_non_matching(self):
@@ -981,7 +981,7 @@ class Description():
         '''
         features = ['match_str_pref_label_exact', 'match_str_pref_label_end',
             'match_str_alt_label_exact', 'match_str_alt_label_end',
-            'match_str_last_part', 'match_str_first_part']
+            'match_str_last_part', 'match_txt_last_part']
 
         if sum([getattr(self, f) for f in features]) == 0:
             self.match_str_conflict = 1
@@ -1007,6 +1007,7 @@ class Description():
         self.set_solr_properties()
 
         # Mention - description context match
+        self.set_txt_labels_match()
         self.set_type_match()
         self.set_role_match()
         self.set_spec_match()
@@ -1105,12 +1106,16 @@ class Description():
         '''
         Match abbreviations with labels, initials of labels, abstract.
         '''
-        if not [f for f in self.features if f.startswith('match_str_abbr')]:
+        if not [f for f in self.features if f.startswith('match_str_abbr') or
+                f.startswith('entity_abbr')]:
             return
 
         ne = self.cluster.entities[0]
         if (ne.text.isupper() and len(ne.norm) <= 5 and
                 len(ne.norm.split()) == 1):
+
+            if 'entity_abbr' in self.features:
+                self.entity_abbr = 1
 
             # Exactly match pref or alt label
             if (self.match_str_pref_label_exact or
@@ -1157,6 +1162,35 @@ class Description():
         if self.cand_list.max_score:
             self.match_str_solr_score = (self.document.get('score') /
                 float(self.cand_list.max_score))
+
+    def set_txt_labels_match(self):
+        '''
+        Look for (trustworthy) labels containing additional information
+        in surrounding text.
+        '''
+        if not 'match_txt_labels' in self.features:
+            return
+
+        ne = self.cluster.entities[0].norm
+
+        labels = []
+        if len(ne) < len(self.document.get('pref_label')):
+            labels.append(self.document.get('pref_label'))
+        if self.document.get('wd_alt_label'):
+            labels.extend([l for l in self.document.get('wd_alt_label') if
+                len(ne) < len(l)])
+
+        if not labels:
+            return
+
+        if not hasattr(self.cluster.context, 'ocr_norm'):
+            self.cluster.context.normalize_ocr()
+        ocr = self.cluster.context.ocr_norm
+
+        for l in labels:
+            if ocr.find(l) > -1:
+                self.match_txt_labels = 1
+                break
 
     def set_type_match(self):
         '''
