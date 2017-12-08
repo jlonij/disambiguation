@@ -40,10 +40,10 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 conf = config.parse_config(local=True)
 
-TPTA_URL = conf.get("TPTA_URL")
-JSRU_URL = conf.get("JSRU_URL")
-SOLR_URL = conf.get("SOLR_URL")
-W2V_URL = conf.get("W2V_URL")
+TPTA_URL = conf.get('TPTA_URL')
+JSRU_URL = conf.get('JSRU_URL')
+SOLR_URL = conf.get('SOLR_URL')
+W2V_URL = conf.get('W2V_URL')
 
 WINDOW = 20
 SOLR_ROWS = 25
@@ -55,7 +55,7 @@ class EntityLinker():
     '''
 
     def __init__(self, model=None, debug=False, features=False,
-        candidates=False):
+        candidates=False, error_handling=True):
         '''
         Initialize the disambiguation model and Solr connection.
         '''
@@ -86,11 +86,11 @@ class EntityLinker():
         try:
             self.context = Context(url, ne)
         except Exception as e:
-            if self.debug:
-                raise
-            else:
+            if self.error_handling:
                 return {'status': 'error', 'message':
                     'Error retrieving context: ' + str(e)}
+            else:
+                raise
 
         # If a specific ne was requested, select it from the list of entities
         if ne:
@@ -114,11 +114,11 @@ class EntityLinker():
             try:
                 result = cluster.link(self.solr_connection, self.model)
             except Exception as e:
-                if self.debug:
-                    raise
-                else:
+                if self.error_handling:
                     return {'status': 'error', 'message':
                         'Error linking entity: ' + str(e)}
+                else:
+                    raise
 
             # If a cluster consists of multiple entities and could not be linked
             # or was not linked to a person, split it up and return the parts to
@@ -1662,8 +1662,8 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='train', debug=True, features=False,
-            candidates=False)
+        linker = EntityLinker(model='nn', debug=True, features=False,
+            candidates=False, error_handling=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
         else:
