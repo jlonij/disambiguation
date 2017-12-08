@@ -27,25 +27,29 @@ months = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli',
     'augustus', 'september', 'oktober', 'november', 'december']
 
 titles = ['heer', 'hr', 'dhr', 'meneer', 'mevrouw', 'mevr', 'mw', 'mej',
-    'mejuffrouw', 'drs', 'ing', 'ir', 'dr', 'sir', 'mr']
+    'mejuffrouw', 'drs', 'ing', 'ir', 'dr', 'mr', 'sir', 'dame', 'lady']
 
 types = {
     'person': {
-        'schema_types': ['Person'],
+        'dbo_types': ['Person'],
         'words': ['familie', 'zoon', 'dochter', 'persoon', 'geboren',
             'overleden', 'dood', 'man', 'vrouw', 'leven', 'echtgenoot',
             'echtgenote', 'vader', 'moeder']
         },
     'location': {
-        'schema_types': ['Place', 'Location'],
+        'dbo_types': ['Location'],
         'words': ['inwoners', 'oppervlakte', 'gelegen', 'noorden', 'zuiden',
             'oosten', 'westen', 'noordoosten', 'noordwesten', 'zuidoosten',
             'zuidwesten', 'grens', 'zuidelijke', 'noordelijke', 'westelijke',
             'oostelijke', 'omgeving']
         },
     'organisation': {
-        'schema_types': ['Organization', 'Organisation'],
+        'dbo_types': ['Organisation'],
         'words': ['organisatie']
+        },
+    'other': {
+        'dbo_types': [],
+        'words': []
         }
     }
 

@@ -73,6 +73,7 @@ class EntityLinker():
         self.debug = debug
         self.features = features
         self.candidates = candidates
+        self.error_handling = error_handling
 
         self.solr_connection = solr.SolrConnection(SOLR_URL)
 
@@ -120,22 +121,13 @@ class EntityLinker():
                 else:
                     raise
 
-            # If a cluster consists of multiple entities and could not be linked
-            # or was not linked to a person, split it up and return the parts to
-            # the queue. If not, add the cluster to the linked list.
+            # If a cluster consists of multiple, significantly differing
+            # entities and could not be linked, split it up and return the
+            # new clustres to the queue.
             sub_entities = [e for e in cluster.entities if
                 Levenshtein.distance(e.norm, cluster.entities[0].norm) > 2]
 
             if sub_entities:
-                '''
-                types = []
-                if result.description:
-                    if result.description.document.get('schema_type'):
-                        types += result.description.document.get('schema_type')
-                    if result.description.document.get('dbo_type'):
-                        types += result.description.document.get('dbo_type')
-                if not result.description or 'Person' not in types:
-                '''
                 if not result.description:
                     new_clusters = [Cluster([e for e in cluster.entities if e
                         not in sub_entities])]
@@ -201,11 +193,6 @@ class EntityLinker():
                     if entity.norm == e.norm:
                         cluster.entities.append(entity)
                         return clusters
-
-                # Possesive
-                if entity.norm + 's' == e.norm:
-                    cluster.entities.insert(0, entity)
-                    return clusters
 
         # Find candidate clusters that partially match an entity
         candidates = []
@@ -390,7 +377,7 @@ class Entity():
     def __init__(self, text, tpta_type, ne_context=None, left_context=None,
             right_context=None, context=None):
         '''
-        Gather information about the entity and its immediate surroundings.
+        Get information about the entity and its immediate surroundings.
         '''
         self.text = text
         self.tpta_type = tpta_type
@@ -449,7 +436,7 @@ class Entity():
 
     def strip_titles(self):
         '''
-        Remove titles and roles appearing inside the entity.
+        Remove titles and roles appearing inside the entity string.
         '''
         if self.title and self.norm.split()[0] == self.title_form:
             return ' '.join(self.norm.split()[1:])
@@ -607,12 +594,10 @@ class Cluster():
         types = [e.tpta_type for e in self.entities if e.tpta_type]
         types += [e.alt_type for e in self.entities if e.alt_type]
 
+        type_ratios = {}
         if types:
-            type_ratios = {}
-            for t in list(set(types[:])):
+            for t in dictionary.types:
                 type_ratios[t] = types.count(t) / float(len(types))
-        else:
-            type_ratios = None
 
         self.type_ratios = type_ratios
 
@@ -1211,19 +1196,15 @@ class Description():
             for tr in type_ratios:
                 setattr(self, 'entity_type_' + tr, type_ratios[tr])
 
-        schema_types = []
-        if self.document.get('schema_type'):
-            schema_types += self.document.get('schema_type')
+        dbo_types = []
         if self.document.get('dbo_type'):
-            schema_types += self.document.get('dbo_type')
+            dbo_types += self.document.get('dbo_type')
 
         # Set candidate type features
-        if schema_types and ctf:
+        if dbo_types and ctf:
             for t in dictionary.types:
-                for s in schema_types:
-                    if s in dictionary.types[t]['schema_types']:
-                        setattr(self, 'candidate_type_' + t, 1)
-                        break
+                if t.capitalize() in dbo_types:
+                    setattr(self, 'candidate_type_' + t, 1)
 
         # Set type match feature
         if not mtf or not type_ratios:
@@ -1231,7 +1212,7 @@ class Description():
 
         # If no types available, try to deduce a type from the first sentence
         # of the abstract
-        if not schema_types:
+        if not dbo_types:
             if not hasattr(self, 'abstract_bow'):
                 self.tokenize_abstract()
             bow = self.abstract_bow[:25]
@@ -1244,18 +1225,24 @@ class Description():
             for t in dictionary.types:
                 if len(set(bow) & set(dictionary.types[t]['words'])) > 0:
                     cand_types.append(t)
+
             if len(set(cand_types)) == 1:
-                schema_types = dictionary.types[cand_types[0]]['schema_types']
+                dbo_types = dictionary.types[cand_types[0]]['dbo_types']
             else:
                 return
 
         # Matching type
         for r in type_ratios:
-            if r in dictionary.types:
-                for t in dictionary.types[r]['schema_types']:
-                    if t in schema_types:
+            if r == 'other':
+                if ('Person' not in dbo_types and 'Organisation' not in
+                        dbo_types and 'Location' not in dbo_types):
+                    self.match_txt_type += type_ratios[r]
+            else:
+                for t in dictionary.types[r]['dbo_types']:
+                    if t in dbo_types:
                         self.match_txt_type += type_ratios[r]
                         break
+
         if self.match_txt_type:
             return
 
@@ -1263,14 +1250,14 @@ class Description():
             # Non-matching: persons can't be locations or organizations
             if 'person' in type_ratios:
                 for other in [t for t in dictionary.types if t != 'person']:
-                    for t in dictionary.types[other]['schema_types']:
-                        if t in schema_types:
+                    for t in dictionary.types[other]['dbo_types']:
+                        if t in dbo_types:
                             self.match_txt_type = -1
                             return
 
             # Non-matching: locations and organizations can't be persons
             elif 'location' in type_ratios or 'organisation' in type_ratios:
-                if 'Person' in schema_types:
+                if 'Person' in dbo_types:
                     self.match_txt_type = -1
 
     def set_role_match(self):
