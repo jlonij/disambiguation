@@ -233,10 +233,12 @@ class EntityLinker():
         '''
         Try to add possessive forms to existing clusters.
         '''
-        new_clusters = [c for c in clusters if c.entities[0].norm[-1] != 's' or
-                len(c.entities[0].norm.split()) > 1]
-        poss_clusters = [c for c in clusters if c.entities[0].norm[-1] == 's'
-                and len(c.entities[0].norm.split()) == 1]
+        new_clusters = [c for c in clusters if not c.entities[0].valid or
+            (c.entities[0].norm[-1] != 's' or len(c.entities[0].norm.split())
+            > 1)]
+        poss_clusters = [c for c in clusters if c.entities[0].valid and
+            c.entities[0].norm[-1] == 's' and len(c.entities[0].norm.split())
+            == 1]
 
         for p in poss_clusters:
             merge = False
