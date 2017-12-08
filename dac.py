@@ -36,6 +36,7 @@ import utilities
 
 from lxml import etree
 from operator import attrgetter
+from operator import itemgetter
 from sklearn.metrics.pairwise import cosine_similarity
 
 conf = config.parse_config(local=True)
@@ -125,7 +126,7 @@ class EntityLinker():
             # entities and could not be linked, split it up and return the
             # new clustres to the queue.
             sub_entities = [e for e in cluster.entities if
-                Levenshtein.distance(e.norm, cluster.entities[0].norm) > 2]
+                Levenshtein.distance(e.norm, cluster.entities[0].norm) > 1]
 
             if sub_entities:
                 if not result.description:
@@ -287,19 +288,22 @@ class Context():
 
         # Article ocr
         ocr = ''
-        if 'title' in data['text'][0]:
-            ocr += data['text'][0]['title']
-        if 'p' in data['text'][0]:
-            ocr += u' ' + data['text'][0]['p']
+        if 'title' in data['text']:
+            ocr += data['text']['title']
+        if 'p' in data['text']:
+            ocr += u' ' + data['text']['p']
         self.ocr = ocr
 
         # Article entities
         entities = []
 
+        data['entities'] = sorted(data['entities'], key=itemgetter('pos'))
+
         # Regular entities first
-        for e in [e for e in data['entities'] if e['type'] != 'param']:
+        for e in [e for e in data['entities'] if e['type'] != 'manual']:
             if len(e['ne']) > 1:
-                entity = Entity(e['ne'], e['type'], e['ne_context'],
+                entity = Entity(e['ne'], e['count'], e['type'],
+                    e['type_certainty'], e['pos'], e['ne_context'],
                     e['left_context'], e['right_context'], self)
                 entities.append(entity)
 
@@ -307,13 +311,16 @@ class Context():
         if self.ne:
             if self.ne not in [e.text for e in entities]:
                 occurences = [e for e in data['entities'] if e['type'] ==
-                    'param' and e['pos'] > -1]
+                    'manual' and e['pos'] > -1]
                 if occurences:
-                    e = occurences[0]
-                    entity = Entity(e['ne'], None, e['ne_context'],
-                        e['left_context'], e['right_context'], self)
+                    e = sorted(occurences, key=itemgetter('source'),
+                        reverse=True)[0]
+                    entity = Entity(e['ne'], 0, None, 0, e['pos'],
+                        e['ne_context'], e['left_context'], e['right_context'],
+                        self)
                 else:
-                    entity = Entity(e['ne'], None, e['ne'], '', '', self)
+                    entity = Entity(e['ne'], 0, None, 0, -1, e['ne'], '', '',
+                        self)
                 entities.append(entity)
 
         self.entities = entities
@@ -374,17 +381,25 @@ class Entity():
     An entity mention occuring in an article.
     '''
 
-    def __init__(self, text, tpta_type, ne_context=None, left_context=None,
-            right_context=None, context=None):
+    def __init__(self, text, count, tpta_type, type_certainty, pos,
+        ne_context, left_context, right_context, context):
+
         '''
         Get information about the entity and its immediate surroundings.
         '''
         self.text = text
+        self.count = count
         self.tpta_type = tpta_type
+        self.type_certainty = type_certainty
+        self.pos = pos
         self.ne_context = ne_context
         self.left_context = left_context
         self.right_context = right_context
         self.context = context
+
+        # Clean up TPTA spelling variation
+        if self.tpta_type == 'organization':
+            self.tpta_type = 'organisation'
 
         # Tokenize context
         self.window_left = utilities.tokenize(left_context)
@@ -591,8 +606,10 @@ class Cluster():
         '''
         Get the type ratios for the cluster.
         '''
-        types = [e.tpta_type for e in self.entities if e.tpta_type]
-        types += [e.alt_type for e in self.entities if e.alt_type]
+        types = [t for e in self.entities for t in [e.tpta_type] *
+                e.type_certainty if e.tpta_type]
+        types += [t for e in self.entities for t in [e.alt_type] * 3
+                if e.alt_type]
 
         type_ratios = {}
         if types:
@@ -979,6 +996,7 @@ class Description():
         candidate ranking.
         '''
         # Mention representation
+        self.set_entity_ner_confidence()
         self.set_entity_quotes()
 
         # Description representation
@@ -1002,6 +1020,16 @@ class Description():
         self.set_entity_match()
         self.set_entity_match_newspapers()
         self.set_entity_vector_match()
+
+    def set_entity_ner_confidence(self):
+        if 'entity_ner_confidence' not in self.features:
+            return
+
+        if not hasattr(self.cluster, 'mean_ner_confidence'):
+            self.cluster.mean_ner_confidence = sum([e.count for e in
+                self.cluster.entities]) / float(len(self.cluster.entities))
+
+        self.entity_ner_confidence = self.cluster.mean_ner_confidence / 3
 
     def set_entity_quotes(self):
         '''
@@ -1248,7 +1276,7 @@ class Description():
 
         if len(type_ratios) == 1:
             # Non-matching: persons can't be locations or organizations
-            if 'person' in type_ratios:
+            if type_ratios['person'] > 0:
                 for other in [t for t in dictionary.types if t != 'person']:
                     for t in dictionary.types[other]['dbo_types']:
                         if t in dbo_types:
@@ -1256,7 +1284,7 @@ class Description():
                             return
 
             # Non-matching: locations and organizations can't be persons
-            elif 'location' in type_ratios or 'organisation' in type_ratios:
+            elif type_ratios['location'] > 0 or type_ratios['organisation'] > 0:
                 if 'Person' in dbo_types:
                     self.match_txt_type = -1
 
@@ -1558,7 +1586,7 @@ class Description():
 
         if not hasattr(self.cluster, 'context_entity_vectors'):
             self.cluster.context_entity_vectors = self.get_vectors(
-                    self.cluster.context_entity_parts)
+                self.cluster.context_entity_parts)
         if not self.cluster.context_entity_vectors:
             return
 
@@ -1649,7 +1677,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='nn', debug=True, features=False,
+        linker = EntityLinker(model='train', debug=True, features=True,
             candidates=False, error_handling=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))

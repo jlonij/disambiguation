@@ -1,6 +1,7 @@
 {"features": [
-    "entity_quotes",
+    "entity_ner_confidence",
     "entity_abbr",
+    "entity_quotes",
     "entity_type_person",
     "entity_type_organisation",
     "entity_type_location",
@@ -105,12 +106,12 @@
     "entity_vec_97",
     "entity_vec_98",
     "entity_vec_99",
+    "candidate_lang",
+    "candidate_ambig",
     "candidate_inlinks",
     "candidate_inlinks_rel",
     "candidate_inlinks_newspapers",
     "candidate_inlinks_newspapers_rel",
-    "candidate_ambig",
-    "candidate_lang",
     "candidate_type_person",
     "candidate_type_organisation",
     "candidate_type_location",
@@ -254,4 +255,3 @@
     "match_txt_entity_vec_max",
     "match_txt_entity_vec_mean"
 ]}
-
