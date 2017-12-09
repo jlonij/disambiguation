@@ -495,16 +495,18 @@ class Entity():
         '''
         Infer addtional information about entity type from context.
         '''
+        # A title implies a person
         if self.title:
             return 'person'
 
+        # A role may imply a type
         if self.role:
             if len(dictionary.roles[self.role]['types']) == 1:
                 return dictionary.roles[self.role]['types'][0]
 
+        # Some prepositions imply a location
         if self.window_left:
-            prev_word = self.window_left[-1]
-            if prev_word in ['in', 'te', 'uit']:
+            if self.window_left[-1] in ['in', 'te', 'uit']:
                 return 'location'
 
         return None
@@ -610,7 +612,7 @@ class Cluster():
         '''
         types = [t for e in self.entities for t in [e.tpta_type] *
                 e.type_certainty if e.tpta_type]
-        types += [t for e in self.entities for t in [e.alt_type] * 3
+        types += [t for e in self.entities for t in [e.alt_type] * 2
                 if e.alt_type]
 
         type_ratios = {}
