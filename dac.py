@@ -262,7 +262,7 @@ class Context():
 
     def __init__(self, url, ne=None):
         '''
-        Retrieve ocr, metadata, subjects and entities.
+        Retrieve ocr, metadata, topics and entities.
         '''
         self.url = url
         self.ne = ne
@@ -350,24 +350,24 @@ class Context():
         else:
             self.publ_year = None
 
-    def get_subjects(self):
+    def get_topics(self):
         '''
-        Extract subjects from ocr (based on dictionary for now).
+        Extract topics from ocr (based on dictionary for now).
         '''
-        subjects = []
+        topics = []
 
         if not hasattr(self, 'ocr_bow'):
             self.tokenize_ocr()
 
-        for subject in dictionary.subjects:
-            words = dictionary.subjects[subject]
-            for role in dictionary.roles:
-                if subject in dictionary.roles[role]['subjects']:
-                    words += dictionary.roles[role]['words']
-            if len(set(words) & set(self.ocr_bow)) > 0:
-                subjects.append(subject)
+        for topic in dictionary.topics_vocab:
+            tokens = dictionary.topics_vocab[topic]
+            for role in dictionary.roles_vocab:
+                if role.startswith(topic):
+                    tokens += dictionary.roles_vocab[role]
+            if len(set(tokens) & set(self.ocr_bow)) > 0:
+                topics.append(topic)
 
-        self.subjects = subjects
+        self.topics = topics
 
     def normalize_ocr(self):
         self.ocr_norm = utilities.normalize(self.ocr)
@@ -440,8 +440,8 @@ class Entity():
         if self.window_right and self.ne_context[-1] == ',':
             words.append(self.window_right[0])
         for word in words:
-            for role in dictionary.roles:
-                if word in dictionary.roles[role]['words']:
+            for role in dictionary.roles_vocab:
+                if word in dictionary.roles_vocab[role]:
                     return role, word
         return None, None
 
@@ -495,8 +495,8 @@ class Entity():
 
         # A role may imply a type
         if self.role:
-            if len(dictionary.roles[self.role]['types']) == 1:
-                return dictionary.roles[self.role]['types'][0]
+            if self.role.split('_')[1] in dictionary.types_dbo:
+                return self.role.split('_')[1]
 
         # Some prepositions imply a location
         if self.window_left:
@@ -611,7 +611,7 @@ class Cluster():
 
         type_ratios = {}
         if types:
-            for t in dictionary.types:
+            for t in dictionary.types_dbo:
                 type_ratios[t] = types.count(t) / float(len(types))
 
         self.type_ratios = type_ratios
@@ -974,7 +974,7 @@ class Description():
         self.set_txt_last_part_match()
         self.set_spec_match()
         self.set_keyword_match()
-        self.set_subject_match()
+        self.set_topic_match()
         self.set_type_match()
         self.set_role_match()
         self.set_vector_match()
@@ -1247,51 +1247,49 @@ class Description():
         key_match = len([w for w in bow for s in key_stems if w.startswith(s)])
         self.match_txt_keyword = math.tanh(key_match * 0.25)
 
-    def set_subject_match(self):
+    def set_topic_match(self):
         '''
         Match the topics identified for the article with the DBpedia
         abstract.
         '''
-        if not 'match_txt_subject' in self.features:
+        if not 'match_txt_topic' in self.features:
             return
 
-        if not hasattr(self.cluster.context, 'subjects'):
-            self.cluster.context.get_subjects()
+        if not hasattr(self.cluster.context, 'topics'):
+            self.cluster.context.get_topics()
 
-        subjects = self.cluster.context.subjects
-        if not subjects:
+        topics = self.cluster.context.topics
+        if not topics:
             return
 
         if not hasattr(self, 'abstract_bow'):
             self.tokenize_abstract()
         bow = self.abstract_bow
 
-        subject_match = 0
-        for subject in subjects:
-            words = dictionary.subjects[subject]
-            for role in dictionary.roles:
-                if subject in dictionary.roles[role]['subjects']:
-                    words += dictionary.roles[role]['words']
+        topic_match = 0
+        for topic in topics:
+            words = dictionary.topics_vocab[topic]
+            for role in dictionary.roles_vocab:
+                if role.startswith(topic):
+                    words += dictionary.roles_vocab[role]
             if len(set(words) & set(bow)) > 0:
-                subject_match += 1
+                topic_match += 1
 
         # Check for conflicts
-        if subject_match == 0:
-            for subject in [s for s in dictionary.subjects if s not in
-                    subjects]:
-                words = dictionary.subjects[subject]
-                for role in dictionary.roles:
-                    if subject in dictionary.roles[role]['subjects']:
-                        if len(set(dictionary.roles[role]['subjects']) &
-                                set(subjects)) == 0:
-                            words += dictionary.roles[role]['words']
+        if not topic_match:
+            for topic in [t for t in dictionary.topics_vocab if t not in
+                    topics]:
+                words = dictionary.topics_vocab[topic]
+                for role in dictionary.roles_vocab:
+                    if role.startswith(topic):
+                        words += dictionary.roles_vocab[role]
                 if len(set(words) & set(bow)) > 0:
-                    subject_match = -1
+                    topic_match -= 1
 
-        if subject_match > 0:
-            self.match_txt_subject = math.tanh(subject_match * 0.25)
-        elif subject_match < -1:
-            self.match_txt_subject = math.tanh((subject_match + 1) * 0.25)
+        if topic_match:
+            self.match_txt_topic = math.tanh(topic_match * 0.25)
+        elif topic_match < -1:
+            self.match_txt_topic = math.tanh((topic_match + 1) * 0.25)
 
     def set_type_match(self):
         '''
@@ -1318,8 +1316,8 @@ class Description():
 
         # Set candidate type features
         if dbo_types and ctf:
-            for t in dictionary.types:
-                if t.capitalize() in dbo_types:
+            for t in dictionary.types_dbo:
+                if len(set(dictionary.types_dbo[t]) & set(dbo_types)) > 0:
                     setattr(self, 'candidate_type_' + t, 1)
 
         # Set type match feature
@@ -1333,19 +1331,17 @@ class Description():
                 self.tokenize_abstract()
             bow = self.abstract_bow[:25]
 
-            cand_types = []
-            for role in [r for r in dictionary.roles if
-                    len(dictionary.roles[r]['types']) == 1]:
-                if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
-                    cand_types.append(dictionary.roles[role]['types'][0])
-            for t in dictionary.types:
-                if len(set(bow) & set(dictionary.types[t]['words'])) > 0:
-                    cand_types.append(t)
+            for t in dictionary.types_vocab:
+                words = dictionary.types_vocab[t]
+                for r in dictionary.roles_vocab:
+                    if r.endswith(t):
+                        words += dictionary.roles_vocab[r]
+                if len(set(bow) & set(words)) > 0:
+                    dbo_types = [t]
+                    break
 
-            if len(set(cand_types)) == 1:
-                dbo_types = dictionary.types[cand_types[0]]['dbo_types']
-            else:
-                return
+        if not dbo_types:
+            return
 
         # Matching type
         for r in type_ratios:
@@ -1354,7 +1350,7 @@ class Description():
                         dbo_types and 'Location' not in dbo_types):
                     self.match_txt_type += type_ratios[r]
             else:
-                for t in dictionary.types[r]['dbo_types']:
+                for t in dictionary.types_dbo[r]:
                     if t in dbo_types:
                         self.match_txt_type += type_ratios[r]
                         break
@@ -1362,19 +1358,18 @@ class Description():
         if self.match_txt_type:
             return
 
-        if len(type_ratios) == 1:
-            # Non-matching: persons can't be locations or organizations
-            if type_ratios['person'] > 0:
-                for other in [t for t in dictionary.types if t != 'person']:
-                    for t in dictionary.types[other]['dbo_types']:
-                        if t in dbo_types:
-                            self.match_txt_type = -1
-                            return
+        # Non-matching: persons can't be locations or organizations
+        if type_ratios['person'] > 0:
+            for other in [t for t in dictionary.types_dbo if t != 'person']:
+                for t in dictionary.types_dbo[other]:
+                    if t in dbo_types:
+                        self.match_txt_type = -1
+                        return
 
-            # Non-matching: locations and organizations can't be persons
-            elif type_ratios['location'] > 0 or type_ratios['organisation'] > 0:
-                if 'Person' in dbo_types:
-                    self.match_txt_type = -1
+        # Non-matching: locations and organizations can't be persons
+        elif type_ratios['location'] > 0 or type_ratios['organisation'] > 0:
+            if 'Person' in dbo_types:
+                self.match_txt_type = -1
 
     def set_role_match(self):
         '''
@@ -1387,34 +1382,34 @@ class Description():
         if not roles:
             return
 
-        # Match schema.org and DBpedia ontology types
-        schema_types = []
-        if self.document.get('schema_type'):
-            schema_types += self.document.get('schema_type')
+        # Match DBpedia ontology types
+        dbo_types = []
         if self.document.get('dbo_type'):
-            schema_types += self.document.get('dbo_type')
-        if schema_types:
+            dbo_types += self.document.get('dbo_type')
+
+        if dbo_types:
             for role in roles:
-                for t in dictionary.roles[role]['schema_types']:
-                    if t in schema_types:
+                for t in dictionary.roles_dbo[role]:
+                    if t in dbo_types:
                         self.match_txt_role = 1
                         return
 
-        # Match first sentence abstract
-        if not hasattr(self, 'abstract_bow'):
-            self.tokenize_abstract()
-        bow = self.abstract_bow[:25]
+        else:
+            # Match first sentence abstract
+            if not hasattr(self, 'abstract_bow'):
+                self.tokenize_abstract()
+            bow = self.abstract_bow[:25]
 
-        for role in roles:
-            if len(set(bow) & set(dictionary.roles[role]['words'])) > 0:
-                self.match_txt_role = 1
-                return
+            for role in roles:
+                if len(set(bow) & set(dictionary.roles_vocab[role])) > 0:
+                    self.match_txt_role = 1
+                    return
 
         # Check for conflict
-        if schema_types:
-            for role in [r for r in dictionary.roles if r not in roles]:
-                for t in dictionary.roles[role]['schema_types']:
-                    if t in schema_types:
+        if dbo_types:
+            for role in [r for r in dictionary.roles_dbo if r not in roles]:
+                for t in dictionary.roles_dbo[role]:
+                    if t in dbo_types:
                         self.match_txt_role = -1
                         return
 
