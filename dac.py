@@ -299,8 +299,6 @@ class Context():
         # Article entities
         entities = []
 
-        data['entities'] = sorted(data['entities'], key=itemgetter('pos'))
-
         # Regular entities first
         for e in [e for e in data['entities'] if e['type'] != 'manual']:
             if len(e['ne']) > 1:
@@ -398,10 +396,6 @@ class Entity():
         self.left_context = left_context
         self.right_context = right_context
         self.context = context
-
-        # Clean up TPTA spelling variation
-        if self.tpta_type == 'organization':
-            self.tpta_type = 'organisation'
 
         # Tokenize context
         self.window_left = utilities.tokenize(left_context)
@@ -1682,7 +1676,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='train', debug=True, features=True,
+        linker = EntityLinker(model='nn', debug=True, features=False,
             candidates=False, error_handling=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
