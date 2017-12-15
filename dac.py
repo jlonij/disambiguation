@@ -360,11 +360,12 @@ class Context():
             self.tokenize_ocr()
 
         for topic in dictionary.topics_vocab:
-            tokens = dictionary.topics_vocab[topic]
+            vocab = dictionary.topics_vocab[topic]
             for role in dictionary.roles_vocab:
                 if role.startswith(topic):
-                    tokens += dictionary.roles_vocab[role]
-            if len(set(tokens) & set(self.ocr_bow)) > 0:
+                    vocab += dictionary.roles_vocab[role]
+
+            if [o for o in self.ocr_bow for v in vocab if v in o]:
                 topics.append(topic)
 
         self.topics = topics
@@ -439,10 +440,12 @@ class Entity():
             words.append(self.window_left[-1])
         if self.window_right and self.ne_context[-1] == ',':
             words.append(self.window_right[0])
+
         for word in words:
             for role in dictionary.roles_vocab:
-                if word in dictionary.roles_vocab[role]:
+                if [v for v in dictionary.roles_vocab[role] if v in word]:
                     return role, word
+
         return None, None
 
     def strip_titles(self):
@@ -685,8 +688,8 @@ class CandidateList():
             queries = []
             queries.append('pref_label_str:"' + norm + '" OR pref_label_str:"' +
                 stripped + '"')
-            queries.append('alt_label_str:"' + norm + '" OR alt_label_str:"' +
-                stripped + '"')
+            queries.append('(alt_label_str:"' + norm + '" OR alt_label_str:"' +
+                stripped + '") AND pref_label:[* TO *]')
             queries.append('pref_label:"' + norm + '" OR pref_label:"' +
                 stripped + '"')
             queries.append('last_part_str:"' + last_part + '"')
@@ -1268,22 +1271,24 @@ class Description():
 
         topic_match = 0
         for topic in topics:
-            words = dictionary.topics_vocab[topic]
+            vocab = dictionary.topics_vocab[topic]
             for role in dictionary.roles_vocab:
                 if role.startswith(topic):
-                    words += dictionary.roles_vocab[role]
-            if len(set(words) & set(bow)) > 0:
+                    vocab += dictionary.roles_vocab[role]
+
+            if [b for b in bow for v in vocab if v in b]:
                 topic_match += 1
 
         # Check for conflicts
         if not topic_match:
             for topic in [t for t in dictionary.topics_vocab if t not in
                     topics]:
-                words = dictionary.topics_vocab[topic]
+                vocab = dictionary.topics_vocab[topic]
                 for role in dictionary.roles_vocab:
                     if role.startswith(topic):
-                        words += dictionary.roles_vocab[role]
-                if len(set(words) & set(bow)) > 0:
+                        vocab += dictionary.roles_vocab[role]
+
+                if [b for b in bow for v in vocab if v in b]:
                     topic_match -= 1
 
         if topic_match:
@@ -1332,11 +1337,12 @@ class Description():
             bow = self.abstract_bow[:25]
 
             for t in dictionary.types_vocab:
-                words = dictionary.types_vocab[t]
+                vocab = dictionary.types_vocab[t]
                 for r in dictionary.roles_vocab:
                     if r.endswith(t):
-                        words += dictionary.roles_vocab[r]
-                if len(set(bow) & set(words)) > 0:
+                        vocab += dictionary.roles_vocab[r]
+
+                if [b for b in bow for v in vocab if v in b]:
                     dbo_types = [t]
                     break
 
@@ -1401,7 +1407,8 @@ class Description():
             bow = self.abstract_bow[:25]
 
             for role in roles:
-                if len(set(bow) & set(dictionary.roles_vocab[role])) > 0:
+                if [b for b in bow for v in dictionary.roles_vocab[role]
+                        if v in b]:
                     self.match_txt_role = 1
                     return
 
