@@ -1535,9 +1535,13 @@ class Description():
             return
 
         # Other entity mentions have to be available from context
-        context_entities = [e.norm for e in self.cluster.context.entities if
-            e.norm.find(self.cluster.entities[0].norm) == -1 and
-            e.norm.find(pref_label) == -1]
+        context_entities = [e.norm for e in self.cluster.context.entities
+            if e.norm.find(self.cluster.entities[0].norm) == -1 and
+            self.cluster.entities[0].norm.find(e.norm) == -1 and
+            e.norm.find(pref_label) == -1 and
+            pref_label.find(e.norm) == -1 and len(e.norm) >= 5]
+        context_entities = list(set(context_entities))
+
         if not context_entities:
             return
 
