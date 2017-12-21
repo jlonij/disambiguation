@@ -300,7 +300,8 @@ class Context():
         entities = []
 
         # Regular entities first
-        for e in [e for e in data['entities'] if e['type'] != 'manual']:
+        for e in [e for e in data['entities'] if e['type'] != 'manual' and
+                len(e['ner_src']) >= 2 and e['ne'][0].isupper()]:
             if len(e['ne']) > 1:
                 entity = Entity(e['ne'], e['count'], e['type'],
                     e['type_certainty'], e['pos'], e['ne_context'],
