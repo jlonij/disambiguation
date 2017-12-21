@@ -452,10 +452,12 @@ class Entity():
         '''
         Remove titles and roles appearing inside the entity string.
         '''
-        if self.title and self.norm.split()[0] == self.title_form:
-            return ' '.join(self.norm.split()[1:])
-        if self.role and self.norm.split()[0] == self.role_form:
-            return ' '.join(self.norm.split()[1:])
+        if self.norm:
+            if self.title and self.norm.split()[0] == self.title_form:
+                return ' '.join(self.norm.split()[1:])
+            if self.role and self.norm.split()[0] == self.role_form:
+                return ' '.join(self.norm.split()[1:])
+
         return self.norm
 
     def is_valid(self):
@@ -1255,46 +1257,54 @@ class Description():
         Match the topics identified for the article with the DBpedia
         abstract.
         '''
-        if not 'match_txt_topic' in self.features:
+        etf = [f for f in self.features if f.startswith('entity_topic')]
+        ctf = [f for f in self.features if f.startswith('candidate_topic')]
+        mtf = [f for f in self.features if f.startswith('match_txt_topic')]
+        if not (etf or ctf or mtf):
             return
 
         if not hasattr(self.cluster.context, 'topics'):
             self.cluster.context.get_topics()
-
         topics = self.cluster.context.topics
+
         if not topics:
             return
 
-        if not hasattr(self, 'abstract_bow'):
-            self.tokenize_abstract()
-        bow = self.abstract_bow
+        if topics and etf:
+            for t in dictionary.topics_vocab:
+                if t in topics:
+                    setattr(self, 'entity_topic_' + t, 1.0)
 
-        topic_match = 0
-        for topic in topics:
-            vocab = dictionary.topics_vocab[topic]
-            for role in dictionary.roles_vocab:
-                if role.startswith(topic):
-                    vocab += dictionary.roles_vocab[role]
+        if ctf or (topics and mtf):
+            if not hasattr(self, 'abstract_bow'):
+                self.tokenize_abstract()
+            bow = self.abstract_bow
+            if not bow:
+                return
 
-            if [b for b in bow for v in vocab if v in b]:
-                topic_match += 1
-
-        # Check for conflicts
-        if not topic_match:
-            for topic in [t for t in dictionary.topics_vocab if t not in
-                    topics]:
-                vocab = dictionary.topics_vocab[topic]
-                for role in dictionary.roles_vocab:
-                    if role.startswith(topic):
-                        vocab += dictionary.roles_vocab[role]
+            description_topics = []
+            for t in dictionary.topics_vocab:
+                vocab = dictionary.topics_vocab[t]
+                for r in dictionary.roles_vocab:
+                    if t in r:
+                        vocab += dictionary.roles_vocab[r]
 
                 if [b for b in bow for v in vocab if v in b]:
-                    topic_match -= 1
+                    description_topics.append(t)
 
-        if topic_match:
-            self.match_txt_topic = math.tanh(topic_match * 0.25)
-        elif topic_match < -1:
-            self.match_txt_topic = math.tanh((topic_match + 1) * 0.25)
+            if ctf:
+                for t in dictionary.topics_vocab:
+                    if t in description_topics:
+                        setattr(self, 'candidate_topic_' + t, 1.0)
+
+            if mtf:
+                topic_match = len(set(topics) & set(description_topics))
+
+                # Check for conflicts
+                if not topic_match and description_topics:
+                    topic_match = len(description_topics) * -1
+
+                self.match_txt_topic = math.tanh((topic_match) * 0.25)
 
     def set_type_match(self):
         '''
