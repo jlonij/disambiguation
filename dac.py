@@ -787,10 +787,15 @@ class Description():
         # Mention - description context match: date conflict
         if self.set_date_match() > -1:
 
+            # Mention - description context match: name conflict
+            self.set_txt_last_part_match()
+
             # Mention - description string match: name conflict
             self.set_pref_label_match()
             self.set_alt_label_match()
             self.set_last_part_match()
+            self.set_non_matching()
+
             self.set_name_conflict()
 
     def set_date_match(self):
@@ -941,6 +946,43 @@ class Description():
 
         self.match_str_last_part = math.tanh(last_part_match * 0.25)
 
+    def set_txt_last_part_match(self):
+        '''
+        Find last name labels in the article text, in case the entity
+        mention consists of only a first name.
+        '''
+        ne = self.cluster.entities[0].norm
+        if len(ne.split()) > 1:
+            return
+
+        last_part = self.document.get('last_part')
+        if not last_part:
+            return
+
+        labels = [self.document.get('pref_label')]
+        if self.document.get('wd_alt_label'):
+            labels.extend(self.document.get('wd_alt_label'))
+        labels = [l for l in labels if len(l.split()) > 1 and
+            l.split()[0] == ne]
+        if not labels:
+            return
+
+        if not hasattr(self.cluster.context, 'ocr_norm'):
+            self.cluster.context.normalize_ocr()
+        ocr = self.cluster.context.ocr_norm
+
+        self.match_txt_last_part = -1
+        for l in labels:
+            if ocr.find(' '.join(l.split()[1:])) > -1:
+                self.match_txt_last_part = 1
+                break
+
+    def set_non_matching(self):
+        '''
+        Count total number of non matching labels.
+        '''
+        self.match_str_non_matching = math.tanh(len(self.non_matching) * 0.25)
+
     def set_name_conflict(self):
         '''
         Determine if the description has a name conflict, i.e. not a single
@@ -973,11 +1015,9 @@ class Description():
         self.set_solr_properties()
         self.set_levenshtein()
         self.set_abbr_match()
-        self.set_non_matching()
 
         # Mention - description context match
         self.set_txt_labels_match()
-        self.set_txt_last_part_match()
         self.set_spec_match()
         self.set_keyword_match()
         self.set_topic_match()
@@ -1146,15 +1186,9 @@ class Description():
             if ne.norm in self.abstract_bow[:50]:
                 self.match_str_abbr_abstract = 1
 
-    def set_non_matching(self):
-        '''
-        Count total number of non matching labels.
-        '''
-        self.match_str_non_matching = math.tanh(len(self.non_matching) * 0.25)
-
     def set_txt_labels_match(self):
         '''
-        Find longer labels in article text.
+        Find labels longer than the entity in the article text.
         '''
         if not 'match_txt_labels' in self.features:
             return
@@ -1178,37 +1212,6 @@ class Description():
         for l in labels:
             if ocr.find(l) > -1:
                 self.match_txt_labels = 1
-                break
-
-    def set_txt_last_part_match(self):
-        '''
-        Find last name labels in the article text, in case the entity
-        mention consists of only a first name.
-        '''
-        ne = self.cluster.entities[0].norm
-        if len(ne.split()) > 1:
-            return
-
-        last_part = self.document.get('last_part')
-        if not last_part:
-            return
-
-        labels = [self.document.get('pref_label')]
-        if self.document.get('wd_alt_label'):
-            labels.extend(self.document.get('wd_alt_label'))
-        labels = [l for l in labels if len(l.split()) > 1 and
-            l.split()[0] == ne]
-        if not labels:
-            return
-
-        if not hasattr(self.cluster.context, 'ocr_norm'):
-            self.cluster.context.normalize_ocr()
-        ocr = self.cluster.context.ocr_norm
-
-        self.match_txt_last_part = -1
-        for l in labels:
-            if ocr.find(' '.join(l.split()[1:])) > -1:
-                self.match_txt_last_part = 1
                 break
 
     def set_spec_match(self):
