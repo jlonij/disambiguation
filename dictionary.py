@@ -146,11 +146,13 @@ roles_vocab = {
 
 topics_vocab = {
     'politics': ['regering', 'kabinet', 'fractie', 'politiek', 'vorstenhuis',
-        'koningshuis', 'troon', 'keizerrijk', 'monarchie', 'troepen',
-        'strijdkrachten', 'militair', 'politie', 'overheid', 'zetel'],
+        'koningshuis', 'troon', 'keizerrijk', 'monarchie', 'overheid', 'zetel'],
+    'military': ['troepen', 'strijdkrachten', 'militair'],
     'business': ['economie', 'beurs', 'aandelen', 'bedrijfsleven',
         'management', 'werknemer', 'salaris', 'personeel', 'beleggers',
         'rente'],
+    'religion': ['kerk', 'levensbeschouwing', 'protestants', 'katholiek',
+        'rooms'],
     'culture': ['kunst', 'cultuur', 'muziek', 'toneel', 'theater', 'cinema',
         'fictief', 'fictieve', 'rock', 'jazz', 'geregisseerd', 'kunstveiling',
         'piano', 'gitaar', 'recital', 'televisie', 'tv' 'sciencefiction',
@@ -159,6 +161,6 @@ topics_vocab = {
         'ontdekking', 'gezondheid', 'wiskunde', 'natuurkunde', 'biologie',
         'scheikunde', 'astronomie', 'wetenschappelijk'],
     'sports': ['sport', 'voetbal', 'wielersport', 'speler', 'spelers',
-        'sporten', 'wedstrijden', 'goal', 'goals', 'doelpunt'],
-    'other': []
+        'sporten', 'wedstrijden', 'goal', 'goals', 'doelpunt']
 }
+
