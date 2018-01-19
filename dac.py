@@ -504,10 +504,15 @@ class Entity():
             if self.role.split('_')[1] in dictionary.types_dbo:
                 return self.role.split('_')[1]
 
-        # Some prepositions imply a location
+        # Preceding word may imply a type
         if self.window_left:
             if self.window_left[-1] in ['in', 'te', 'uit']:
                 return 'location'
+
+            for t in dictionary.types_vocab:
+                for v in dictionary.types_vocab[t]:
+                    if v in self.window_left[-1]]:
+                        return t
 
         return None
 
