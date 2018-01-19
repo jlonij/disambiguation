@@ -511,7 +511,7 @@ class Entity():
 
             for t in dictionary.types_vocab:
                 for v in dictionary.types_vocab[t]:
-                    if v in self.window_left[-1]]:
+                    if v in self.window_left[-1]:
                         return t
 
         return None
@@ -1030,7 +1030,7 @@ class Description():
         self.set_topic_match()
         self.set_vector_match()
         self.set_entity_match()
-        self.set_entity_match_newspapers()
+        #self.set_entity_match_newspapers()
         self.set_entity_vector_match()
 
     def set_entity_quotes(self):
@@ -1409,21 +1409,36 @@ class Description():
                     setattr(self, 'entity_topic_' + t, 1.0)
 
         if ctf or (topics and mtf):
-            if not hasattr(self, 'abstract_bow'):
-                self.tokenize_abstract()
-            bow = self.abstract_bow
-            if not bow:
-                return
 
             description_topics = []
-            for t in dictionary.topics_vocab:
-                vocab = dictionary.topics_vocab[t]
-                for r in dictionary.roles_vocab:
-                    if t in r:
-                        vocab += dictionary.roles_vocab[r]
 
-                if [b for b in bow for v in vocab if v in b]:
-                    description_topics.append(t)
+            # Deduce topic(s) from role(s)
+            dbo_types = []
+            if self.document.get('dbo_type'):
+                dbo_types += self.document.get('dbo_type')
+
+            if dbo_types:
+                for t in dbo_types:
+                    for r in dictionary.roles_dbo:
+                        if t in dictionary.roles_dbo[r]:
+                            description_topics.append(r.split('_')[0])
+
+            description_topics = list(set(description_topics))
+
+            # Examine abstract
+            if not description_topics:
+                if not hasattr(self, 'abstract_bow'):
+                    self.tokenize_abstract()
+                bow = self.abstract_bow[:25]
+
+                for t in dictionary.topics_vocab:
+                    vocab = dictionary.topics_vocab[t]
+                    for r in dictionary.roles_vocab:
+                        if t in r:
+                            vocab += dictionary.roles_vocab[r]
+
+                    if [b for b in bow for v in vocab if v in b]:
+                        description_topics.append(t)
 
             if ctf:
                 for t in dictionary.topics_vocab:
