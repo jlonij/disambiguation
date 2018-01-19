@@ -1025,9 +1025,9 @@ class Description():
         self.set_txt_labels_match()
         self.set_spec_match()
         self.set_keyword_match()
-        self.set_topic_match()
-        self.set_type_match()
         self.set_role_match()
+        self.set_type_match()
+        self.set_topic_match()
         self.set_vector_match()
         self.set_entity_match()
         self.set_entity_match_newspapers()
@@ -1261,59 +1261,48 @@ class Description():
         key_match = len([w for w in bow for s in key_stems if w.startswith(s)])
         self.match_txt_keyword = math.tanh(key_match * 0.25)
 
-    def set_topic_match(self):
+    def set_role_match(self):
         '''
-        Match the topics identified for the article with the DBpedia
-        abstract.
+        Match entity and description role (e.g. minister, university, river).
         '''
-        etf = [f for f in self.features if f.startswith('entity_topic')]
-        ctf = [f for f in self.features if f.startswith('candidate_topic')]
-        mtf = [f for f in self.features if f.startswith('match_txt_topic')]
-        if not (etf or ctf or mtf):
+        if not 'match_txt_role' in self.features:
             return
 
-        if not hasattr(self.cluster.context, 'topics'):
-            self.cluster.context.get_topics()
-        topics = self.cluster.context.topics
-
-        if not topics:
+        roles = {e.role for e in self.cluster.entities if e.role}
+        if not roles:
             return
 
-        if topics and etf:
-            for t in dictionary.topics_vocab:
-                if t in topics:
-                    setattr(self, 'entity_topic_' + t, 1.0)
+        # Match DBpedia ontology types
+        dbo_types = []
+        if self.document.get('dbo_type'):
+            dbo_types += self.document.get('dbo_type')
 
-        if ctf or (topics and mtf):
+        if dbo_types:
+            for role in roles:
+                for t in dictionary.roles_dbo[role]:
+                    if t in dbo_types:
+                        self.match_txt_role = 1
+                        return
+
+        else:
+            # Match first sentence abstract
             if not hasattr(self, 'abstract_bow'):
                 self.tokenize_abstract()
-            bow = self.abstract_bow
-            if not bow:
-                return
+            bow = self.abstract_bow[:25]
 
-            description_topics = []
-            for t in dictionary.topics_vocab:
-                vocab = dictionary.topics_vocab[t]
-                for r in dictionary.roles_vocab:
-                    if t in r:
-                        vocab += dictionary.roles_vocab[r]
+            for role in roles:
+                if [b for b in bow for v in dictionary.roles_vocab[role]
+                        if v in b]:
+                    self.match_txt_role = 1
+                    return
 
-                if [b for b in bow for v in vocab if v in b]:
-                    description_topics.append(t)
-
-            if ctf:
-                for t in dictionary.topics_vocab:
-                    if t in description_topics:
-                        setattr(self, 'candidate_topic_' + t, 1.0)
-
-            if mtf:
-                topic_match = len(set(topics) & set(description_topics))
-
-                # Check for conflicts
-                if not topic_match and description_topics:
-                    topic_match = len(description_topics) * -1
-
-                self.match_txt_topic = math.tanh((topic_match) * 0.25)
+        # Check for conflict
+        if dbo_types:
+            for role in [r for r in dictionary.roles_dbo if r not in roles]:
+                for t in dictionary.roles_dbo[role]:
+                    if t in dbo_types:
+                        self.match_txt_role = -1
+                        return
 
     def set_type_match(self):
         '''
@@ -1396,48 +1385,59 @@ class Description():
             if 'Person' in dbo_types:
                 self.match_txt_type = -1
 
-    def set_role_match(self):
+    def set_topic_match(self):
         '''
-        Match entity and description role (e.g. minister, university, river).
+        Match the topics identified for the article with the DBpedia
+        abstract.
         '''
-        if not 'match_txt_role' in self.features:
+        etf = [f for f in self.features if f.startswith('entity_topic')]
+        ctf = [f for f in self.features if f.startswith('candidate_topic')]
+        mtf = [f for f in self.features if f.startswith('match_txt_topic')]
+        if not (etf or ctf or mtf):
             return
 
-        roles = {e.role for e in self.cluster.entities if e.role}
-        if not roles:
+        if not hasattr(self.cluster.context, 'topics'):
+            self.cluster.context.get_topics()
+        topics = self.cluster.context.topics
+
+        if not topics:
             return
 
-        # Match DBpedia ontology types
-        dbo_types = []
-        if self.document.get('dbo_type'):
-            dbo_types += self.document.get('dbo_type')
+        if topics and etf:
+            for t in dictionary.topics_vocab:
+                if t in topics:
+                    setattr(self, 'entity_topic_' + t, 1.0)
 
-        if dbo_types:
-            for role in roles:
-                for t in dictionary.roles_dbo[role]:
-                    if t in dbo_types:
-                        self.match_txt_role = 1
-                        return
-
-        else:
-            # Match first sentence abstract
+        if ctf or (topics and mtf):
             if not hasattr(self, 'abstract_bow'):
                 self.tokenize_abstract()
-            bow = self.abstract_bow[:25]
+            bow = self.abstract_bow
+            if not bow:
+                return
 
-            for role in roles:
-                if [b for b in bow for v in dictionary.roles_vocab[role]
-                        if v in b]:
-                    self.match_txt_role = 1
-                    return
+            description_topics = []
+            for t in dictionary.topics_vocab:
+                vocab = dictionary.topics_vocab[t]
+                for r in dictionary.roles_vocab:
+                    if t in r:
+                        vocab += dictionary.roles_vocab[r]
 
-        # Check for conflict
-        if dbo_types:
-            for role in [r for r in dictionary.roles_dbo if r not in roles]:
-                for t in dictionary.roles_dbo[role]:
-                    if t in dbo_types:
-                        self.match_txt_role = -1
-                        return
+                if [b for b in bow for v in vocab if v in b]:
+                    description_topics.append(t)
+
+            if ctf:
+                for t in dictionary.topics_vocab:
+                    if t in description_topics:
+                        setattr(self, 'candidate_topic_' + t, 1.0)
+
+            if mtf:
+                topic_match = len(set(topics) & set(description_topics))
+
+                # Check for conflicts
+                if not topic_match and description_topics:
+                    topic_match = len(description_topics) * -1
+
+                self.match_txt_topic = math.tanh((topic_match) * 0.25)
 
     def set_vector_match(self):
         '''
