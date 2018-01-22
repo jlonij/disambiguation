@@ -366,7 +366,8 @@ class Context():
                 if role.startswith(topic):
                     vocab += dictionary.roles_vocab[role]
 
-            if [o for o in self.ocr_bow for v in vocab if v in o]:
+            #if [o for o in self.ocr_bow for v in vocab if v == o]:
+            if set(self.ocr_bow) & set(vocab):
                 topics.append(topic)
 
         self.topics = topics
@@ -1429,7 +1430,7 @@ class Description():
             if not description_topics:
                 if not hasattr(self, 'abstract_bow'):
                     self.tokenize_abstract()
-                bow = self.abstract_bow[:25]
+                bow = self.abstract_bow
 
                 for t in dictionary.topics_vocab:
                     vocab = dictionary.topics_vocab[t]
@@ -1437,7 +1438,8 @@ class Description():
                         if t in r:
                             vocab += dictionary.roles_vocab[r]
 
-                    if [b for b in bow for v in vocab if v in b]:
+                    #if [b for b in bow for v in vocab if v == b]:
+                    if set(bow) & set(vocab):
                         description_topics.append(t)
 
             if ctf:
