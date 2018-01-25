@@ -267,11 +267,36 @@ class Context():
         self.url = url
         self.ne = ne
 
-        # Article ocr and enitities are retrieved right away; other context
-        # information such as metadata later if needed.
-        self.get_ner_response()
+        # Article enitities, ocr and metadata are retrieved immediately;
+        # other context information (topics) are added later if needed.
+        self.get_metadata()
+        self.get_entities()
 
-    def get_ner_response(self):
+    def get_metadata(self):
+        '''
+        Retrieve article metadata from SRU API. Only news articles and
+        illustrations with captions will be processed.
+        '''
+        payload = {}
+        payload['operation'] = 'searchRetrieve'
+        payload['x-collection'] = 'DDD_artikel'
+        payload['query'] = 'uniqueKey=' + self.url.split('urn=')[-1][:-4]
+
+        response = requests.get(JSRU_URL, params=payload, timeout=30)
+        assert response.status_code == 200, 'Error retrieving metadata'
+
+        xml = etree.fromstring(response.content)
+
+        type_element = xml.find('.//{http://purl.org/dc/elements/1.1/}type')
+        assert type_element is not None, 'Unknown article type'
+        assert type_element.text in ['illustratie met onderschrift',
+                'artikel'], 'Invalid article type'
+
+        date_element = xml.find('.//{http://purl.org/dc/elements/1.1/}date')
+        self.publ_year = (int(date_element.text[:4]) if date_element is not
+                None else None)
+
+    def get_entities(self):
         '''
         Retrieve article ocr and recognized entities from NER service.
         '''
@@ -294,7 +319,9 @@ class Context():
             ocr += data['text']['title']
         if 'p' in data['text']:
             ocr += u' ' + data['text']['p']
+
         self.ocr = ocr
+        self.tokenize_ocr()
 
         # Article entities
         entities = []
@@ -324,41 +351,21 @@ class Context():
                         self)
                 entities.append(entity)
 
-        self.entities = entities
-
-    def get_publ_year(self):
-        '''
-        Retrieve metadata (currently just publication date) with sru.
-        '''
-        payload = {}
-        payload['operation'] = 'searchRetrieve'
-        payload['x-collection'] = 'DDD_artikel'
-        payload['query'] = 'uniqueKey=' + self.url.split('urn=')[-1][:-4]
-
-        response = requests.get(JSRU_URL, params=payload, timeout=30)
-        assert response.status_code == 200, 'Error retrieving metadata'
-
-        xml = etree.fromstring(response.content)
-
-        path = '{http://www.loc.gov/zing/srw/}records/'
-        path += '{http://www.loc.gov/zing/srw/}record/'
-        path += '{http://www.loc.gov/zing/srw/}recordData/'
-        path += '{http://purl.org/dc/elements/1.1/}date'
-
-        date_element = xml.find(path)
-        if date_element is not None:
-            self.publ_year = int(date_element.text[:4])
+        # Check entity - text ratio
         else:
-            self.publ_year = None
+            if len(entities) > 5:
+                message = 'Invalid entity proportion'
+                print len(entities), float(len(self.ocr_bow))
+                print len(entities) / float(len(self.ocr_bow))
+                assert len(entities) / float(len(self.ocr_bow)) < 0.25, message
+
+        self.entities = entities
 
     def get_topics(self):
         '''
         Extract topics from ocr (based on dictionary for now).
         '''
         topics = []
-
-        if not hasattr(self, 'ocr_bow'):
-            self.tokenize_ocr()
 
         for topic in dictionary.topics_vocab:
             vocab = dictionary.topics_vocab[topic]
@@ -809,9 +816,6 @@ class Description():
         Compare publication year of the article with birth and death years in
         the entity description.
         '''
-        if not hasattr(self.cluster.context, 'publ_year'):
-            self.cluster.context.get_publ_year()
-
         publ_year = self.cluster.context.publ_year
         if not publ_year:
             return 0
@@ -1254,9 +1258,6 @@ class Description():
             self.document.get('keyword') if w not in dictionary.unwanted]
         if not key_stems:
             return
-
-        if not hasattr(self.cluster.context, 'ocr_bow'):
-            self.cluster.context.tokenize_ocr()
 
         bow = self.cluster.context.ocr_bow
         key_match = len([w for w in bow for s in key_stems if w.startswith(s)])
