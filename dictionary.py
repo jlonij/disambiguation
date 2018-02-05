@@ -26,6 +26,8 @@ months = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli',
 titles = ['heer', 'hr', 'dhr', 'meneer', 'mevrouw', 'mevr', 'mw', 'mej',
     'mejuffrouw', 'drs', 'ing', 'ir', 'dr', 'mr', 'sir', 'dame', 'lady', 'miss']
 
+topics = ['politics', 'business', 'culture', 'science', 'sports']
+
 types_dbo = {
     'person': ['Person'],
     'organisation': ['Organisation'],
@@ -142,25 +144,5 @@ roles_vocab = {
         'gedicht', 'schilderij', 'beeld', 'strip', 'verhalen', 'genre'],
     'science_concept': [],
     'sports_concept': ['wedstrijd', 'toernooi', 'competitie']
-}
-
-topics_vocab = {
-    'politics': ['regering', 'kabinet', 'fractie', 'politiek', 'vorstenhuis',
-        'koningshuis', 'troon', 'keizerrijk', 'monarchie', 'overheid', 'zetel'],
-    'military': ['troepen', 'strijdkrachten', 'militair'],
-    'business': ['economie', 'beurs', 'aandelen', 'bedrijfsleven',
-        'management', 'werknemer', 'salaris', 'personeel', 'beleggers',
-        'rente'],
-    'religion': ['kerk', 'levensbeschouwing', 'protestants', 'katholiek',
-        'rooms'],
-    'culture': ['kunst', 'cultuur', 'muziek', 'toneel', 'theater', 'cinema',
-        'fictief', 'fictieve', 'rock', 'jazz', 'geregisseerd', 'kunstveiling',
-        'piano', 'gitaar', 'recital', 'televisie', 'tv' 'sciencefiction',
-        'metal', 'hoofdrol', 'aflevering', 'cultureel', 'culturele'],
-    'science': ['wetenschap', 'studie', 'onderzoek', 'uitvinding',
-        'ontdekking', 'gezondheid', 'wiskunde', 'natuurkunde', 'biologie',
-        'scheikunde', 'astronomie', 'wetenschappelijk'],
-    'sports': ['sport', 'voetbal', 'wielersport', 'speler', 'spelers',
-        'sporten', 'wedstrijden', 'goal', 'goals', 'doelpunt']
 }
 

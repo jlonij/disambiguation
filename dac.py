@@ -43,6 +43,7 @@ conf = config.parse_config(local=True)
 
 TPTA_URL = conf.get('TPTA_URL')
 JSRU_URL = conf.get('JSRU_URL')
+TOPICS_URL = conf.get('TOPICS_URL')
 SOLR_URL = conf.get('SOLR_URL')
 W2V_URL = conf.get('W2V_URL')
 
@@ -355,29 +356,19 @@ class Context():
         else:
             if len(entities) > 5:
                 message = 'Invalid entity proportion'
-                print len(entities), float(len(self.ocr_bow))
-                print len(entities) / float(len(self.ocr_bow))
                 assert len(entities) / float(len(self.ocr_bow)) < 0.25, message
 
         self.entities = entities
 
     def get_topics(self):
         '''
-        Extract topics from ocr (based on dictionary for now).
+        Retrieve topic probabilities from topics service.
         '''
-        topics = []
+        payload = {'url': self.url}
+        response = requests.get(TOPICS_URL, params=payload, timeout=300)
+        assert response.status_code == 200, 'Error retrieving topics'
 
-        for topic in dictionary.topics_vocab:
-            vocab = dictionary.topics_vocab[topic]
-            for role in dictionary.roles_vocab:
-                if role.startswith(topic):
-                    vocab += dictionary.roles_vocab[role]
-
-            #if [o for o in self.ocr_bow for v in vocab if v == o]:
-            if set(self.ocr_bow) & set(vocab):
-                topics.append(topic)
-
-        self.topics = topics
+        self.topics = response.json()['topics']
 
     def normalize_ocr(self):
         self.ocr_norm = utilities.normalize(self.ocr)
@@ -1402,17 +1393,13 @@ class Description():
             self.cluster.context.get_topics()
         topics = self.cluster.context.topics
 
-        if not topics:
-            return
-
         if topics and etf:
-            for t in dictionary.topics_vocab:
-                if t in topics:
-                    setattr(self, 'entity_topic_' + t, 1.0)
+            for t in topics:
+                setattr(self, 'entity_topic_' + t, topics[t])
 
-        if ctf or (topics and mtf):
+        if ctf or mtf:
 
-            description_topics = []
+            description_topics = {t: 0.0 for t in dictionary.topics}
 
             # Deduce topic(s) from role(s)
             dbo_types = []
@@ -1422,40 +1409,26 @@ class Description():
             if dbo_types:
                 for t in dbo_types:
                     for r in dictionary.roles_dbo:
-                        if t in dictionary.roles_dbo[r]:
-                            description_topics.append(r.split('_')[0])
+                        if (t in dictionary.roles_dbo[r] and r.split('_')[0] in
+                                description_topics):
+                            description_topics[r.split('_')[0]] = 1.0
 
-            description_topics = list(set(description_topics))
-
-            # Examine abstract
-            if not description_topics:
-                if not hasattr(self, 'abstract_bow'):
-                    self.tokenize_abstract()
-                bow = self.abstract_bow
-
-                for t in dictionary.topics_vocab:
-                    vocab = dictionary.topics_vocab[t]
-                    for r in dictionary.roles_vocab:
-                        if t in r:
-                            vocab += dictionary.roles_vocab[r]
-
-                    #if [b for b in bow for v in vocab if v == b]:
-                    if set(bow) & set(vocab):
-                        description_topics.append(t)
+            # Predict topic(s) from abstract
+            if not sum(description_topics.values()):
+                if self.document.get('lang') == 'nl':
+                    payload = {'url': self.document.get('id')}
+                    response = requests.get(TOPICS_URL, params=payload,
+                            timeout=300)
+                    assert response.status_code == 200, 'Error retrieving topics'
+                    description_topics = response.json()['topics']
 
             if ctf:
-                for t in dictionary.topics_vocab:
-                    if t in description_topics:
-                        setattr(self, 'candidate_topic_' + t, 1.0)
+                for t in description_topics:
+                    setattr(self, 'candidate_topic_' + t, description_topics[t])
 
             if mtf:
-                topic_match = len(set(topics) & set(description_topics))
-
-                # Check for conflicts
-                if not topic_match and description_topics:
-                    topic_match = len(description_topics) * -1
-
-                self.match_txt_topic = math.tanh((topic_match) * 0.25)
+                self.match_txt_topic = cosine_similarity([topics.values()],
+                        [description_topics.values()])[0][0]
 
     def set_vector_match(self):
         '''
@@ -1719,7 +1692,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='nn', debug=True, features=False,
+        linker = EntityLinker(model='nn', debug=True, features=True,
             candidates=False, error_handling=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
