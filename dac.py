@@ -347,8 +347,8 @@ class Context():
                         e['ne_context'], e['left_context'], e['right_context'],
                         self)
                 else:
-                    entity = Entity(e['ne'], 0, None, 0, -1, e['ne'], '', '',
-                        self)
+                    entity = Entity(self.ne, 0, self.ne, 0, -1, self.ne, '',
+                        '', self)
                 entities.append(entity)
 
         # Check entity - text ratio
