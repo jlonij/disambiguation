@@ -356,7 +356,7 @@ class Context():
         else:
             if len(entities) > 5:
                 message = 'Invalid entity proportion'
-                assert len(entities) / float(len(self.ocr_bow)) < 0.25, message
+                assert len(entities) / float(len(self.ocr_bow)) < 0.35, message
 
         self.entities = entities
 
@@ -443,8 +443,10 @@ class Entity():
 
         for word in words:
             for role in dictionary.roles_vocab:
-                if [v for v in dictionary.roles_vocab[role] if v in word]:
-                    return role, word
+                for r in dictionary.roles_vocab[role]:
+                    if (word == r or word == r + 's' or word == r + 'en' or
+                            len(r) >= 5 and word.endswith(r)):
+                        return role, word
 
         return None, None
 
@@ -1692,7 +1694,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='nn', debug=True, features=True,
+        linker = EntityLinker(model='nn', debug=True, features=False,
             candidates=False, error_handling=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
