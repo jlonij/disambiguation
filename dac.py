@@ -1287,7 +1287,7 @@ class Description():
 
             for role in roles:
                 if [b for b in bow for v in dictionary.roles_vocab[role]
-                        if v in b]:
+                        if len(v) >= 5 and v in b]:
                     self.match_txt_role = 1
                     return
 
@@ -1430,7 +1430,7 @@ class Description():
 
             if mtf:
                 self.match_txt_topic = cosine_similarity([topics.values()],
-                        [description_topics.values()])[0][0]
+                        [description_topics.values()])[0][0] - 0.25
 
     def set_vector_match(self):
         '''
