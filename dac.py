@@ -329,7 +329,7 @@ class Context():
 
         # Regular entities first
         for e in [e for e in data['entities'] if e['type'] != 'manual' and
-                len(e['ner_src']) >= 2 and e['ne'][0].isupper()]:
+                len(e['ner_src']) >= 1 and e['ne'][0].isupper()]:
             if len(e['ne']) > 1:
                 entity = Entity(e['ne'], e['count'], e['type'],
                     e['type_certainty'], e['pos'], e['ne_context'],
@@ -616,12 +616,13 @@ class Cluster():
         '''
         Get the type ratios for the cluster.
         '''
+        type_ratios = {t: 0.0 for t in dictionary.types_dbo}
+
         types = [t for e in self.entities for t in [e.tpta_type] *
                 e.type_certainty if e.tpta_type]
         types += [t for e in self.entities for t in [e.alt_type] * 2
                 if e.alt_type]
 
-        type_ratios = {}
         if types:
             for t in dictionary.types_dbo:
                 type_ratios[t] = types.count(t) / float(len(types))
@@ -1258,7 +1259,7 @@ class Description():
 
     def set_role_match(self):
         '''
-        Match entity and description role (e.g. minister, university, river).
+        Match entity and description role (politician, athlete, etc.).
         '''
         if not 'match_txt_role' in self.features:
             return
@@ -1279,25 +1280,35 @@ class Description():
                         self.match_txt_role = 1
                         return
 
-        else:
-            # Match first sentence abstract
-            if not hasattr(self, 'abstract_bow'):
-                self.tokenize_abstract()
-            bow = self.abstract_bow[:25]
-
-            for role in roles:
-                if [b for b in bow for v in dictionary.roles_vocab[role]
-                        if len(v) >= 5 and v in b]:
-                    self.match_txt_role = 1
-                    return
-
-        # Check for conflict
-        if dbo_types:
+            # Check for conflict
             for role in [r for r in dictionary.roles_dbo if r not in roles]:
                 for t in dictionary.roles_dbo[role]:
                     if t in dbo_types:
                         self.match_txt_role = -1
                         return
+
+        else:
+            print self.document.get('id')
+            if not hasattr(self, 'topic_probs'):
+                self.get_topics()
+
+            description_role = ''
+
+            if max(self.topic_probs.values()) >= 0.4:
+                description_role += max(self.topic_probs,
+                    key=self.topic_probs.get)
+                if max(self.type_probs.values()) >= 0.4:
+                    description_role += '_' + max(self.type_probs,
+                        key=self.type_probs.get)
+                    if description_role.endswith('other'):
+                        description_role = description_role.replace('other',
+                            'concept')
+                    print(self.type_probs)
+                    print(description_role)
+
+            if description_role in roles:
+                self.match_txt_role = 1
+                return
 
     def set_type_match(self):
         '''
@@ -1309,76 +1320,70 @@ class Description():
         if not (etf or ctf or mtf):
             return
 
+        # Set entity type features
         if not hasattr(self.cluster, 'type_ratios'):
             self.cluster.get_type_ratios()
         type_ratios = self.cluster.type_ratios
 
-        # Set entity type features
-        if type_ratios and etf:
+        if etf:
             for tr in type_ratios:
                 setattr(self, 'entity_type_' + tr, type_ratios[tr])
 
-        dbo_types = []
-        if self.document.get('dbo_type'):
-            dbo_types += self.document.get('dbo_type')
+        if ctf or mtf:
+            # Set candidate type features
+            description_types = {t: 0.0 for t in dictionary.types_dbo}
 
-        # Set candidate type features
-        if dbo_types and ctf:
-            for t in dictionary.types_dbo:
-                if len(set(dictionary.types_dbo[t]) & set(dbo_types)) > 0:
-                    setattr(self, 'candidate_type_' + t, 1)
+            dbo_types = []
+            if self.document.get('dbo_type'):
+                dbo_types += self.document.get('dbo_type')
 
-        # Set type match feature
-        if not mtf or not type_ratios:
-            return
+            if dbo_types:
+                for t in dbo_types:
+                    for r in dictionary.types_dbo:
+                        if t in dictionary.types_dbo[r]:
+                            description_types[r] = 1.0
 
-        # If no types available, try to deduce a type from the first sentence
-        # of the abstract
-        if not dbo_types:
-            if not hasattr(self, 'abstract_bow'):
-                self.tokenize_abstract()
-            bow = self.abstract_bow[:25]
+                if not sum(description_types.values()):
+                    description_types['other'] = 1.0
 
-            for t in dictionary.types_vocab:
-                vocab = dictionary.types_vocab[t]
-                for r in dictionary.roles_vocab:
-                    if r.endswith(t):
-                        vocab += dictionary.roles_vocab[r]
-
-                if [b for b in bow for v in vocab if v in b]:
-                    dbo_types = [t]
-                    break
-
-        if not dbo_types:
-            return
-
-        # Matching type
-        for r in type_ratios:
-            if r == 'other':
-                if ('Person' not in dbo_types and 'Organisation' not in
-                        dbo_types and 'Location' not in dbo_types):
-                    self.match_txt_type += type_ratios[r]
             else:
-                for t in dictionary.types_dbo[r]:
-                    if t in dbo_types:
-                        self.match_txt_type += type_ratios[r]
-                        break
+                if not hasattr(self, 'topic_probs'):
+                    self.get_topics()
+                description_types = self.type_probs
 
-        if self.match_txt_type:
-            return
+            if ctf:
+                for t in description_types:
+                    setattr(self, 'candidate_type_' + t, description_types[t])
 
-        # Non-matching: persons can't be locations or organizations
-        if type_ratios['person'] > 0:
-            for other in [t for t in dictionary.types_dbo if t != 'person']:
-                for t in dictionary.types_dbo[other]:
-                    if t in dbo_types:
-                        self.match_txt_type = -1
-                        return
+            if mtf:
+                # Matching type
+                for r in type_ratios:
+                    if type_ratios[r] >= 0.25 and description_types[r] >= 0.5:
+                        self.match_txt_type += (type_ratios[r] *
+                            description_types[r])
 
-        # Non-matching: locations and organizations can't be persons
-        elif type_ratios['location'] > 0 or type_ratios['organisation'] > 0:
-            if 'Person' in dbo_types:
-                self.match_txt_type = -1
+                if self.match_txt_type:
+                    return
+
+                # Non-matching: persons can't be locations or organisations
+                if type_ratios['person'] >= 0.25:
+                    if description_types['location'] >= 0.5:
+                        self.match_txt_type -= (type_ratios['person'] *
+                            description_types['location'])
+                    if description_types['organisation'] >= 0.5:
+                        self.match_txt_type -= (type_ratios['person'] *
+                            description_types['organisation'])
+
+                # Non-matching: locations and organisations can't be persons
+                if type_ratios['location'] >= 0.25:
+                    if description_types['person'] >= 0.5:
+                        self.match_txt_type -= (description_types['person'] *
+                            type_ratios['location'])
+
+                if type_ratios['organisation'] >= 0.25:
+                    if description_types['person'] >= 0.5:
+                        self.match_txt_type -= (description_types['person'] *
+                            type_ratios['organisation'])
 
     def set_topic_match(self):
         '''
@@ -1417,12 +1422,9 @@ class Description():
 
             # Predict topic(s) from abstract
             if not sum(description_topics.values()):
-                if self.document.get('lang') == 'nl':
-                    payload = {'url': self.document.get('id')}
-                    response = requests.get(TOPICS_URL, params=payload,
-                            timeout=300)
-                    assert response.status_code == 200, 'Error retrieving topics'
-                    description_topics = response.json()['topics']
+                if not hasattr(self, 'topic_probs'):
+                    self.get_topics()
+                description_topics = self.topic_probs
 
             if ctf:
                 for t in description_topics:
@@ -1628,6 +1630,17 @@ class Description():
         assert response.status_code == 200, 'Error retrieving word vectors'
         data = response.json()
         return data['vectors']
+
+    def get_topics(self):
+        '''
+        Get topics and type from classifier service.
+        '''
+        payload = {'url': self.document.get('id')}
+        response = requests.get(TOPICS_URL, params=payload,
+                timeout=300)
+        assert response.status_code == 200, 'Error retrieving topics'
+        self.topic_probs = response.json()['topics']
+        self.type_probs = response.json()['types']
 
 
 class Result():
