@@ -3,7 +3,7 @@
 #
 # DAC Entity Linker
 #
-# Copyright (C) 2017 Koninklijke Bibliotheek, National Library of
+# Copyright (C) 2017-2018 Koninklijke Bibliotheek, National Library of
 # the Netherlands
 #
 # This program is free software: you can redistribute it and/or modify
@@ -1288,7 +1288,6 @@ class Description():
                         return
 
         else:
-            print self.document.get('id')
             if not hasattr(self, 'topic_probs'):
                 self.get_topics()
 
@@ -1303,8 +1302,6 @@ class Description():
                     if description_role.endswith('other'):
                         description_role = description_role.replace('other',
                             'concept')
-                    print(self.type_probs)
-                    print(description_role)
 
             if description_role in roles:
                 self.match_txt_role = 1

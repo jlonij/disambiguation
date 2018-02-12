@@ -3,7 +3,7 @@
 #
 # DAC Entity Linker
 #
-# Copyright (C) 2017 Koninklijke Bibliotheek, National Library of
+# Copyright (C) 2017-2018 Koninklijke Bibliotheek, National Library of
 # the Netherlands
 #
 # This program is free software: you can redistribute it and/or modify
