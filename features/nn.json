@@ -1,7 +1,6 @@
 {"features": [
     "entity_abbr",
     "entity_quotes",
-    "entity_ner_confidence",
     "entity_type_person",
     "entity_type_organisation",
     "entity_type_location",

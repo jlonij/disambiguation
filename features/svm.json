@@ -1,6 +1,5 @@
 {"features": [
     "entity_quotes",
-    "entity_ner_confidence",
     "candidate_lang",
     "candidate_ambig",
     "candidate_inlinks",
