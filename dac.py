@@ -796,6 +796,7 @@ class Description():
 
             # Mention - description context match: name conflict
             self.set_txt_last_part_match()
+            self.set_txt_last_name_match()
 
             # Mention - description string match: name conflict
             self.set_pref_label_match()
@@ -894,7 +895,6 @@ class Description():
 
         ne = self.cluster.entities[0].stripped
         #if len(ne.split()) == 1:
-        #    self.non_matching_labels = min(len(self.non_matching), 5) / 5.0
         #    return
 
         last_part_match = 0
@@ -980,6 +980,16 @@ class Description():
             if ocr.find(' '.join(l.split()[1:])) > -1:
                 self.match_txt_last_part = 1
                 break
+
+    def set_txt_last_name_match(self):
+        '''
+        Give end matches for person names a bonus."
+        '''
+        if self.document.get('dbo_type'):
+            if 'Person' in self.document.get('dbo_type'):
+                if (self.match_str_pref_label_end or self.match_str_alt_label_end or
+                        self.match_str_last_part):
+                    self.match_txt_last_name = 1
 
     def set_non_matching(self):
         '''
@@ -1704,7 +1714,7 @@ if __name__ == '__main__':
         print("Usage: ./dac.py [url (string)]")
 
     else:
-        linker = EntityLinker(model='nn', debug=True, features=False,
+        linker = EntityLinker(model='train', debug=True, features=True,
             candidates=False, error_handling=False)
         if len(sys.argv) > 2:
             pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
