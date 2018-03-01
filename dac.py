@@ -3,8 +3,8 @@
 #
 # DAC Entity Linker
 #
-# Copyright (C) 2017-2018 Koninklijke Bibliotheek, National Library of
-# the Netherlands
+# Copyright (C) 2017-2018 Juliette Lonij - Koninklijke Bibliotheek,
+# National Library of the Netherlands
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,37 +19,48 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import config
-import dictionary
+# Standard library imports
+import argparse
 import json
-import Levenshtein
 import math
-import models
-import numpy as np
 import os
 import re
-import requests
-import scipy
-import solr
 import sys
-import utilities
 
-from lxml import etree
 from operator import attrgetter
 from operator import itemgetter
+from pprint import pprint
+
+# External library imports
+import Levenshtein
+import numpy as np
+import requests
+import scipy
+
+from lxml import etree
 from sklearn.metrics.pairwise import cosine_similarity
 
+# DAC imports
+import config
+import dictionary
+import models
+import solr
+import utilities
+
+# Service locations
 conf = config.parse_config(local=True)
 
 TPTA_URL = conf.get('TPTA_URL')
 JSRU_URL = conf.get('JSRU_URL')
-TOPICS_URL = conf.get('TOPICS_URL')
 SOLR_URL = conf.get('SOLR_URL')
 W2V_URL = conf.get('W2V_URL')
+TOPICS_URL = conf.get('TOPICS_URL')
 
+# Constant values
 WINDOW = 20
 SOLR_ROWS = 25
 MIN_PROB = 0.5
+
 
 class EntityLinker():
     '''
@@ -1697,15 +1708,29 @@ class Result():
 
 
 if __name__ == '__main__':
-    import pprint
+    parser = argparse.ArgumentParser()
 
-    if not len(sys.argv) > 1:
-        print("Usage: ./dac.py [url (string)]")
+    parser.add_argument('--url', required=False, type=str,
+        default='http://resolver.kb.nl/resolve?urn=ddd:010734861:mpeg21:a0002:ocr',
+        help='resolver link of the article to be processed')
+    parser.add_argument('--ne', required=False, type=str, default='',
+        help='specific named entity to be linked')
+    parser.add_argument('--model', required=False, type=str, default='nn',
+        help='model used for link prediction')
+    parser.add_argument('-d', '--debug', required=False, action='store_true',
+        help='include unlinked entities in response')
+    parser.add_argument('--features', required=False, action='store_true',
+        help='return feature values')
+    parser.add_argument('--candidates', required=False, action='store_true',
+        help='return candidate list')
+    parser.add_argument('--errh', required=False, action='store_true',
+        help='turn on error handling')
 
-    else:
-        linker = EntityLinker(model='train', debug=True, features=True,
-            candidates=False, error_handling=False)
-        if len(sys.argv) > 2:
-            pprint.pprint(linker.link(sys.argv[1], sys.argv[2]))
-        else:
-            pprint.pprint(linker.link(sys.argv[1]))
+    args = parser.parse_args()
+
+    linker = EntityLinker(model=vars(args)['model'], debug=vars(args)['debug'],
+        features=vars(args)['features'], candidates=vars(args)['candidates'],
+        error_handling=vars(args)['errh'])
+
+    pprint(linker.link(vars(args)['url'], vars(args)['ne']))
+
