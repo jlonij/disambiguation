@@ -1715,15 +1715,15 @@ if __name__ == '__main__':
         help='resolver link of the article to be processed')
     parser.add_argument('--ne', required=False, type=str, default='',
         help='specific named entity to be linked')
-    parser.add_argument('--model', required=False, type=str, default='nn',
+    parser.add_argument('-m', '--model', required=False, type=str, default='nn',
         help='model used for link prediction')
     parser.add_argument('-d', '--debug', required=False, action='store_true',
         help='include unlinked entities in response')
-    parser.add_argument('--features', required=False, action='store_true',
+    parser.add_argument('-f', '--features', required=False, action='store_true',
         help='return feature values')
-    parser.add_argument('--candidates', required=False, action='store_true',
+    parser.add_argument('-c', '--candidates', required=False, action='store_true',
         help='return candidate list')
-    parser.add_argument('--errh', required=False, action='store_true',
+    parser.add_argument('-e', '--errh', required=False, action='store_true',
         help='turn on error handling')
 
     args = parser.parse_args()
