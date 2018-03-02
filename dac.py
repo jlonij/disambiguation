@@ -48,7 +48,7 @@ import solr
 import utilities
 
 # Service locations
-conf = config.parse_config(local=True)
+conf = config.parse_config()
 
 TPTA_URL = conf.get('TPTA_URL')
 JSRU_URL = conf.get('JSRU_URL')
