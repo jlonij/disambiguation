@@ -1,4 +1,4 @@
-<Files web.py>
+<Files dac/web.py>
     SetHandler wsgi-script
     Options +ExecCGI
 </Files>
@@ -7,4 +7,4 @@ RewriteEngine on
 RewriteBase /dac
 RewriteCond %{REQUEST_URI} !^/dac/config.json
 RewriteCond %{REQUEST_URI} !^(/.*)+dac/web.py
-RewriteRule ^(.*)$ web.py/$1 [PT]
+RewriteRule ^(.*)$ dac/web.py/$1 [PT]
