@@ -4,7 +4,7 @@
 import sys
 import time
 
-sys.path.insert(0, '..')
+sys.path.insert(0, '../dac')
 import dac
 
 from pycallgraph import GlobbingFilter

@@ -136,9 +136,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-i', '--input', required=False, type=str,
-        default='../../dac-web/users/tve/art.json', help='path to input file')
+                        default='../../../dac-web/users/tve/art.json',
+                        help='path to input file')
     parser.add_argument('-o', '--output', required=False, type=str,
-        default='training.csv', help='path to output file')
+                        default='training.csv', help='path to output file')
 
     args = parser.parse_args()
 

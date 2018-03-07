@@ -164,7 +164,7 @@ if __name__ == '__main__':
     parser.add_argument('-v', '--version', required=True, type=int,
                         help='version number')
     parser.add_argument('-i', '--input', required=False, type=str,
-                        default='../../dac-web/users/test-clean/art.json',
+                        default='../../../dac-web/users/test-clean/art.json',
                         help='path to test set')
 
     args = parser.parse_args()

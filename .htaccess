@@ -6,5 +6,5 @@
 RewriteEngine on
 RewriteBase /dac
 RewriteCond %{REQUEST_URI} !^/dac/config.json
-RewriteCond %{REQUEST_URI} !^(/.*)+web.py
+RewriteCond %{REQUEST_URI} !^(/.*)+dac/web.py
 RewriteRule ^(.*)$ web.py/$1 [PT]
