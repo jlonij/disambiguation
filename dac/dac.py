@@ -393,8 +393,8 @@ class Entity():
     An entity mention occuring in an article.
     '''
 
-    def __init__(self, text, count, tpta_type, type_certainty, pos,
-        ne_context, left_context, right_context, context):
+    def __init__(self, text, count=0, tpta_type=None, type_certainty=0, pos=-1,
+        ne_context='', left_context='', right_context='', context=None):
 
         '''
         Get information about the entity and its immediate surroundings.
