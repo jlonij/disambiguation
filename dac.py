@@ -73,7 +73,7 @@ class EntityLinker():
         Initialize the disambiguation model and Solr connection.
         '''
         if model == 'train':
-            self.model = models.Model()
+            self.model = models.BaseModel()
         elif model == 'svm':
             self.model = models.LinearSVM()
         elif model == 'nn':
@@ -751,7 +751,7 @@ class CandidateList():
             c.set_prob_features()
 
             # Only calculate prob if not in training mode
-            if self.model.__class__.__name__ != 'Model':
+            if self.model.__class__.__name__ != 'BaseModel':
                 example = []
                 for j in range(len(self.model.features)):
                     feature = getattr(c, self.model.features[j])
