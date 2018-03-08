@@ -33,7 +33,7 @@ from bottle import run
 from bottle import template
 
 abs_path = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, abs_path)
+sys.path.insert(0, os.path.join(abs_path, 'dac'))
 import dac
 
 # Path to doctests output (from cron)
@@ -154,7 +154,11 @@ def index():
     response.set_header('Content-Type', 'application/json')
     return result
 
+
 if __name__ == '__main__':
+    pass
     run(host='localhost', port=5002)
 else:
     application = default_app()
+
+
