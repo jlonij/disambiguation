@@ -27,6 +27,15 @@ import os
 import numpy as np
 import pandas as pd
 
+from keras.constraints import maxnorm
+from keras.layers import concatenate
+from keras.layers import Dense
+from keras.layers import Dropout
+from keras.layers import Input
+from keras.models import load_model
+from keras.models import Model
+from keras.models import Sequential
+
 from sklearn import preprocessing
 from sklearn import svm
 from sklearn.externals import joblib
@@ -36,15 +45,6 @@ from sklearn.metrics import precision_score
 from sklearn.metrics import recall_score
 from sklearn.model_selection import StratifiedShuffleSplit
 
-from keras.constraints import maxnorm
-from keras.layers import concatenate
-from keras.layers import Dense
-from keras.layers import dot
-from keras.layers import Dropout
-from keras.layers import Input
-from keras.models import load_model
-from keras.models import Model
-from keras.models import Sequential
 
 np.random.seed(1337)
 
@@ -388,11 +388,11 @@ class BranchingNeuralNet(BaseModel):
         '''
         example_list = []
         example_list.append(np.array([example[:self.c_start]],
-                            dtype=np.float32))
+                                     dtype=np.float32))
         example_list.append(np.array([example[self.c_start:self.m_start]],
-                            dtype=np.float32))
+                                     dtype=np.float32))
         example_list.append(np.array([example[self.m_start:]],
-                            dtype=np.float32))
+                                     dtype=np.float32))
 
         prob = self.model.predict(example_list, batch_size=1)
         return float(prob[0][0])

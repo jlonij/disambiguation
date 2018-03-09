@@ -21,11 +21,8 @@
 
 # Standard library imports
 import argparse
-import json
 import math
-import os
 import re
-import sys
 
 from operator import attrgetter
 from operator import itemgetter
@@ -35,7 +32,6 @@ from pprint import pprint
 import Levenshtein
 import numpy as np
 import requests
-import scipy
 
 from lxml import etree
 from sklearn.metrics.pairwise import cosine_similarity
@@ -1733,4 +1729,3 @@ if __name__ == '__main__':
         error_handling=vars(args)['errh'])
 
     pprint(linker.link(vars(args)['url'], vars(args)['ne']))
-

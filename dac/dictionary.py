@@ -145,4 +145,3 @@ roles_vocab = {
     'science_concept': [],
     'sports_concept': ['wedstrijd', 'toernooi', 'competitie']
 }
-

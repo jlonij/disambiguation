@@ -25,6 +25,7 @@ from segtok.segmenter import split_multi
 from segtok.tokenizer import word_tokenizer
 from unidecode import unidecode
 
+
 def clean(s):
     '''
     Clean string by removing unwanted characters.
@@ -36,6 +37,7 @@ def clean(s):
         s = s.replace(c, u'')
     s = u' '.join(s.split())
     return s
+
 
 def normalize(s):
     '''
@@ -53,6 +55,7 @@ def normalize(s):
         s = s.replace(c, u' ')
     s = u' '.join(s.split())
     return s
+
 
 def get_last_part(s, exclude_first_part=False):
     '''
@@ -94,11 +97,13 @@ def get_last_part(s, exclude_first_part=False):
 
     return last_part
 
+
 def segment(text):
     '''
     Split text into sentences using SegTok segmenter.
     '''
     return split_multi(text)
+
 
 def tokenize(text, segment=True, norm=True, unique=False, min_len=2):
     '''
@@ -111,7 +116,7 @@ def tokenize(text, segment=True, norm=True, unique=False, min_len=2):
     for s in sentences:
         if norm:
             tokens += [w for t in word_tokenizer(s) for w in
-                normalize(t).split()]
+                       normalize(t).split()]
         else:
             tokens += word_tokenizer(s)
 

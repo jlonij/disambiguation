@@ -30,66 +30,13 @@ from bottle import request
 from bottle import response
 from bottle import route
 from bottle import run
-from bottle import template
 
 abs_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(abs_path, 'dac'))
 import dac
 
-# Path to doctests output (from cron)
-DOCTEST_OUTPUT = '/tmp/dac_test_results'
-DOCTEST_OUTPUT_ERROR_PREFIX = 'dac_error_'
-
-global stats
-stats = {}
-stats['urls_total'] = 0
-stats['links_total'] = 0
-
 hostname = socket.gethostname()
 
-def mk_md5sums():
-    find = "find . -type f -not -path \*.pyc -not -path \*.swp "
-    find += "-exec md5sum '{}' ';'"
-    with os.popen(find) as fh:
-        sums = fh.read()
-    sums = [[f for f in l.split(' ') if f.strip()] for l in sums.split('\n')]
-    sums1 = {}
-    for i in sums:
-        if i:
-            sums1[i[0]] = i[1][2:]
-    return sums1
-
-def test_errors():
-    nr = 0
-    for fname in os.listdir('/tmp/'):
-        if fname.startswith(DOCTEST_OUTPUT_ERROR_PREFIX):
-            nr += 1
-    return nr
-
-route('/info')
-def info():
-    '''
-    Return service information.
-    '''
-    try:
-        test_report_stamp = time.ctime(os.path.getctime(DOCTEST_OUTPUT))
-    except:
-        test_report_stamp = ''
-
-    try:
-        with open('/tmp/dac_test_results') as fh:
-            test_report = fh.read()
-    except:
-        test_report = ''
-
-    resp = {'sums': mk_md5sums(),
-            'test_errors': test_errors(),
-            'test_report': test_report,
-            'test_report_stamp': test_report_stamp,
-            'stats': stats}
-
-    response.set_header('Content-Type', 'application/json')
-    return resp
 
 def array_to_utf(a):
     autf = []
@@ -104,9 +51,10 @@ def array_to_utf(a):
             autf.append(v)
     return autf
 
+
 def dict_to_utf(d):
     dutf = {}
-    for k,v in d.iteritems():
+    for k, v in d.iteritems():
         if isinstance(v, unicode):
             dutf[k] = v.encode('utf-8')
         elif isinstance(v, list):
@@ -116,6 +64,7 @@ def dict_to_utf(d):
         else:
             dutf[k] = v
     return dutf
+
 
 @route('/')
 def index():
@@ -134,11 +83,11 @@ def index():
         abort(400, 'No fitting argument ("url=...") given.')
 
     try:
-        linker = dac.EntityLinker(model=model, debug=debug,
-            features=features, candidates=candidates)
+        linker = dac.EntityLinker(model=model, debug=debug, features=features,
+                                  candidates=candidates)
         result = linker.link(url, ne)
     except Exception as e:
-        result = []
+        result = {}
         result['status'] = 'error'
         result['message'] = str(e)
         result['hostname'] = hostname
@@ -156,9 +105,6 @@ def index():
 
 
 if __name__ == '__main__':
-    pass
     run(host='localhost', port=5002)
 else:
     application = default_app()
-
-

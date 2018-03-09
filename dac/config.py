@@ -4,9 +4,10 @@ import json
 import os
 import requests
 
-#CONFIG_URL = 'http://145.100.58.199:82/config.json'
-#CONFIG_URL = 'http://kbresearch.nl/dac/config.json'
+# CONFIG_URL = 'http://145.100.58.199:82/config.json'
+# CONFIG_URL = 'http://kbresearch.nl/dac/config.json'
 CONFIG_URL = None
+
 
 def parse_config(config_url=CONFIG_URL):
     if config_url:
