@@ -60,3 +60,7 @@ target/
 
 # Mac OS
 .DS_Store
+
+# Some data, images
+*.csv
+*.png
