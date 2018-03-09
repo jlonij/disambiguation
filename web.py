@@ -31,9 +31,9 @@ from bottle import response
 from bottle import route
 from bottle import run
 
-abs_path = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(abs_path, 'dac'))
-import dac
+#abs_path = os.path.dirname(os.path.realpath(__file__))
+#sys.path.insert(0, os.path.join(abs_path, 'dac'))
+from dac import dac
 
 hostname = socket.gethostname()
 
