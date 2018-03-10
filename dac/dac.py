@@ -28,11 +28,10 @@ from operator import attrgetter
 from operator import itemgetter
 from pprint import pprint
 
-# External library imports
+# Third party imports
 import Levenshtein
 import numpy as np
 import requests
-
 from lxml import etree
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -58,13 +57,13 @@ SOLR_ROWS = 25
 MIN_PROB = 0.5
 
 
-class EntityLinker():
+class EntityLinker(object):
     '''
     Link named entity mention(s) in an article to a DBpedia description.
     '''
 
     def __init__(self, model=None, debug=False, features=False,
-        candidates=False, error_handling=True):
+                 candidates=False, error_handling=True):
         '''
         Initialize the disambiguation model and Solr connection.
         '''
@@ -98,7 +97,7 @@ class EntityLinker():
         except Exception as e:
             if self.error_handling:
                 return {'status': 'error', 'message':
-                    'Error retrieving context: ' + str(e)}
+                        'Error retrieving context: ' + str(e)}
             else:
                 raise
 
@@ -114,7 +113,7 @@ class EntityLinker():
         if ne:
             # Link only the cluster to which the entity belongs
             clusters_to_link = [c for c in clusters_to_link if entity_to_link
-                in c.entities]
+                                in c.entities]
 
         # Process all clusters to be linked
         clusters_linked = []
@@ -126,7 +125,7 @@ class EntityLinker():
             except Exception as e:
                 if self.error_handling:
                     return {'status': 'error', 'message':
-                        'Error linking entity: ' + str(e)}
+                            'Error linking entity: ' + str(e)}
                 else:
                     raise
 
@@ -134,19 +133,20 @@ class EntityLinker():
             # entities and could not be linked, split it up and return the
             # new clustres to the queue.
             sub_entities = [e for e in cluster.entities if
-                Levenshtein.distance(e.norm, cluster.entities[0].norm) > 1]
+                            Levenshtein.distance(e.norm,
+                                                 cluster.entities[0].norm) > 1]
 
             if sub_entities:
                 if not result.description:
                     new_clusters = [Cluster([e for e in cluster.entities if e
-                        not in sub_entities])]
+                                    not in sub_entities])]
                     new_clusters.extend(self.get_clusters(sub_entities))
 
                     # If linking a specific ne, only return the new cluster
                     # containing that ne to the queue
                     if ne:
                         clusters_to_link.extend([c for c in new_clusters if
-                            entity_to_link in c.entities])
+                                                 entity_to_link in c.entities])
                     else:
                         clusters_to_link.extend(new_clusters)
                 else:
@@ -161,8 +161,8 @@ class EntityLinker():
             if entity.text not in [result['text'] for result in results]:
                 for cluster in clusters_linked:
                     if entity in cluster.entities:
-                        result = cluster.result.get_dict(features=self.features,
-                            candidates=self.candidates)
+                        result = cluster.result.get_dict(
+                            features=self.features, candidates=self.candidates)
                         result['text'] = entity.text
                         if self.debug or 'link' in result:
                             results.append(result)
@@ -175,10 +175,11 @@ class EntityLinker():
         '''
         clusters = []
         # Arrange the entities in reversed alphabetical order
-        sorted_entities = sorted(entities, key=attrgetter('norm'), reverse=True)
+        sorted_entities = sorted(entities, key=attrgetter('norm'),
+                                 reverse=True)
         # Arrange the entities by word length, longest first
         sorted_entities = sorted(sorted_entities, key=lambda entity:
-            len(entity.norm.split()), reverse=True)
+                                 len(entity.norm.split()), reverse=True)
         # Assign each entity to a cluster
         for entity in sorted_entities:
             clusters = self.cluster(entity, clusters)
@@ -198,7 +199,7 @@ class EntityLinker():
                 if entity.text == e.text:
                     cluster.entities.append(entity)
                     return clusters
-                if len(entity.norm) > 0 and len(e.norm) > 0:
+                if entity.norm and e.norm:
                     if entity.norm == e.norm:
                         cluster.entities.append(entity)
                         return clusters
@@ -242,11 +243,11 @@ class EntityLinker():
         Try to add possessive forms to existing clusters.
         '''
         new_clusters = [c for c in clusters if not c.entities[0].valid or
-            (c.entities[0].norm[-1] != 's' or len(c.entities[0].norm.split())
-            > 1)]
+                        (c.entities[0].norm[-1] != 's' or
+                         len(c.entities[0].norm.split()) > 1)]
         poss_clusters = [c for c in clusters if c.entities[0].valid and
-            c.entities[0].norm[-1] == 's' and len(c.entities[0].norm.split())
-            == 1]
+                         c.entities[0].norm[-1] == 's' and
+                         len(c.entities[0].norm.split()) == 1]
 
         for p in poss_clusters:
             merge = False
@@ -263,7 +264,7 @@ class EntityLinker():
         return new_clusters
 
 
-class Context():
+class Context(object):
     '''
     The context information for an entity.
     '''
@@ -298,11 +299,11 @@ class Context():
         type_element = xml.find('.//{http://purl.org/dc/elements/1.1/}type')
         assert type_element is not None, 'Unknown article type'
         assert type_element.text in ['illustratie met onderschrift',
-                'artikel'], 'Invalid article type'
+                                     'artikel'], 'Invalid article type'
 
         date_element = xml.find('.//{http://purl.org/dc/elements/1.1/}date')
         self.publ_year = (int(date_element.text[:4]) if date_element is not
-                None else None)
+                          None else None)
 
     def get_entities(self):
         '''
@@ -336,27 +337,27 @@ class Context():
 
         # Regular entities first
         for e in [e for e in data['entities'] if e['type'] != 'manual' and
-                len(e['ner_src']) >= 1 and e['ne'][0].isupper()]:
+                  len(e['ner_src']) >= 1 and e['ne'][0].isupper()]:
             if len(e['ne']) > 1:
                 entity = Entity(e['ne'], e['count'], e['type'],
-                    e['type_certainty'], e['pos'], e['ne_context'],
-                    e['left_context'], e['right_context'], self)
+                                e['type_certainty'], e['pos'], e['ne_context'],
+                                e['left_context'], e['right_context'], self)
                 entities.append(entity)
 
         # User requested entity
         if self.ne:
             if self.ne not in [e.text for e in entities]:
                 occurences = [e for e in data['entities'] if e['type'] ==
-                    'manual' and e['pos'] > -1]
+                              'manual' and e['pos'] > -1]
                 if occurences:
                     e = sorted(occurences, key=itemgetter('source'),
-                        reverse=True)[0]
+                               reverse=True)[0]
                     entity = Entity(e['ne'], 0, None, 0, e['pos'],
-                        e['ne_context'], e['left_context'], e['right_context'],
-                        self)
+                                    e['ne_context'], e['left_context'],
+                                    e['right_context'], self)
                 else:
                     entity = Entity(self.ne, 0, self.ne, 0, -1, self.ne, '',
-                        '', self)
+                                    '', self)
                 entities.append(entity)
 
         # Check entity - text ratio
@@ -384,13 +385,14 @@ class Context():
         self.ocr_bow = utilities.tokenize(self.ocr, unique=True)
 
 
-class Entity():
+class Entity(object):
     '''
     An entity mention occuring in an article.
     '''
 
-    def __init__(self, text, count=0, tpta_type=None, type_certainty=0, pos=-1,
-        ne_context='', left_context='', right_context='', context=None):
+    def __init__(self, text, count=0, tpta_type=None, type_certainty=0,
+                 pos=-1, ne_context='', left_context='', right_context='',
+                 context=None):
 
         '''
         Get information about the entity and its immediate surroundings.
@@ -572,7 +574,7 @@ class Entity():
         return False
 
 
-class Cluster():
+class Cluster(object):
     '''
     Group of related entity mentions, presumed to refer to the same entity.
     '''
@@ -597,13 +599,13 @@ class Cluster():
         cand_list = CandidateList(self, solr_connection, model)
 
         # Check the number of descriptions found
-        if len(cand_list.candidates) == 0:
+        if not cand_list.candidates:
             self.result = Result("Nothing found")
             return self.result
 
         # Filter descriptions according to hard criteria, e.g. name conlfict
         cand_list.filter()
-        if len(cand_list.filtered_candidates) == 0:
+        if not cand_list.filtered_candidates:
             self.result = Result("Name or date conflict", cand_list=cand_list)
             return self.result
 
@@ -612,11 +614,12 @@ class Cluster():
         best_match = cand_list.ranked_candidates[0]
         if best_match.prob >= MIN_PROB:
             self.result = Result("Predicted link", best_match.prob, best_match,
-                cand_list=cand_list)
+                                 cand_list=cand_list)
         else:
             self.result = Result("Probability too low for: " +
-                best_match.document.get('label'), best_match.prob, best_match,
-                cand_list=cand_list)
+                                 best_match.document.get('label'),
+                                 best_match.prob, best_match,
+                                 cand_list=cand_list)
         return self.result
 
     def get_type_ratios(self):
@@ -626,9 +629,9 @@ class Cluster():
         type_ratios = {t: 0.0 for t in dictionary.types_dbo}
 
         types = [t for e in self.entities for t in [e.tpta_type] *
-                e.type_certainty if e.tpta_type]
+                 e.type_certainty if e.tpta_type]
         types += [t for e in self.entities for t in [e.alt_type] * 2
-                if e.alt_type]
+                  if e.alt_type]
 
         if types:
             for t in dictionary.types_dbo:
@@ -656,27 +659,28 @@ class Cluster():
                 window.append(e.role_form)
 
         window = [w for w in window if len(w) > 4 and w not in entity_parts
-            and w not in dictionary.unwanted]
+                  and w not in dictionary.unwanted]
         window = list(set(window))
 
         self.window = window
 
     def get_entity_parts(self):
         self.entity_parts = list(set([p for e in self.entities for p in
-            e.stripped.split()]))
+                                 e.stripped.split()]))
 
     def get_context_entity_parts(self):
         if not hasattr(self, 'entity_parts'):
             self.get_entity_parts()
 
         context_entity_parts = [p for e in self.context.entities for p in
-            e.norm.split() if p not in self.entity_parts and p not in
-            dictionary.unwanted and len(p) > 4 and e.valid]
+                                e.norm.split() if p not in self.entity_parts
+                                and p not in dictionary.unwanted and
+                                len(p) > 4 and e.valid]
 
         self.context_entity_parts = list(set(context_entity_parts))
 
 
-class CandidateList():
+class CandidateList(object):
     '''
     List of candidate links for an entity cluster.
     '''
@@ -703,12 +707,12 @@ class CandidateList():
             last_part = self.cluster.entities[0].last_part
 
             queries = []
-            queries.append('pref_label_str:"' + norm + '" OR pref_label_str:"' +
-                stripped + '"')
+            queries.append('pref_label_str:"' + norm + '" OR pref_label_str:"'
+                           + stripped + '"')
             queries.append('(alt_label_str:"' + norm + '" OR alt_label_str:"' +
-                stripped + '") AND pref_label:[* TO *]')
+                           stripped + '") AND pref_label:[* TO *]')
             queries.append('pref_label:"' + norm + '" OR pref_label:"' +
-                stripped + '"')
+                           stripped + '"')
             queries.append('last_part_str:"' + last_part + '"')
             self.queries = queries
 
@@ -719,13 +723,15 @@ class CandidateList():
                     rows = SOLR_ROWS - len(candidates)
 
                 solr_response = solr_connection.query(q=query, rows=rows,
-                    indent='on', sort='lang,inlinks', sort_order='desc')
+                                                      indent='on',
+                                                      sort='lang,inlinks',
+                                                      sort_order='desc')
 
                 for r in solr_response.results:
                     if r.get('id') not in [c.document.get('id') for c in
-                            candidates]:
+                                           candidates]:
                         candidates.append(Description(r, i, query_id, self,
-                            cluster))
+                                          cluster))
 
         self.candidates = candidates
 
@@ -755,14 +761,14 @@ class CandidateList():
                 c.prob = self.model.predict(example)
 
         self.ranked_candidates = sorted(self.filtered_candidates,
-            key=attrgetter('prob'), reverse=True)
+                                        key=attrgetter('prob'), reverse=True)
 
     def set_max_score(self):
         '''
         Set the maximum Solr score of the filtered candidates.
         '''
         self.max_score = max([c.document.get('score') for c in
-            self.filtered_candidates])
+                              self.filtered_candidates])
 
     def set_sum_inlinks(self):
         '''
@@ -771,15 +777,17 @@ class CandidateList():
         '''
         for link_type in ['inlinks', 'inlinks_newspapers']:
             link_sum = sum([c.document.get(link_type) for c in
-                self.filtered_candidates if c.document.get(link_type)])
+                            self.filtered_candidates if
+                            c.document.get(link_type)])
             setattr(self, 'sum_' + link_type, link_sum)
 
 
-class Description():
+class Description(object):
     '''
     Description of a link candidate.
     '''
-    def __init__(self, document, query_iteration, query_id, cand_list, cluster):
+    def __init__(self, document, query_iteration, query_id, cand_list,
+                 cluster):
         '''
         Initialize description.
         '''
@@ -848,7 +856,7 @@ class Description():
         label = self.document.get('pref_label')
         ne = self.cluster.entities[0].norm
 
-        if len(set(ne.split()) - set(label.split())) == 0:
+        if not set(ne.split()) - set(label.split()):
             if label == ne:
                 self.match_str_pref_label_exact = 1
             elif label.endswith(ne):
@@ -874,7 +882,7 @@ class Description():
         alt_label_end_match = 0
         alt_label_match = 0
         for l in labels:
-            if len(set(ne.split()) - set(l.split())) == 0:
+            if not set(ne.split()) - set(l.split()):
                 if l == ne:
                     alt_label_exact_match += 1
                 elif l.endswith(ne):
@@ -900,7 +908,7 @@ class Description():
             return
 
         ne = self.cluster.entities[0].stripped
-        #if len(ne.split()) == 1:
+        # if len(ne.split()) == 1:
         #    return
 
         last_part_match = 0
@@ -928,20 +936,23 @@ class Description():
 
                         # First names may differ with one character, but not
                         # the first character
-                        elif len(part) > 1 and len([p for p in
-                                target[target_pos:-1] if p[0] == part[0] and
-                                Levenshtein.distance(p, part) == 1]) > 0:
-                            for p in target[target_pos:-1]:
-                                if p[0] == part[0]:
-                                    if Levenshtein.distance(p, part) == 1:
-                                        target_pos = target.index(p) + 1
-                                        break
+                        elif len(part) > 1:
+                            if [p for p in target[target_pos:-1]
+                                    if p[0] == part[0] and
+                                    Levenshtein.distance(p, part) == 1]:
+                                for p in target[target_pos:-1]:
+                                    if p[0] == part[0]:
+                                        if Levenshtein.distance(p, part) == 1:
+                                            target_pos = target.index(p) + 1
+                                            break
 
                         # Initials
-                        elif len(part) <= 1 and part[0] in [p[0] for p in
-                                target[target_pos:-1]]:
-                            target_pos = [p[0] for p in
-                                target[target_pos:-1]].index(part[0]) + 1
+                        elif len(part) <= 1:
+                            if part[0] in [p[0] for p in
+                                           target[target_pos:-1]]:
+                                target_pos = [p[0] for p in
+                                              target[target_pos:-1]].index(
+                                                  part[0]) + 1
 
                         else:
                             conflict = True
@@ -973,7 +984,7 @@ class Description():
         if self.document.get('wd_alt_label'):
             labels.extend(self.document.get('wd_alt_label'))
         labels = [l for l in labels if len(l.split()) > 1 and
-            l.split()[0] == ne]
+                  l.split()[0] == ne]
         if not labels:
             return
 
@@ -999,8 +1010,8 @@ class Description():
         sufficiently matching label was found.
         '''
         features = ['match_str_pref_label_exact', 'match_str_pref_label_end',
-            'match_str_alt_label_exact', 'match_str_alt_label_end',
-            'match_str_last_part', 'match_txt_last_part']
+                    'match_str_alt_label_exact', 'match_str_alt_label_end',
+                    'match_str_last_part', 'match_txt_last_part']
 
         if sum([getattr(self, f) for f in features]) == 0:
             self.match_str_conflict = 1
@@ -1035,7 +1046,7 @@ class Description():
         self.set_topic_match()
         self.set_vector_match()
         self.set_entity_match()
-        #self.set_entity_match_newspapers()
+        # self.set_entity_match_newspapers()
         self.set_entity_vector_match()
 
     def set_entity_quotes(self):
@@ -1047,7 +1058,7 @@ class Description():
 
         if not hasattr(self.cluster, 'sum_quotes'):
             self.cluster.sum_quotes = sum([e.quotes for e in
-                self.cluster.entities])
+                                           self.cluster.entities])
 
         self.entity_quotes = math.tanh(self.cluster.sum_quotes * 0.25)
 
@@ -1059,8 +1070,10 @@ class Description():
             return
 
         if not hasattr(self.cluster, 'mean_ner_confidence'):
-            self.cluster.mean_ner_confidence = sum([e.count for e in
-                self.cluster.entities]) / float(len(self.cluster.entities))
+            self.cluster.mean_ner_confidence = (sum([e.count for e in
+                                                     self.cluster.entities]) /
+                                                float(len(
+                                                    self.cluster.entities)))
 
         self.entity_ner_confidence = self.cluster.mean_ner_confidence / 3
 
@@ -1093,14 +1106,14 @@ class Description():
             link_count = self.document.get(link_type)
             if link_count:
                 setattr(self, 'candidate_' + link_type,
-                    math.tanh(link_count * 0.001))
+                        math.tanh(link_count * 0.001))
                 if not hasattr(self.cand_list, 'sum_' + link_type):
                     self.cand_list.set_sum_inlinks()
                 link_sum = getattr(self.cand_list, 'sum_' + link_type)
                 if link_sum:
                     link_count_rel = link_count / float(link_sum)
                     setattr(self, 'candidate_' + link_type + '_rel',
-                        link_count_rel)
+                            link_count_rel)
 
     def set_solr_properties(self):
         '''
@@ -1125,7 +1138,7 @@ class Description():
             self.cand_list.set_max_score()
         if self.cand_list.max_score:
             self.match_str_solr_score = (self.document.get('score') /
-                float(self.cand_list.max_score))
+                                         float(self.cand_list.max_score))
 
     def set_levenshtein(self):
         '''
@@ -1146,7 +1159,7 @@ class Description():
             ratios = [Levenshtein.ratio(ne, l) for l in wd_labels]
             self.match_str_lsr_wd_max = max(ratios) - 0.5
             self.match_str_lsr_wd_mean = (sum(ratios) /
-                float(len(wd_labels))) - 0.375
+                                          float(len(wd_labels))) - 0.375
         else:
             wd_labels = []
 
@@ -1158,7 +1171,7 @@ class Description():
                 ratios = [Levenshtein.ratio(ne, l) for l in labels]
                 self.match_str_lsr_alt_max = max(ratios) - 0.5
                 self.match_str_lsr_alt_mean = (sum(ratios) /
-                        float(len(labels))) - 0.375
+                                               float(len(labels))) - 0.375
 
     def set_abbr_match(self):
         '''
@@ -1200,7 +1213,7 @@ class Description():
         '''
         Find labels longer than the entity in the article text.
         '''
-        if not 'match_txt_labels' in self.features:
+        if 'match_txt_labels' not in self.features:
             return
 
         ne = self.cluster.entities[0].norm
@@ -1210,7 +1223,7 @@ class Description():
             labels.append(self.document.get('pref_label'))
         if self.document.get('wd_alt_label'):
             labels.extend([l for l in self.document.get('wd_alt_label') if
-                len(ne) < len(l)])
+                          len(ne) < len(l)])
 
         if not labels:
             return
@@ -1228,7 +1241,7 @@ class Description():
         '''
         Find the specification (between brackets) in the article text.
         '''
-        if not 'match_txt_spec' in self.features:
+        if 'match_txt_spec' not in self.features:
             return
 
         spec = self.document.get('spec')
@@ -1248,14 +1261,15 @@ class Description():
         '''
         Find DBpedia category keywords in the article text.
         '''
-        if not 'match_txt_keyword' in self.features:
+        if 'match_txt_keyword' not in self.features:
             return
 
         if not self.document.get('keyword'):
             return
 
         key_stems = [w[:int(math.ceil(len(w) * 0.8))] for w in
-            self.document.get('keyword') if w not in dictionary.unwanted]
+                     self.document.get('keyword') if w not in
+                     dictionary.unwanted]
         if not key_stems:
             return
 
@@ -1267,7 +1281,7 @@ class Description():
         '''
         Match entity and description role (politician, athlete, etc.).
         '''
-        if not 'match_txt_role' in self.features:
+        if 'match_txt_role' not in self.features:
             return
 
         roles = {e.role for e in self.cluster.entities if e.role}
@@ -1301,13 +1315,13 @@ class Description():
 
             if max(self.topic_probs.values()) >= 0.4:
                 description_role += max(self.topic_probs,
-                    key=self.topic_probs.get)
+                                        key=self.topic_probs.get)
                 if max(self.type_probs.values()) >= 0.4:
                     description_role += '_' + max(self.type_probs,
-                        key=self.type_probs.get)
+                                                  key=self.type_probs.get)
                     if description_role.endswith('other'):
                         description_role = description_role.replace('other',
-                            'concept')
+                                                                    'concept')
 
             if description_role in roles:
                 self.match_txt_role = 1
@@ -1363,7 +1377,7 @@ class Description():
                 for r in type_ratios:
                     if type_ratios[r] >= 0.25 and description_types[r] >= 0.5:
                         self.match_txt_type += (type_ratios[r] *
-                            description_types[r])
+                                                description_types[r])
 
                 if self.match_txt_type:
                     return
@@ -1372,21 +1386,22 @@ class Description():
                 if type_ratios['person'] >= 0.25:
                     if description_types['location'] >= 0.5:
                         self.match_txt_type -= (type_ratios['person'] *
-                            description_types['location'])
+                                                description_types['location'])
                     if description_types['organisation'] >= 0.5:
                         self.match_txt_type -= (type_ratios['person'] *
-                            description_types['organisation'])
+                                                description_types[
+                                                    'organisation'])
 
                 # Non-matching: locations and organisations can't be persons
                 if type_ratios['location'] >= 0.25:
                     if description_types['person'] >= 0.5:
                         self.match_txt_type -= (description_types['person'] *
-                            type_ratios['location'])
+                                                type_ratios['location'])
 
                 if type_ratios['organisation'] >= 0.25:
                     if description_types['person'] >= 0.5:
                         self.match_txt_type -= (description_types['person'] *
-                            type_ratios['organisation'])
+                                                type_ratios['organisation'])
 
     def set_topic_match(self):
         '''
@@ -1431,11 +1446,13 @@ class Description():
 
             if ctf:
                 for t in description_topics:
-                    setattr(self, 'candidate_topic_' + t, description_topics[t])
+                    setattr(self, 'candidate_topic_' + t,
+                            description_topics[t])
 
             if mtf:
-                self.match_txt_topic = cosine_similarity([topics.values()],
-                        [description_topics.values()])[0][0] - 0.25
+                self.match_txt_topic = (cosine_similarity(
+                    [topics.values()], [description_topics.values()])[0][0]
+                                        - 0.25)
 
     def set_vector_match(self):
         '''
@@ -1473,11 +1490,11 @@ class Description():
         if not hasattr(self, 'abstract_bow'):
             self.tokenize_abstract()
         bow = [w for w in self.abstract_bow[:25] if len(w) > 4 and w not in
-            self.cluster.entity_parts and w not in dictionary.unwanted]
+               self.cluster.entity_parts and w not in dictionary.unwanted]
         if self.document.get('keyword'):
             bow += [w for w in self.document.get('keyword') if len(w) > 4 and w
-                not in self.cluster.entity_parts and w not in
-                dictionary.unwanted]
+                    not in self.cluster.entity_parts and w not in
+                    dictionary.unwanted]
         if not bow:
             return
 
@@ -1486,7 +1503,7 @@ class Description():
             return
 
         sims = cosine_similarity(np.array(self.cluster.window_vectors),
-            np.array(cand_vectors))
+                                 np.array(cand_vectors))
 
         self.match_txt_vec_max = sims.max() - 0.375
         self.match_txt_vec_mean = sims.mean() - 0.0625
@@ -1495,7 +1512,7 @@ class Description():
         '''
         Match other entities appearing in the article with DBpedia abstract.
         '''
-        if not 'match_txt_entities' in self.features:
+        if 'match_txt_entities' not in self.features:
             return
 
         if not hasattr(self.cluster, 'entity_parts'):
@@ -1517,7 +1534,7 @@ class Description():
         Get number of newspaper articles where candidate pref label appears
         together with other entity mentions in the article.
         '''
-        if not 'match_txt_entities_newspapers' in self.features:
+        if 'match_txt_entities_newspapers' not in self.features:
             return
 
         # Candidate has to be person
@@ -1543,10 +1560,10 @@ class Description():
 
         # Other entity mentions have to be available from context
         context_entities = [e.norm for e in self.cluster.context.entities
-            if e.norm.find(self.cluster.entities[0].norm) == -1 and
-            self.cluster.entities[0].norm.find(e.norm) == -1 and
-            e.norm.find(pref_label) == -1 and
-            pref_label.find(e.norm) == -1 and len(e.norm) >= 5]
+                            if e.norm.find(self.cluster.entities[0].norm) == -1
+                            and self.cluster.entities[0].norm.find(e.norm) ==
+                            -1 and e.norm.find(pref_label) == -1 and
+                            pref_label.find(e.norm) == -1 and len(e.norm) >= 5]
         context_entities = list(set(context_entities))
 
         if not context_entities:
@@ -1571,17 +1588,19 @@ class Description():
             xml = etree.fromstring(response.content)
             tag = '{http://www.loc.gov/zing/srw/}numberOfRecords'
             num_records = int(xml.find(tag).text)
-            self.match_txt_entities_newspapers = (num_records /
-                    float(self.document.get('inlinks_newspapers')))
-        except:
+            self.match_txt_entities_newspapers = (
+                num_records / float(self.document.get('inlinks_newspapers')))
+        except Exception:
             return
 
     def set_entity_vector_match(self):
         '''
-        Match word vectors for other entities in the article with entity vector.
+        Match word vectors for other entities in the article with
+        entity vector.
         '''
         cvf = [f for f in self.features if f.startswith('candidate_vec')]
-        mvf = [f for f in self.features if f.startswith('match_txt_entity_vec')]
+        mvf = [f for f in self.features if
+               f.startswith('match_txt_entity_vec')]
         if not (cvf or mvf):
             return
 
@@ -1613,7 +1632,7 @@ class Description():
             return
 
         sims = cosine_similarity(np.array(self.cluster.context_entity_vectors),
-            np.array(cand_vectors))
+                                 np.array(cand_vectors))
         self.match_txt_entity_vec_max = sims.max() - 0.375
         self.match_txt_entity_vec_mean = sims.mean() - 0.125
 
@@ -1622,7 +1641,7 @@ class Description():
         Tokenize and normalize DBpedia abstract.
         '''
         self.abstract_bow = utilities.tokenize(self.document.get('abstract'),
-            unique=True)
+                                               unique=True)
 
     def get_vectors(self, wordlist):
         '''
@@ -1640,13 +1659,13 @@ class Description():
         '''
         payload = {'url': self.document.get('id')}
         response = requests.get(TOPICS_URL, params=payload,
-                timeout=300)
+                                timeout=300)
         assert response.status_code == 200, 'Error retrieving topics'
         self.topic_probs = response.json()['topics']
         self.type_probs = response.json()['types']
 
 
-class Result():
+class Result(object):
     '''
     The link result for an entity cluster.
     '''
@@ -1706,26 +1725,31 @@ class Result():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
+    SAMPLE_URL = 'http://resolver.kb.nl/resolve'
+    SAMPLE_URL += '?urn=ddd:010734861:mpeg21:a0002:ocr'
+
     parser.add_argument('--url', required=False, type=str,
-        default='http://resolver.kb.nl/resolve?urn=ddd:010734861:mpeg21:a0002:ocr',
-        help='resolver link of the article to be processed')
+                        default=SAMPLE_URL,
+                        help='resolver link of the article to be processed')
     parser.add_argument('--ne', required=False, type=str, default='',
-        help='specific named entity to be linked')
-    parser.add_argument('-m', '--model', required=False, type=str, default='nn',
-        help='model used for link prediction')
+                        help='specific named entity to be linked')
+    parser.add_argument('-m', '--model', required=False, type=str,
+                        default='nn', help='model used for link prediction')
     parser.add_argument('-d', '--debug', required=False, action='store_true',
-        help='include unlinked entities in response')
-    parser.add_argument('-f', '--features', required=False, action='store_true',
-        help='return feature values')
-    parser.add_argument('-c', '--candidates', required=False, action='store_true',
-        help='return candidate list')
+                        help='include unlinked entities in response')
+    parser.add_argument('-f', '--features', required=False,
+                        action='store_true', help='return feature values')
+    parser.add_argument('-c', '--candidates', required=False,
+                        action='store_true', help='return candidate list')
     parser.add_argument('-e', '--errh', required=False, action='store_true',
-        help='turn on error handling')
+                        help='turn on error handling')
 
     args = parser.parse_args()
 
-    linker = EntityLinker(model=vars(args)['model'], debug=vars(args)['debug'],
-        features=vars(args)['features'], candidates=vars(args)['candidates'],
-        error_handling=vars(args)['errh'])
+    linker = EntityLinker(model=vars(args)['model'],
+                          debug=vars(args)['debug'],
+                          features=vars(args)['features'],
+                          candidates=vars(args)['candidates'],
+                          error_handling=vars(args)['errh'])
 
     pprint(linker.link(vars(args)['url'], vars(args)['ne']))

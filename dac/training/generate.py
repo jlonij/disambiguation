@@ -26,12 +26,13 @@ import logging
 import sys
 import time
 
-# External library imports
+# Third party imports
 import unicodecsv as csv
 
 # DAC imports
 sys.path.insert(0, '..')
 import dac
+
 
 def generate(input_file, output_file):
     '''
@@ -73,26 +74,27 @@ def generate(input_file, output_file):
 
         for i, inst in enumerate(data['instances']):
             logger.info('Reviewing instance ' + str(i) + ': ' +
-                inst['ne_string'].encode('utf-8'))
+                        inst['ne_string'].encode('utf-8'))
 
             # Check if instance has been labeled
             if inst['links']:
 
                 # Get linker results for entire article (once once per article)
                 if inst['url'] != url:
-                    logger.info('Getting linker result for url: ' + inst['url'])
+                    logger.info('Getting linker result for url: ' +
+                                inst['url'])
 
                     url = inst['url']
                     try:
                         url_result = linker.link(inst['url'])['linkedNEs']
-                    except:
+                    except Exception:
                         logger.error('No linker result, skipping url: '
-                            + inst['url'])
+                                     + inst['url'])
                         time.sleep(3)
 
                 # Select result for current instance
                 result = [r for r in url_result if
-                        r['text'] == inst['ne_string']]
+                          r['text'] == inst['ne_string']]
 
                 if len(result) != 1:
                     logger.info('No result for: ' + inst['ne_string'])
@@ -131,6 +133,7 @@ def generate(input_file, output_file):
                         else:
                             candidate_count += 1
                             csv_writer.writerow(row)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

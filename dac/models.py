@@ -46,15 +46,16 @@ from sklearn.metrics import recall_score
 from sklearn.model_selection import StratifiedShuffleSplit
 
 
-np.random.seed(1337)
-
 abs_path = os.path.dirname(os.path.realpath(__file__))
 training_file = os.path.join(abs_path, 'training', 'training.csv')
 feature_file_template = os.path.join(abs_path, 'features', '{}')
 model_file_template = os.path.join(abs_path, 'models', '{}')
 
 
-class BaseModel:
+np.random.seed(1337)
+
+
+class BaseModel(object):
     def __init__(self):
         self.features = self.load_features('features.json')
 

@@ -31,14 +31,15 @@ from bottle import response
 from bottle import route
 from bottle import run
 
-#abs_path = os.path.dirname(os.path.realpath(__file__))
-#sys.path.insert(0, os.path.join(abs_path, 'dac'))
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from dac import dac
+
 
 hostname = socket.gethostname()
 
 
 def array_to_utf(a):
+    '''Encode array values with utf-8 encoding.'''
     autf = []
     for v in a:
         if isinstance(v, unicode):
@@ -53,6 +54,7 @@ def array_to_utf(a):
 
 
 def dict_to_utf(d):
+    '''Encode dictionary values with utf-8 encoding.'''
     dutf = {}
     for k, v in d.iteritems():
         if isinstance(v, unicode):

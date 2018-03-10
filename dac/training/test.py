@@ -99,19 +99,19 @@ def validate(model, version, test_file):
                            else result['reason'])
 
                 # Evaluate result
-                if 'link' in result: # Link was predicted
-                    if result['link'] in i['links']: # Link is correct
+                if 'link' in result:  # Link was predicted
+                    if result['link'] in i['links']:  # Link is correct
                         nr_correct_instances += 1
                         nr_correct_links += 1
                         row.append('1')
-                    else: # Link is false
+                    else:  # Link is false
                         nr_false_links += 1
                         row.append('0')
-                else: # No link was predicted
-                    if 'none' in i['links']: # No link is correct
+                else:  # No link was predicted
+                    if 'none' in i['links']:  # No link is correct
                         nr_correct_instances += 1
                         row.append('1')
-                    else: # No link is false
+                    else:  # No link is false
                         row.append('0')
 
                 csv_writer.writerow(row)
@@ -131,9 +131,9 @@ def validate(model, version, test_file):
     link_precision = (nr_correct_links / float(nr_correct_links +
                                                nr_false_links))
     mean_link_f_measure = 2 * ((link_precision * mean_link_recall) /
-                                float(link_precision + mean_link_recall))
+                               float(link_precision + mean_link_recall))
     max_link_f_measure = 2 * ((link_precision * max_link_recall) /
-                               float(link_precision + max_link_recall))
+                              float(link_precision + max_link_recall))
 
     print '---'
     print 'Number of instances: ' + str(nr_instances)
@@ -155,6 +155,7 @@ def validate(model, version, test_file):
     print '(Mean) link F1-measure: ' + str(mean_link_f_measure)
     print '(Max) link F1-measure: ' + str(max_link_f_measure)
     print '---'
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
