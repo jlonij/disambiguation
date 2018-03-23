@@ -567,9 +567,36 @@ class Entity(object):
         # and last_part
         if len(subs) == 1:
             self.norm = self.norm.replace(self.stripped, subs[0])
+            self.last_part = utilities.get_last_part(subs[0])
             self.stripped = subs[0]
-            self.last_part = utilities.get_last_part(self.stripped)
-            return True
+            return subs[0]
+
+        return False
+
+    def suggest(self):
+        '''
+        Try to substitute norm with Solr suggestion.
+        '''
+        suggest_url = SOLR_URL + '/suggest/?'
+
+        payload = {}
+        payload['suggest'] = 'true'
+        payload['suggest.build'] = 'false'
+        payload['suggest.dictionary'] = 'mySuggester'
+        payload['suggest.build'] = 'false'
+        payload['suggest.q'] = self.stripped
+        payload['wt'] = 'json'
+
+        response = requests.get(suggest_url, params=payload, timeout=300)
+        assert response.status_code == 200, 'Error retrieving Solr suggestions'
+
+        data = response.json()
+        sugg = data['suggest']['mySuggester'][self.stripped]['suggestions']
+        if sugg:
+            self.norm = self.norm.replace(self.stripped, sugg[0]['term'])
+            self.last_part = utilities.get_last_part(sugg[0]['term'])
+            self.stripped = sugg[0]['term']
+            return sugg[0]['term']
 
         return False
 
@@ -592,7 +619,7 @@ class Cluster(object):
         '''
         # Check validity of the main entity
         if not self.entities[0].valid:
-            self.result = Result("Invalid entity")
+            self.result = Result('Invalid entity')
             return self.result
 
         # If entity is valid, try to query Solr for candidate descriptions
@@ -600,23 +627,23 @@ class Cluster(object):
 
         # Check the number of descriptions found
         if not cand_list.candidates:
-            self.result = Result("Nothing found")
+            self.result = Result('Nothing found')
             return self.result
 
         # Filter descriptions according to hard criteria, e.g. name conlfict
         cand_list.filter()
         if not cand_list.filtered_candidates:
-            self.result = Result("Name or date conflict", cand_list=cand_list)
+            self.result = Result('Name or date conflict', cand_list=cand_list)
             return self.result
 
         # If any candidates remain, calculate probabilities and select the best
         cand_list.rank()
         best_match = cand_list.ranked_candidates[0]
         if best_match.prob >= MIN_PROB:
-            self.result = Result("Predicted link", best_match.prob, best_match,
+            self.result = Result('Predicted link', best_match.prob, best_match,
                                  cand_list=cand_list)
         else:
-            self.result = Result("Probability too low for: " +
+            self.result = Result('Probability too low for: ' +
                                  best_match.document.get('label'),
                                  best_match.prob, best_match,
                                  cand_list=cand_list)
@@ -695,11 +722,14 @@ class CandidateList(object):
 
         candidates = []
 
-        for i in range(2):
+        for i in range(3):
             if candidates:
                 break
             if i == 1:
                 if not self.cluster.entities[0].substitute():
+                    continue
+            if i == 2:
+                if not self.cluster.entities[0].suggest():
                     break
 
             norm = self.cluster.entities[0].norm
@@ -1123,11 +1153,11 @@ class Description(object):
             return
 
         # Solr iteration
-        self.match_str_solr_query_0 = 1 if self.query_id == 0 else 0
-        self.match_str_solr_query_1 = 1 if self.query_id == 1 else 0
-        self.match_str_solr_query_2 = 1 if self.query_id == 2 else 0
-        self.match_str_solr_query_3 = 1 if self.query_id == 3 else 0
-        self.match_str_solr_substitution = 1 if self.query_iteration == 1 else 0
+        setattr(self, 'match_str_solr_query_{}'.format(self.query_id), 1)
+        if self.query_iteration == 1:
+            self.match_str_solr_substitution = 1
+        if self.query_iteration == 2:
+            self.match_str_solr_suggestion = 1
 
         # Solr position (relative to other remaining candidates)
         pos = self.cand_list.filtered_candidates.index(self)
@@ -1451,8 +1481,10 @@ class Description(object):
 
             if mtf:
                 self.match_txt_topic = (cosine_similarity(
-                    [topics.values()], [description_topics.values()])[0][0]
-                                        - 0.25)
+                    np.array([topics[t] for t in dictionary.topics]).reshape(
+                        -1, 1),
+                    np.array([description_topics[t] for t in
+                              dictionary.topics]).reshape(-1, 1))[0][0] - 0.25)
 
     def set_vector_match(self):
         '''

@@ -40,6 +40,7 @@
     "match_str_solr_query_2",
     "match_str_solr_query_3",
     "match_str_solr_substitution",
+    "match_str_solr_suggestion",
     "match_str_solr_position",
     "match_str_solr_score",
     "match_str_lsr_pref",
