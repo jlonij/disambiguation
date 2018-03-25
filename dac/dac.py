@@ -593,10 +593,14 @@ class Entity(object):
         data = response.json()
         sugg = data['suggest']['mySuggester'][self.stripped]['suggestions']
         if sugg:
-            self.norm = self.norm.replace(self.stripped, sugg[0]['term'])
-            self.last_part = utilities.get_last_part(sugg[0]['term'])
-            self.stripped = sugg[0]['term']
-            return sugg[0]['term']
+            sorted_sugg = sorted(sugg, key=itemgetter('weight'))
+            sugg_term = sorted_sugg[0]['term']
+
+            if sugg_term != self.stripped:
+                self.norm = self.norm.replace(self.stripped, sugg_term)
+                self.last_part = utilities.get_last_part(sugg_term)
+                self.stripped = sugg_term
+                return sugg_term
 
         return False
 
@@ -1154,10 +1158,8 @@ class Description(object):
 
         # Solr iteration
         setattr(self, 'match_str_solr_query_{}'.format(self.query_id), 1)
-        if self.query_iteration == 1:
+        if self.query_iteration > 0:
             self.match_str_solr_substitution = 1
-        if self.query_iteration == 2:
-            self.match_str_solr_suggestion = 1
 
         # Solr position (relative to other remaining candidates)
         pos = self.cand_list.filtered_candidates.index(self)
@@ -1480,11 +1482,13 @@ class Description(object):
                             description_topics[t])
 
             if mtf:
-                self.match_txt_topic = (cosine_similarity(
-                    np.array([topics[t] for t in dictionary.topics]).reshape(
-                        -1, 1),
-                    np.array([description_topics[t] for t in
-                              dictionary.topics]).reshape(-1, 1))[0][0] - 0.25)
+                topics_arr = np.array([topics[t] for t in
+                                       dictionary.topics]).reshape(1, -1)
+                desc_topics_arr = np.array([description_topics[t] for t in
+                                            dictionary.topics]).reshape(1, -1)
+
+                self.match_txt_topic = cosine_similarity(
+                    topics_arr, desc_topics_arr)[0][0] - 0.25
 
     def set_vector_match(self):
         '''
