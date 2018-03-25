@@ -593,7 +593,7 @@ class Entity(object):
         data = response.json()
         sugg = data['suggest']['mySuggester'][self.stripped]['suggestions']
         if sugg:
-            sorted_sugg = sorted(sugg, key=itemgetter('weight'))
+            sorted_sugg = sorted(sugg, key=itemgetter('weight'), reverse=True)
             sugg_term = sorted_sugg[0]['term']
 
             if sugg_term != self.stripped:
