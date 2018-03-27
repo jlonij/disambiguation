@@ -57,10 +57,33 @@ def normalize(s):
     return s
 
 
+def normalize_ocr(s):
+    '''
+    Generate a common OCR error tolerant search string from an already
+    normalized string.
+    '''
+    if len(s) > 1:
+        # Equate e, c (not as first character)
+        s = ''.join([s[0], s[1:].replace('c', 'e')])
+
+        # Equate i, l (not as first character)
+        s = ''.join([s[0], s[1:].replace('l', 'i')])
+
+        # Equate G, C, O (only as first character)
+        if s[0] == 'c' or s[0] == 'o':
+            s = ''.join(['g', s[1:]])
+
+        # Equate B en E (only as first character)
+        if s[0] == 'b':
+            s = ''.join(['e', s[1:]])
+
+    return s
+
+
 def get_last_part(s, exclude_first_part=False):
     '''
-    Extract probable last name from a string, excluding numbers, Roman numerals
-    and some well-known suffixes.
+    Extract probable last name from a string, excluding numbers, Roman
+    numerals and some well-known suffixes.
     '''
     last_part = None
 
