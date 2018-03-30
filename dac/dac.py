@@ -994,55 +994,53 @@ class Description(object):
             return
 
         ne = self.cluster.entities[0].stripped
-        # if len(ne.split()) == 1:
-        #    return
 
         last_part_match = 0
+
         for l in labels[:]:
 
+            # Named entity may not have more words than label
             if len(ne.split()) > len(l.split()):
                 continue
 
-            # If the last words of the title and the ne match approximately,
+            # The last words of the label and the entity match approximately,
             # i.e. edit distance does not exceed 1
             if Levenshtein.distance(ne.split()[-1], l.split()[-1]) <= 1:
 
-                # Multi-word entities: check for conflicts among preceding parts
                 conflict = False
                 source = ne.split()
                 target = l.split()
 
                 target_pos = 0
                 for part in source[:-1]:
+
                     if target_pos < len(target[:-1]):
 
                         # Full words
                         if len(part) > 1 and part in target[target_pos:-1]:
                             target_pos = target.index(part) + 1
+                            continue
 
                         # First names may differ with one character, but not
                         # the first character
                         elif len(part) > 1:
-                            if [p for p in target[target_pos:-1]
+                            opts = [p for p in target[target_pos:-1]
                                     if p[0] == part[0] and
-                                    Levenshtein.distance(p, part) == 1]:
-                                for p in target[target_pos:-1]:
-                                    if p[0] == part[0]:
-                                        if Levenshtein.distance(p, part) == 1:
-                                            target_pos = target.index(p) + 1
-                                            break
+                                    Levenshtein.distance(p, part) == 1]
+                            if opts:
+                                target_pos = target.index(opts[0]) + 1
+                                continue
 
                         # Initials
-                        elif len(part) <= 1:
-                            if part[0] in [p[0] for p in
-                                           target[target_pos:-1]]:
-                                target_pos = [p[0] for p in
-                                              target[target_pos:-1]].index(
-                                                  part[0]) + 1
+                        elif len(part) == 1:
+                            opts = [p[0] for p in target[target_pos:-1]]
+                            if part in opts:
+                                target_pos += opts.index(part) + 1
+                                continue
 
-                        else:
-                            conflict = True
-                            break
+                        conflict = True
+                        break
+
                     else:
                         conflict = True
                         break
@@ -1050,6 +1048,7 @@ class Description(object):
                 if not conflict:
                     last_part_match += 1
                     self.non_matching.remove(l)
+                    print l
 
         self.match_str_last_part = math.tanh(last_part_match * 0.25)
 
