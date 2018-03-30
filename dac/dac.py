@@ -1096,10 +1096,10 @@ class Description(object):
                     'match_str_alt_label_exact', 'match_str_alt_label_end',
                     'match_str_last_part', 'match_txt_last_part']
 
-        if sum([getattr(self, f) for f in features]) == 0:
-            self.match_str_conflict = 1
-        else:
+        if [v for v in [getattr(self, f) for f in features] if v > 0]:
             self.match_str_conflict = 0
+        else:
+            self.match_str_conflict = 1
 
     def set_prob_features(self):
         '''
