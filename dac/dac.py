@@ -1048,7 +1048,6 @@ class Description(object):
                 if not conflict:
                     last_part_match += 1
                     self.non_matching.remove(l)
-                    print l
 
         self.match_str_last_part = math.tanh(last_part_match * 0.25)
 
@@ -1061,13 +1060,12 @@ class Description(object):
         if len(ne.split()) > 1:
             return
 
-        last_part = self.document.get('last_part')
-        if not last_part:
+        if self.document.get('dbo_type_person') < 0.5:
             return
 
         labels = [self.document.get('pref_label')]
-        if self.document.get('wd_alt_label'):
-            labels.extend(self.document.get('wd_alt_label'))
+        if self.document.get('alt_label'):
+            labels.extend(self.document.get('alt_label'))
         labels = [l for l in labels if len(l.split()) > 1 and
                   l.split()[0] == ne]
         if not labels:
