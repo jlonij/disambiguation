@@ -23,12 +23,11 @@
 import argparse
 import math
 import re
-
 from operator import attrgetter
 from operator import itemgetter
 from pprint import pprint
 
-# Third party imports
+# Third-party imports
 import Levenshtein
 import numpy as np
 import requests
@@ -139,7 +138,7 @@ class EntityLinker(object):
             if sub_entities:
                 if not result.description:
                     new_clusters = [Cluster([e for e in cluster.entities if e
-                                    not in sub_entities])]
+                                             not in sub_entities])]
                     new_clusters.extend(self.get_clusters(sub_entities))
 
                     # If linking a specific ne, only return the new cluster
@@ -563,15 +562,13 @@ class Entity(object):
         if re.search(pattern, self.stripped):
             subs.append(re.sub(pattern, r'\1\2v\3', self.stripped))
 
-        # If there is exactly one possible substitution, replace norm, stripped
-        # and last_part
+        # If there is exactly one possible substitution, replace norm,
+        # stripped and last_part
         if len(subs) == 1:
-            self.norm = self.norm.replace(self.stripped, subs[0])
-            self.last_part = utilities.get_last_part(subs[0])
-            self.stripped = subs[0]
-            return subs[0]
+            return (self.norm.replace(self.stripped, subs[0]), subs[0],
+                    utilities.get_last_part(subs[0]))
 
-        return False
+        return None, None, None
 
     def suggest(self):
         '''
@@ -597,12 +594,15 @@ class Entity(object):
             sugg_term = sorted_sugg[0]['term']
 
             if sugg_term != self.stripped:
-                self.norm = self.norm.replace(self.stripped, sugg_term)
-                self.last_part = utilities.get_last_part(sugg_term)
-                self.stripped = sugg_term
-                return sugg_term
+                return (self.norm.replace(self.stripped, sugg_term),
+                        sugg_term, utilities.get_last_part(sugg_term))
 
-        return False
+        return None, None, None
+
+    def set_norm(self, norm, stripped, last_part):
+        self.norm = norm
+        self.stripped = stripped
+        self.last_part = last_part
 
 
 class Cluster(object):
@@ -718,56 +718,100 @@ class CandidateList(object):
 
     def __init__(self, cluster, solr_connection, model):
         '''
-        Query the Solr index and generate initial list of candidates.
+        Query the Solr index for a list of candidate descriptions.
         '''
         self.cluster = cluster
         self.solr_connection = solr_connection
         self.model = model
 
-        candidates = []
+        # Regular search
+        queries = self.get_queries(self.cluster.entities[0].norm,
+                                   self.cluster.entities[0].stripped,
+                                   self.cluster.entities[0].last_part)
+        candidates = self.query_solr(queries, 0)
 
-        for i in range(3):
+        # Search with (historical) spelling variants
+        if not candidates:
+            norm, stripped, last_part = self.cluster.entities[0].substitute()
+            if norm:
+                queries = self.get_queries(norm, stripped, last_part)
+                candidates = self.query_solr(queries, 1)
+                if candidates:
+                    self.cluster.entities[0].set_norm = (norm, stripped,
+                                                         last_part)
+
+        # Search with Solr suggestion
+        if not candidates:
+            norm, stripped, last_part = self.cluster.entities[0].suggest()
+            if norm:
+                queries = self.get_queries(norm, stripped, last_part)
+                candidates = self.query_solr(queries, 2)
+                if candidates:
+                    self.cluster.entities[0].set_norm = (norm, stripped,
+                                                         last_part)
+
+        # Search with OCR-error tolerance
+        if not candidates:
+            norm = utilities.normalize_ocr(self.cluster.entities[0].norm)
+            stripped = utilities.normalize_ocr(
+                self.cluster.entities[0].stripped)
+            last_part = utilities.normalize_ocr(
+                self.cluster.entities[0].last_part)
+
+            queries = self.get_queries_ocr(norm, stripped, last_part)
+            candidates = self.query_solr(queries, 3)
+
             if candidates:
-                break
-            if i == 1:
-                if not self.cluster.entities[0].substitute():
-                    continue
-            if i == 2:
-                if not self.cluster.entities[0].suggest():
-                    break
-
-            norm = self.cluster.entities[0].norm
-            stripped = self.cluster.entities[0].stripped
-            last_part = self.cluster.entities[0].last_part
-
-            queries = []
-            queries.append('pref_label_str:"' + norm + '" OR pref_label_str:"'
-                           + stripped + '"')
-            queries.append('(alt_label_str:"' + norm + '" OR alt_label_str:"' +
-                           stripped + '") AND pref_label:[* TO *]')
-            queries.append('pref_label:"' + norm + '" OR pref_label:"' +
-                           stripped + '"')
-            queries.append('last_part_str:"' + last_part + '"')
-            self.queries = queries
-
-            for query_id, query in enumerate(queries):
-                if not len(candidates) < SOLR_ROWS:
-                    break
-                else:
-                    rows = SOLR_ROWS - len(candidates)
-
-                solr_response = solr_connection.query(q=query, rows=rows,
-                                                      indent='on',
-                                                      sort='lang,inlinks',
-                                                      sort_order='desc')
-
-                for r in solr_response.results:
-                    if r.get('id') not in [c.document.get('id') for c in
-                                           candidates]:
-                        candidates.append(Description(r, i, query_id, self,
-                                          cluster))
+                self.cluster.entities[0].set_norm = (norm, stripped,
+                                                     last_part)
 
         self.candidates = candidates
+
+    def get_queries(self, norm, stripped, last_part):
+        queries = []
+        queries.append('pref_label_str:"' + norm + '" OR pref_label_str:"'
+                       + stripped + '"')
+        queries.append('(alt_label_str:"' + norm + '" OR alt_label_str:"' +
+                       stripped + '") AND pref_label:[* TO *]')
+        queries.append('pref_label:"' + norm + '" OR pref_label:"' +
+                       stripped + '"')
+        queries.append('last_part_str:"' + last_part + '"')
+        return queries
+
+    def get_queries_ocr(self, norm, stripped, last_part):
+        queries = []
+        queries.append('pref_label_str_ocr:"' + norm +
+                       '" OR pref_label_str_ocr:"' + stripped + '"')
+        queries.append('(alt_label_str_ocr:"' + norm +
+                       '" OR alt_label_str_ocr:"' + stripped +
+                       '") AND pref_label:[* TO *]')
+        queries.append('pref_label_ocr:"' + norm + '" OR pref_label_ocr:"' +
+                       stripped + '"')
+        queries.append('last_part_str_ocr:"' + last_part + '"')
+        return queries
+
+    def query_solr(self, queries, iteration):
+        candidates = []
+
+        for query_id, query in enumerate(queries):
+            if not len(candidates) < SOLR_ROWS:
+                break
+            else:
+                rows = SOLR_ROWS - len(candidates)
+
+            solr_response = self.solr_connection.query(q=query,
+                                                       rows=rows,
+                                                       indent='on',
+                                                       sort='lang,inlinks',
+                                                       sort_order='desc')
+
+            for r in solr_response.results:
+                if r.get('id') not in [c.document.get('id') for c in
+                                       candidates]:
+                    candidates.append(Description(r, iteration, query_id, self,
+                                                  self.cluster))
+
+        return candidates
 
     def filter(self):
         '''
@@ -820,13 +864,13 @@ class Description(object):
     '''
     Description of a link candidate.
     '''
-    def __init__(self, document, query_iteration, query_id, cand_list,
+    def __init__(self, document, iteration, query_id, cand_list,
                  cluster):
         '''
         Initialize description.
         '''
         self.document = document
-        self.query_iteration = query_iteration
+        self.iteration = iteration
         self.query_id = query_id
         self.cand_list = cand_list
         self.cluster = cluster
@@ -887,7 +931,11 @@ class Description(object):
         '''
         self.non_matching = []
 
-        label = self.document.get('pref_label')
+        if self.iteration != 3:
+            label = self.document.get('pref_label')
+        else:
+            label = self.document.get('pref_label_ocr')
+
         ne = self.cluster.entities[0].norm
 
         if not set(ne.split()) - set(label.split()):
@@ -906,7 +954,11 @@ class Description(object):
         '''
         Match alternative labels with the normalized entity.
         '''
-        labels = self.document.get('alt_label')
+        if self.iteration != 3:
+            labels = self.document.get('alt_label')
+        else:
+            labels = self.document.get('alt_label_ocr')
+
         if not labels:
             return
 
@@ -1156,9 +1208,11 @@ class Description(object):
         if not [f for f in self.features if f.startswith('match_str_solr')]:
             return
 
-        # Solr iteration
+        # Solr query
         setattr(self, 'match_str_solr_query_{}'.format(self.query_id), 1)
-        if self.query_iteration > 0:
+
+        # Solr iteration
+        if self.iteration > 0:
             self.match_str_solr_substitution = 1
 
         # Solr position (relative to other remaining candidates)
