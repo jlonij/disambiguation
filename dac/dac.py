@@ -737,8 +737,8 @@ class CandidateList(object):
                 queries = self.get_queries(norm, stripped, last_part)
                 candidates = self.query_solr(queries, 1)
                 if candidates:
-                    self.cluster.entities[0].set_norm = (norm, stripped,
-                                                         last_part)
+                    self.cluster.entities[0].set_norm(norm, stripped,
+                                                      last_part)
 
         # Search with Solr suggestion
         if not candidates:
@@ -747,8 +747,8 @@ class CandidateList(object):
                 queries = self.get_queries(norm, stripped, last_part)
                 candidates = self.query_solr(queries, 2)
                 if candidates:
-                    self.cluster.entities[0].set_norm = (norm, stripped,
-                                                         last_part)
+                    self.cluster.entities[0].set_norm(norm, stripped,
+                                                      last_part)
 
         # Search with OCR-error tolerance
         if not candidates:
@@ -762,8 +762,8 @@ class CandidateList(object):
             candidates = self.query_solr(queries, 3)
 
             if candidates:
-                self.cluster.entities[0].set_norm = (norm, stripped,
-                                                     last_part)
+                self.cluster.entities[0].set_norm(norm, stripped,
+                                                  last_part)
 
         self.candidates = candidates
 
