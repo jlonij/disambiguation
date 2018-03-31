@@ -363,7 +363,7 @@ class Context(object):
         else:
             if len(entities) > 5:
                 message = 'Invalid entity proportion'
-                assert len(entities) / float(len(self.ocr_bow)) < 0.35, message
+                assert len(entities) / float(len(self.ocr_bow)) < 0.4, message
 
         self.entities = entities
 
@@ -1209,8 +1209,7 @@ class Description(object):
         setattr(self, 'match_str_solr_query_{}'.format(self.query_id), 1)
 
         # Solr iteration
-        if self.iteration > 0:
-            self.match_str_solr_substitution = 1
+        setattr(self, 'match_str_solr_iteration_{}'.format(self.iteration), 1)
 
         # Solr position (relative to other remaining candidates)
         pos = self.cand_list.filtered_candidates.index(self)
