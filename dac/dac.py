@@ -1743,13 +1743,13 @@ class Description(object):
         '''
         Get topics and type from classifier service.
         '''
-        payload = {'url': self.document.get('id')}
-        response = requests.get(TOPICS_URL, params=payload,
-                                timeout=300)
-        assert response.status_code == 200, 'Error retrieving topics'
-        self.topic_probs = response.json()['topics']
-        self.type_probs = response.json()['types']
+        values = [self.document.get('topic_{}'.format(t))
+                  for t in dictionary.topics]
+        self.topic_probs = dict(zip(dictionary.topics, values))
 
+        values = [self.document.get('dbo_type_{}'.format(t))
+                  for t in dictionary.types_dbo]
+        self.type_probs = dict(zip(dictionary.types_dbo, values))
 
 class Result(object):
     '''
