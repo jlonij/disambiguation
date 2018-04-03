@@ -43,7 +43,6 @@ import utilities
 
 # Service locations
 conf = config.parse_config()
-
 TPTA_URL = conf.get('TPTA_URL')
 JSRU_URL = conf.get('JSRU_URL')
 SOLR_URL = conf.get('SOLR_URL')
@@ -1735,7 +1734,8 @@ class Description(object):
         '''
         payload = {'source': ' '.join(wordlist)}
         response = requests.get(W2V_URL, params=payload, timeout=300)
-        assert response.status_code == 200, 'Error retrieving word vectors'
+        assert response.status_code == 200, ('Error retrieving word vectors',
+                                             W2V_URL)
         data = response.json()
         return data['vectors']
 
