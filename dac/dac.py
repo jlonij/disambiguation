@@ -1790,6 +1790,8 @@ class Result(object):
             if self.reason == 'Predicted link':
                 self.link = description.document.get('id')
                 self.label = description.document.get('label')
+                if 'uri_wd' in description.document:
+                    self.wikidata_id = description.document.get('uri_wd')
 
         if cand_list:
             self.candidates = []
@@ -1815,6 +1817,8 @@ class Result(object):
             result['link'] = self.link
         if self.label:
             result['label'] = self.label
+        if hasattr(self, 'wikidata_id'):
+            result['wdid'] = self.wikidata_id
         if features and self.features:
             result['features'] = self.features
         if candidates and self.candidates:
