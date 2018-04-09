@@ -23,11 +23,13 @@
 import argparse
 import math
 import re
+import string
 from operator import attrgetter
 from operator import itemgetter
 from pprint import pprint
 
 # Third-party imports
+import aspell
 import Levenshtein
 import numpy as np
 import requests
@@ -358,11 +360,23 @@ class Context(object):
                                     '', self)
                 entities.append(entity)
 
-        # Check entity - text ratio
+        # Check text quality for full articles, e.g. entity - text ratio
         else:
-            if len(entities) > 5:
-                message = 'Invalid entity proportion'
-                assert len(entities) / float(len(self.ocr_bow)) < 0.4, message
+            # Proportion of named entities
+            if len(entities) > 10 and len(self.ocr_bow) > 100:
+                message = 'Unsuitable article (invalid entity proportion)'
+                assert len(entities) / float(len(self.ocr_bow)) < 0.5, message
+
+            # Proportion of regular (letter) characters
+            ascii_letters = [c for c in ocr if c in string.ascii_letters]
+            message = 'Unsuitable aritcle (invalid character proportion)'
+            assert len(ascii_letters) / float((len(self.ocr))) > 0.5, message
+
+            # Rough measure for OCR quality
+            speller = aspell.Speller('lang', 'nl')
+            correct_words = [w for w in self.ocr_bow if speller.check(w)]
+            message = 'Unsuitable article (OCR quality)'
+            assert len(correct_words) / float((len(self.ocr_bow))) > 0.5, message
 
         self.entities = entities
 
