@@ -20,4 +20,8 @@ graphviz = GraphvizOutput(output_file='profile_' + str(int(time.time())) + '.png
 with PyCallGraph(output=graphviz, config=config):
     linker = dac.EntityLinker(model='svm', debug=True)
     linker.link('http://resolver.kb.nl/resolve?urn=ddd:010734861:mpeg21:a0002:ocr')
+    linker.link('http://resolver.kb.nl/resolve?urn=ddd:010616555:mpeg21:a0126:ocr')
+    linker.link('http://resolver.kb.nl/resolve?urn=ddd:110577489:mpeg21:a0193:ocr')
+    linker.link('http://resolver.kb.nl/resolve?urn=ddd:010620323:mpeg21:a0248:ocr')
+    linker.link('http://resolver.kb.nl/resolve?urn=ddd:010369397:mpeg21:a0040:ocr')
 
