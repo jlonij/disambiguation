@@ -25,16 +25,22 @@ from segtok.segmenter import split_multi
 from segtok.tokenizer import word_tokenizer
 from unidecode import unidecode
 
+CLEAN_CHARS = ['+', '=', '^', '*', '~', '#', '_', '\\']
+CLEAN_CHARS += ['(', ')', '[', ']', '{', '}', '<', '>']
+CLEAN_CHARS += ['\'', '"', '`', '%']
+
+clean_rx = '[' + re.escape(''.join(CLEAN_CHARS)) + ']'
+
+NORM_CHARS = ['.', ',', ':', '?', '!', ';', '-', '/', '|', '&']
+
+norm_rx = '[' + re.escape(''.join(NORM_CHARS)) + ']'
+
 
 def clean(s):
     '''
     Clean string by removing unwanted characters.
     '''
-    chars = ['+', '=', '^', '*', '~', '#', '_', '\\']
-    chars += ['(', ')', '[', ']', '{', '}', '<', '>']
-    chars += ['\'', '"', '`', '%']
-    for c in chars:
-        s = s.replace(c, u'')
+    re.sub(clean_rx, u'', s)
     s = u' '.join(s.split())
     return s
 
@@ -50,9 +56,7 @@ def normalize(s):
     # Remove capitalization
     s = s.lower()
     # Replace regular punctuation by spaces
-    chars = ['.', ',', ':', '?', '!', ';', '-', '/', '|', '&']
-    for c in chars:
-        s = s.replace(c, u' ')
+    re.sub(norm_rx, u'', s)
     s = u' '.join(s.split())
     return s
 
@@ -128,7 +132,8 @@ def segment(text):
     return split_multi(text)
 
 
-def tokenize(text, segment=True, norm=True, unique=False, min_len=2):
+def tokenize(text, segment=True, norm=True, unique=False, min_len=2,
+             max_sent=0):
     '''
     Tokenize text using SegTok segmenter and tokenizer.
     '''
@@ -136,12 +141,10 @@ def tokenize(text, segment=True, norm=True, unique=False, min_len=2):
 
     tokens = []
 
-    for s in sentences:
-        if norm:
-            tokens += [w for t in word_tokenizer(s) for w in
-                       normalize(t).split()]
-        else:
-            tokens += word_tokenizer(s)
+    for i, s in enumerate(sentences):
+        if max_sent and i >= max_sent:
+            break
+        tokens += word_tokenizer(s)
 
     if unique:
         tokens = list(set(tokens))
@@ -149,4 +152,9 @@ def tokenize(text, segment=True, norm=True, unique=False, min_len=2):
     if min_len:
         tokens = [t for t in tokens if len(t) >= min_len]
 
+    if norm:
+        tokens = [w for t in tokens for w in
+                  normalize(t).split()]
+
     return tokens
+

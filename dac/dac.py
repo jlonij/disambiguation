@@ -395,7 +395,7 @@ class Context(object):
         self.ocr_norm = utilities.normalize(self.ocr)
 
     def tokenize_ocr(self):
-        self.ocr_bow = utilities.tokenize(self.ocr, unique=True)
+        self.ocr_bow = utilities.tokenize(self.ocr, unique=True, min_len=5)
 
 
 class Entity(object):
@@ -421,8 +421,8 @@ class Entity(object):
         self.context = context
 
         # Tokenize context
-        self.window_left = utilities.tokenize(left_context)
-        self.window_right = utilities.tokenize(right_context)
+        self.window_left = utilities.tokenize(left_context, segment=False)
+        self.window_right = utilities.tokenize(right_context, segment=False)
 
         # Clean, analyze entity string
         self.norm = utilities.normalize(self.text)
@@ -703,7 +703,7 @@ class Cluster(object):
             if e.role:
                 window.append(e.role_form)
 
-        window = [w for w in window if len(w) > 4 and w not in entity_parts
+        window = [w for w in window if len(w) >= 5 and w not in entity_parts
                   and w not in dictionary.unwanted]
         window = list(set(window))
 
@@ -720,7 +720,8 @@ class Cluster(object):
         context_entity_parts = [p for e in self.context.entities for p in
                                 e.norm.split() if p not in self.entity_parts
                                 and p not in dictionary.unwanted and
-                                len(p) > 4 and e.valid]
+                                len(p) >= 5 and e.valid and abs(e.pos -
+                                self.entities[0].pos) < 500]
 
         self.context_entity_parts = list(set(context_entity_parts))
 
@@ -1589,12 +1590,14 @@ class Description(object):
 
         if not hasattr(self, 'abstract_bow'):
             self.tokenize_abstract()
-        bow = [w for w in self.abstract_bow[:25] if len(w) > 4 and w not in
-               self.cluster.entity_parts and w not in dictionary.unwanted]
+
+        bow = self.abstract_bow[:20]
         if self.document.get('keyword'):
-            bow += [w for w in self.document.get('keyword') if len(w) > 4 and w
-                    not in self.cluster.entity_parts and w not in
-                    dictionary.unwanted]
+            bow += self.document.get('keyword')
+
+        bow = [w for w in bow if len(w) >= 5 and w not in
+               self.cluster.entity_parts and w not in dictionary.unwanted]
+
         if not bow:
             return
 
@@ -1624,7 +1627,7 @@ class Description(object):
 
         if not hasattr(self, 'abstract_bow'):
             self.tokenize_abstract()
-        bow = [t for t in self.abstract_bow if len(t) > 4]
+        bow = [t for t in self.abstract_bow if len(t) >= 5]
 
         entity_match = len(set(self.cluster.context_entity_parts) & set(bow))
         self.match_txt_entities = math.tanh(entity_match * 0.25)
@@ -1741,7 +1744,7 @@ class Description(object):
         Tokenize and normalize DBpedia abstract.
         '''
         self.abstract_bow = utilities.tokenize(self.document.get('abstract'),
-                                               unique=True)
+                                               unique=True, max_sent=5)
 
     def get_vectors(self, wordlist):
         '''
