@@ -12,9 +12,9 @@ from pycallgraph import PyCallGraph
 from pycallgraph import Config
 from pycallgraph.output import GraphvizOutput
 
-config = Config(max_depth=5, verbose=True)
+config = Config(max_depth=10, verbose=True)
 config.trace_filter = GlobbingFilter(exclude=['lxml.*', 'requests.*',
-    'sklearn.*', 'pycallgraph.*'])
+    'sklearn.*', 'pycallgraph.*'], include=['*'])
 graphviz = GraphvizOutput(output_file='profile_' + str(int(time.time())) + '.png')
 
 with PyCallGraph(output=graphviz, config=config):
