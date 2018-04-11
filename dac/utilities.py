@@ -56,7 +56,7 @@ def normalize(s):
     # Remove capitalization
     s = s.lower()
     # Replace regular punctuation by spaces
-    re.sub(norm_rx, u'', s)
+    re.sub(norm_rx, u' ', s)
     s = u' '.join(s.split())
     return s
 
