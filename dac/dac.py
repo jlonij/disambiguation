@@ -21,6 +21,8 @@
 
 # Standard library imports
 import argparse
+import base64
+import json
 import math
 import re
 import string
@@ -330,7 +332,12 @@ class Context(object):
             ocr += u' ' + data['text']['p']
 
         self.ocr = ocr
-        self.tokenize_ocr()
+
+        # Normalize and tokenize
+        bow = utilities.tokenize(ocr, unique=False)
+
+        self.ocr_norm = ' '.join(bow)
+        self.ocr_bow = list(set([t for t in bow if len(t) > 5]))
 
         # Article entities
         entities = []
@@ -376,7 +383,7 @@ class Context(object):
             if len(self.ocr_bow) > 100:
                 speller = aspell.Speller('lang', 'nl')
                 correct_words = [w for w in self.ocr_bow if speller.check(w)]
-                message = 'Unsuitable article (OCR quality)'
+                message = 'Unsuitable article (poor OCR quality)'
                 assert len(correct_words) / float((len(self.ocr_bow))) > 0.5, message
 
         self.entities = entities
@@ -390,12 +397,6 @@ class Context(object):
         assert response.status_code == 200, 'Error retrieving topics'
 
         self.topics = response.json()['topics']
-
-    def normalize_ocr(self):
-        self.ocr_norm = utilities.normalize(self.ocr)
-
-    def tokenize_ocr(self):
-        self.ocr_bow = utilities.tokenize(self.ocr, unique=True, min_len=5)
 
 
 class Entity(object):
@@ -705,9 +706,8 @@ class Cluster(object):
 
         window = [w for w in window if len(w) >= 5 and w not in entity_parts
                   and w not in dictionary.unwanted]
-        window = list(set(window))
 
-        self.window = window
+        self.window = list(set(window))
 
     def get_entity_parts(self):
         self.entity_parts = list(set([p for e in self.entities for p in
@@ -720,8 +720,8 @@ class Cluster(object):
         context_entity_parts = [p for e in self.context.entities for p in
                                 e.norm.split() if p not in self.entity_parts
                                 and p not in dictionary.unwanted and
-                                len(p) >= 5 and e.valid and abs(e.pos -
-                                self.entities[0].pos) < 500]
+                                len(p) >= 5 and e.valid and
+                                abs(e.pos - self.entities[0].pos) < 500]
 
         self.context_entity_parts = list(set(context_entity_parts))
 
@@ -739,13 +739,13 @@ class CandidateList(object):
         self.solr_connection = solr_connection
         self.model = model
 
-        # Regular search
+        # Regular search (iteration #0)
         queries = self.get_queries(self.cluster.entities[0].norm,
                                    self.cluster.entities[0].stripped,
                                    self.cluster.entities[0].last_part)
         candidates = self.query_solr(queries, 0)
 
-        # Search with (historical) spelling variants
+        # Search with (historical) spelling variants (iteration #1)
         if not candidates:
             norm, stripped, last_part = self.cluster.entities[0].substitute()
             if norm:
@@ -755,7 +755,7 @@ class CandidateList(object):
                     self.cluster.entities[0].set_norm(norm, stripped,
                                                       last_part)
 
-        # Search with Solr suggestion
+        # Search with Solr suggestion (iteration #2)
         if not candidates:
             norm, stripped, last_part = self.cluster.entities[0].suggest()
             if norm:
@@ -765,7 +765,7 @@ class CandidateList(object):
                     self.cluster.entities[0].set_norm(norm, stripped,
                                                       last_part)
 
-        # Search with OCR-error tolerance
+        # Search with OCR-error tolerance (iteration #3)
         if not candidates:
             norm = utilities.normalize_ocr(self.cluster.entities[0].norm)
             stripped = utilities.normalize_ocr(
@@ -910,7 +910,6 @@ class Description(object):
 
             # Mention - description context match: name conflict
             self.set_txt_last_part_match()
-
             self.set_name_conflict()
 
     def set_date_match(self):
@@ -1086,8 +1085,6 @@ class Description(object):
         if not labels:
             return
 
-        if not hasattr(self.cluster.context, 'ocr_norm'):
-            self.cluster.context.normalize_ocr()
         ocr = self.cluster.context.ocr_norm
 
         self.match_txt_last_part = -1
@@ -1301,10 +1298,10 @@ class Description(object):
                     break
 
             # Appears in abstract
-            if not hasattr(self, 'abstract_bow'):
-                self.tokenize_abstract()
-            if ne.norm in self.abstract_bow[:50]:
-                self.match_str_abbr_abstract = 1
+            abstract = self.document.get('abstract_norm')
+            if abstract:
+                if ne.norm in abstract.split():
+                    self.match_str_abbr_abstract = 1
 
     def set_txt_labels_match(self):
         '''
@@ -1321,12 +1318,9 @@ class Description(object):
         if self.document.get('wd_alt_label'):
             labels.extend([l for l in self.document.get('wd_alt_label') if
                           len(ne) < len(l)])
-
         if not labels:
             return
 
-        if not hasattr(self.cluster.context, 'ocr_norm'):
-            self.cluster.context.normalize_ocr()
         ocr = self.cluster.context.ocr_norm
 
         for l in labels:
@@ -1347,10 +1341,8 @@ class Description(object):
         else:
             return
 
-        if not hasattr(self.cluster.context, 'ocr_norm'):
-            self.cluster.context.normalize_ocr()
-
         ocr = self.cluster.context.ocr_norm
+
         if ocr.find(spec_stem) > -1:
             self.match_txt_spec = 1
 
@@ -1371,6 +1363,7 @@ class Description(object):
             return
 
         bow = self.cluster.context.ocr_bow
+
         key_match = len([w for w in bow for s in key_stems if w.startswith(s)])
         self.match_txt_keyword = math.tanh(key_match * 0.25)
 
@@ -1588,15 +1581,13 @@ class Description(object):
         if not mvf:
             return
 
-        if not hasattr(self, 'abstract_bow'):
-            self.tokenize_abstract()
-
-        bow = self.abstract_bow[:20]
+        bow = (self.document.get('abstract_token') if
+               self.document.get('abstract_token') else [])
         if self.document.get('keyword'):
             bow += self.document.get('keyword')
-
         bow = [w for w in bow if len(w) >= 5 and w not in
                self.cluster.entity_parts and w not in dictionary.unwanted]
+        bow = list(set(bow))
 
         if not bow:
             return
@@ -1604,6 +1595,22 @@ class Description(object):
         cand_vectors = self.get_vectors(bow)
         if not cand_vectors:
             return
+
+        '''
+        if 'abstract_vector' in self.document:
+            cand_vectors = [json.loads(v) for v in
+                    self.document.get('abstract_vector')]
+            print type(cand_vectors[0][0])
+        else:
+            return
+
+        if 'abstract_vector_bin' in self.document:
+            cand_vectors = self.document.get('abstract_vector_bin').encode('ascii')
+            cand_vectors = base64.urlsafe_b64decode(cand_vectors)
+            cand_vectors = json.loads(cand_vectors)
+        else:
+            return
+        '''
 
         sims = cosine_similarity(np.array(self.cluster.window_vectors),
                                  np.array(cand_vectors))
@@ -1625,9 +1632,11 @@ class Description(object):
         if not self.cluster.context_entity_parts:
             return
 
-        if not hasattr(self, 'abstract_bow'):
-            self.tokenize_abstract()
-        bow = [t for t in self.abstract_bow if len(t) >= 5]
+        abstract = self.document.get('abstract_norm')
+        if not abstract:
+            return
+
+        bow = [t for t in abstract.split() if len(t) >= 5]
 
         entity_match = len(set(self.cluster.context_entity_parts) & set(bow))
         self.match_txt_entities = math.tanh(entity_match * 0.25)
@@ -1716,6 +1725,21 @@ class Description(object):
         if not cand_vectors:
             return
 
+        '''
+        if 'vector' in self.document:
+            cand_vectors = [json.loads(self.document.get('vector'))]
+            print type(cand_vectors[0][0])
+        else:
+            return
+
+        if 'vector_bin' in self.document:
+            cand_vectors = self.document.get('vector_bin').encode('ascii')
+            cand_vectors = base64.urlsafe_b64decode(cand_vectors)
+            cand_vectors = [json.loads(cand_vectors)]
+        else:
+            return
+        '''
+
         if cvf:
             for i, v in enumerate(cand_vectors[0]):
                 setattr(self, 'candidate_vec_' + str(i), v)
@@ -1739,13 +1763,6 @@ class Description(object):
         self.match_txt_entity_vec_max = sims.max() - 0.375
         self.match_txt_entity_vec_mean = sims.mean() - 0.125
 
-    def tokenize_abstract(self):
-        '''
-        Tokenize and normalize DBpedia abstract.
-        '''
-        self.abstract_bow = utilities.tokenize(self.document.get('abstract'),
-                                               unique=True, max_sent=5)
-
     def get_vectors(self, wordlist):
         '''
         Get word vectors for given word list.
@@ -1768,6 +1785,7 @@ class Description(object):
         values = [self.document.get('dbo_type_{}'.format(t))
                   for t in dictionary.types_dbo]
         self.type_probs = dict(zip(dictionary.types_dbo, values))
+
 
 class Result(object):
     '''
@@ -1861,3 +1879,4 @@ if __name__ == '__main__':
                           error_handling=vars(args)['errh'])
 
     pprint(linker.link(vars(args)['url'], vars(args)['ne']))
+
