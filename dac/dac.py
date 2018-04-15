@@ -367,6 +367,7 @@ class Context(object):
                                     '', self)
                 entities.append(entity)
 
+        '''
         # Check text quality for full articles, e.g. entity - text ratio
         else:
             # Proportion of named entities
@@ -384,7 +385,9 @@ class Context(object):
                 speller = aspell.Speller('lang', 'nl')
                 correct_words = [w for w in self.ocr_bow if speller.check(w)]
                 message = 'Unsuitable article (poor OCR quality)'
-                assert len(correct_words) / float((len(self.ocr_bow))) > 0.5, message
+                assert len(correct_words) / float((len(self.ocr_bow))) > 0.5, \
+                    message
+        '''
 
         self.entities = entities
 
@@ -822,7 +825,7 @@ class CandidateList(object):
 
             for r in solr_response.results:
                 if (r.get('pref_label') and r.get('id') not in
-                    [c.document.get('id') for c in candidates]):
+                        [c.document.get('id') for c in candidates]):
                     candidates.append(Description(r, iteration, query_id, self,
                                                   self.cluster))
 
