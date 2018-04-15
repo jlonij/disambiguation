@@ -1317,7 +1317,7 @@ class Description(object):
             labels.append(self.document.get('pref_label'))
         if self.document.get('wd_alt_label'):
             labels.extend([l for l in self.document.get('wd_alt_label') if
-                          len(ne) < len(l)])
+                           len(ne) < len(l)])
         if not labels:
             return
 
@@ -1581,36 +1581,11 @@ class Description(object):
         if not mvf:
             return
 
-        bow = (self.document.get('abstract_token') if
-               self.document.get('abstract_token') else [])
-        if self.document.get('keyword'):
-            bow += self.document.get('keyword')
-        bow = [w for w in bow if len(w) >= 5 and w not in
-               self.cluster.entity_parts and w not in dictionary.unwanted]
-        bow = list(set(bow))
-
-        if not bow:
-            return
-
-        cand_vectors = self.get_vectors(bow)
-        if not cand_vectors:
-            return
-
-        '''
         if 'abstract_vector' in self.document:
             cand_vectors = [json.loads(v) for v in
-                    self.document.get('abstract_vector')]
-            print type(cand_vectors[0][0])
+                            self.document.get('abstract_vector')]
         else:
             return
-
-        if 'abstract_vector_bin' in self.document:
-            cand_vectors = self.document.get('abstract_vector_bin').encode('ascii')
-            cand_vectors = base64.urlsafe_b64decode(cand_vectors)
-            cand_vectors = json.loads(cand_vectors)
-        else:
-            return
-        '''
 
         sims = cosine_similarity(np.array(self.cluster.window_vectors),
                                  np.array(cand_vectors))
@@ -1716,29 +1691,10 @@ class Description(object):
         if not (cvf or mvf):
             return
 
-        if not self.document.get('uri_wd'):
-            return
-
-        wd_id = self.document.get('uri_wd').split('/')[-1]
-
-        cand_vectors = self.get_vectors([wd_id])
-        if not cand_vectors:
-            return
-
-        '''
         if 'vector' in self.document:
             cand_vectors = [json.loads(self.document.get('vector'))]
-            print type(cand_vectors[0][0])
         else:
             return
-
-        if 'vector_bin' in self.document:
-            cand_vectors = self.document.get('vector_bin').encode('ascii')
-            cand_vectors = base64.urlsafe_b64decode(cand_vectors)
-            cand_vectors = [json.loads(cand_vectors)]
-        else:
-            return
-        '''
 
         if cvf:
             for i, v in enumerate(cand_vectors[0]):
@@ -1879,4 +1835,3 @@ if __name__ == '__main__':
                           error_handling=vars(args)['errh'])
 
     pprint(linker.link(vars(args)['url'], vars(args)['ne']))
-
