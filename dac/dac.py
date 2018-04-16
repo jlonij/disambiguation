@@ -21,11 +21,9 @@
 
 # Standard library imports
 import argparse
-import base64
 import json
 import math
 import re
-import string
 from operator import attrgetter
 from operator import itemgetter
 from pprint import pprint
@@ -85,8 +83,6 @@ class EntityLinker(object):
         self.candidates = candidates
         self.error_handling = error_handling
 
-        self.solr_connection = solr.SolrConnection(SOLR_URL)
-
     def link(self, url, ne=None):
         '''
         Link named entity mention(s) in an article to a DBpedia description.
@@ -123,7 +119,7 @@ class EntityLinker(object):
         while clusters_to_link:
             cluster = clusters_to_link.pop()
             try:
-                result = cluster.link(self.solr_connection, self.model)
+                result = cluster.link(self.model)
             except Exception as e:
                 if self.error_handling:
                     return {'status': 'error', 'message':
@@ -592,8 +588,6 @@ class Entity(object):
         '''
         Try to substitute norm with Solr suggestion.
         '''
-        suggest_url = SOLR_URL + '/suggest/?'
-
         payload = {}
         payload['suggest'] = 'true'
         payload['suggest.build'] = 'false'
@@ -602,7 +596,8 @@ class Entity(object):
         payload['suggest.q'] = self.stripped
         payload['wt'] = 'json'
 
-        response = requests.get(suggest_url, params=payload, timeout=300)
+        response = requests.get(SOLR_URL + 'suggest/?', params=payload,
+                                timeout=300)
         assert response.status_code == 200, 'Error retrieving Solr suggestions'
 
         data = response.json()
@@ -635,7 +630,7 @@ class Cluster(object):
         self.entities = entities
         self.context = self.entities[0].context
 
-    def link(self, solr_connection, model):
+    def link(self, model):
         '''
         Get the link result for the cluster.
         '''
@@ -645,7 +640,7 @@ class Cluster(object):
             return self.result
 
         # If entity is valid, try to query Solr for candidate descriptions
-        cand_list = CandidateList(self, solr_connection, model)
+        cand_list = CandidateList(self, model)
 
         # Check the number of descriptions found
         if not cand_list.candidates:
@@ -714,7 +709,7 @@ class Cluster(object):
 
     def get_entity_parts(self):
         self.entity_parts = list(set([p for e in self.entities for p in
-                                 e.stripped.split()]))
+                                      e.stripped.split()]))
 
     def get_context_entity_parts(self):
         if not hasattr(self, 'entity_parts'):
@@ -734,12 +729,11 @@ class CandidateList(object):
     List of candidate links for an entity cluster.
     '''
 
-    def __init__(self, cluster, solr_connection, model):
+    def __init__(self, cluster, model):
         '''
         Query the Solr index for a list of candidate descriptions.
         '''
         self.cluster = cluster
-        self.solr_connection = solr_connection
         self.model = model
 
         # Regular search (iteration #0)
@@ -809,6 +803,7 @@ class CandidateList(object):
         return queries
 
     def query_solr(self, queries, iteration):
+
         candidates = []
 
         for query_id, query in enumerate(queries):
@@ -817,13 +812,18 @@ class CandidateList(object):
             else:
                 rows = SOLR_ROWS - len(candidates)
 
-            solr_response = self.solr_connection.query(q=query,
-                                                       rows=rows,
-                                                       indent='on',
-                                                       sort='lang,inlinks',
-                                                       sort_order='desc')
+            payload = {}
+            payload['q'] = query
+            payload['rows'] = rows
+            payload['sort'] = 'lang desc,inlinks desc'
+            payload['wt'] = 'json'
 
-            for r in solr_response.results:
+            response = requests.get(SOLR_URL + 'query/?', params=payload,
+                                    timeout=300)
+            assert response.status_code == 200, 'Error retrieving Solr results'
+            results = response.json()['response']['docs']
+
+            for r in results:
                 if (r.get('pref_label') and r.get('id') not in
                         [c.document.get('id') for c in candidates]):
                     candidates.append(Description(r, iteration, query_id, self,

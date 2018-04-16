@@ -5,8 +5,8 @@ import os
 import requests
 
 # CONFIG_URL = 'http://145.100.58.199:82/config.json'
-CONFIG_URL = 'http://kbresearch.nl/dac/dac/config.json'
-# CONFIG_URL = None
+# CONFIG_URL = 'http://kbresearch.nl/dac/dac/config.json'
+CONFIG_URL = None
 
 
 def parse_config(config_url=CONFIG_URL):
@@ -18,4 +18,3 @@ def parse_config(config_url=CONFIG_URL):
     else:
         abs_path = os.path.dirname(os.path.realpath(__file__))
         return json.load(open(os.path.join(abs_path, 'config.json')))
-

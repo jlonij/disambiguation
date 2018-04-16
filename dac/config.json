@@ -2,6 +2,6 @@
     "TPTA_URL": "http://ner.kbresearch.nl/?",
     "JSRU_URL": "http://jsru.kb.nl/sru?",
     "TOPICS_URL": "http://kbresearch.nl/topics/?",
-    "SOLR_URL": "http://linksolr1.kbresearch.nl/dbpedia",
+    "SOLR_URL": "http://linksolr1.kbresearch.nl/dbpedia/",
     "W2V_URL": "http://kbresearch.nl/word2vec/vectors?"
 }
