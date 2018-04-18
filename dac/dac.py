@@ -816,6 +816,7 @@ class CandidateList(object):
             payload['q'] = query
             payload['rows'] = rows
             payload['sort'] = 'lang desc,inlinks desc'
+            payload['fl'] = '*,score'
             payload['wt'] = 'json'
 
             response = requests.get(SOLR_URL + 'query/?', params=payload,
