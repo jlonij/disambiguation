@@ -1,10 +1,6 @@
 {"features": [
     "entity_abbr",
     "entity_quotes",
-    "entity_type_person",
-    "entity_type_organisation",
-    "entity_type_location",
-    "entity_type_other",
     "entity_topic_politics",
     "entity_topic_business",
     "entity_topic_culture",

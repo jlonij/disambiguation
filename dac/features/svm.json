@@ -1,4 +1,5 @@
 {"features": [
+    "entity_abbr",
     "entity_quotes",
     "candidate_lang",
     "candidate_ambig",
