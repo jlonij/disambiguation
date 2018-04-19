@@ -29,7 +29,6 @@ from operator import itemgetter
 from pprint import pprint
 
 # Third-party imports
-import aspell
 import Levenshtein
 import numpy as np
 import requests
@@ -40,7 +39,6 @@ from sklearn.metrics.pairwise import cosine_similarity
 import config
 import dictionary
 import models
-import solr
 import utilities
 
 # Service locations
@@ -290,14 +288,18 @@ class Context(object):
         payload['query'] = 'uniqueKey=' + self.url.split('urn=')[-1][:-4]
 
         response = requests.get(JSRU_URL, params=payload, timeout=30)
-        assert response.status_code == 200, 'Error retrieving metadata'
+        if response.status_code != 200:
+            raise IOError('Error retrieving metadata from: {}'.format(
+                JSRU_URL))
 
         xml = etree.fromstring(response.content)
 
         type_element = xml.find('.//{http://purl.org/dc/elements/1.1/}type')
-        assert type_element is not None, 'Unknown article type'
-        assert type_element.text in ['illustratie met onderschrift',
-                                     'artikel'], 'Invalid article type'
+
+        if type_element is None:
+            raise ValueError('Unknown article type')
+        if type_element.text not in ['illustratie met onderschrift','artikel']:
+            raise ValueError('Invalid article type')
 
         date_element = xml.find('.//{http://purl.org/dc/elements/1.1/}date')
         self.publ_year = (int(date_element.text[:4]) if date_element is not
@@ -313,12 +315,17 @@ class Context(object):
         payload['context'] = WINDOW
 
         response = requests.get(TPTA_URL, params=payload, timeout=300)
-        assert response.status_code == 200, 'TPTA error'
+        if response.status_code != 200:
+            raise IOError('Error retrieving entities from: {}'.format(
+                TPTA_URL))
 
         response.encoding = 'utf-8'
         data = response.json()
-        assert 'entities' in data, 'TPTA error retrieving entities'
-        assert 'text' in data, 'TPTA error retrieving OCR'
+
+        if 'entities' not in data:
+            raise ValueError('TPTA error: entities not found')
+        if 'text' not in data:
+            raise ValueError('TPTA error: OCR not found')
 
         # Article ocr
         ocr = ''
@@ -363,28 +370,6 @@ class Context(object):
                                     '', self)
                 entities.append(entity)
 
-        '''
-        # Check text quality for full articles, e.g. entity - text ratio
-        else:
-            # Proportion of named entities
-            if len(entities) > 10 and len(self.ocr_bow) > 100:
-                message = 'Unsuitable article (invalid entity proportion)'
-                assert len(entities) / float(len(self.ocr_bow)) < 0.5, message
-
-            # Proportion of regular (letter) characters
-            ascii_letters = [c for c in ocr if c in string.ascii_letters]
-            message = 'Unsuitable aritcle (invalid character proportion)'
-            assert len(ascii_letters) / float((len(self.ocr))) > 0.5, message
-
-            # Rough measure for OCR quality
-            if len(self.ocr_bow) > 100:
-                speller = aspell.Speller('lang', 'nl')
-                correct_words = [w for w in self.ocr_bow if speller.check(w)]
-                message = 'Unsuitable article (poor OCR quality)'
-                assert len(correct_words) / float((len(self.ocr_bow))) > 0.5, \
-                    message
-        '''
-
         self.entities = entities
 
     def get_topics(self):
@@ -393,7 +378,10 @@ class Context(object):
         '''
         payload = {'url': self.url}
         response = requests.get(TOPICS_URL, params=payload, timeout=300)
-        assert response.status_code == 200, 'Error retrieving topics'
+
+        if response.status_code != 200:
+            raise IOError('Error retrieving topics from: {}'.format(
+                TOPICS_URL))
 
         self.topics = response.json()['topics']
 
@@ -598,7 +586,10 @@ class Entity(object):
 
         response = requests.get(SOLR_URL + 'suggest/?', params=payload,
                                 timeout=300)
-        assert response.status_code == 200, 'Error retrieving Solr suggestions'
+
+        if response.status_code != 200:
+            raise IOError('Error retrieving Solr suggestions from: {}'.format(
+                SORL_URL))
 
         data = response.json()
         sugg = data['suggest']['mySuggester'][self.stripped]['suggestions']
@@ -821,7 +812,11 @@ class CandidateList(object):
 
             response = requests.get(SOLR_URL + 'query/?', params=payload,
                                     timeout=300)
-            assert response.status_code == 200, 'Error retrieving Solr results'
+
+            if response.status_code != 200:
+                raise IOError('Error retrieving Solr results from: {}'.format(
+                    SOLR_URL))
+
             results = response.json()['response']['docs']
 
             for r in results:
@@ -1729,8 +1724,11 @@ class Description(object):
         '''
         payload = {'source': ' '.join(wordlist)}
         response = requests.get(W2V_URL, params=payload, timeout=300)
-        assert response.status_code == 200, ('Error retrieving word vectors',
-                                             W2V_URL)
+
+        if response.status_code != 200:
+            raise IOError('Error retrieving word vectors from: {}'.format(
+                W2V_URL))
+
         data = response.json()
         return data['vectors']
 
