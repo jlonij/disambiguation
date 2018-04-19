@@ -31,16 +31,17 @@ from bottle import response
 from bottle import route
 from bottle import run
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                                '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(
+                                os.path.realpath(__file__)), '..'))
 from dac import dac
-
 
 hostname = socket.gethostname()
 
 
 def array_to_utf(a):
-    '''Encode array values with utf-8 encoding.'''
+    '''
+    Encode array values with utf-8 encoding.
+    '''
     autf = []
     for v in a:
         if isinstance(v, unicode):
@@ -55,7 +56,9 @@ def array_to_utf(a):
 
 
 def dict_to_utf(d):
-    '''Encode dictionary values with utf-8 encoding.'''
+    '''
+    Encode dictionary values with utf-8 encoding.
+    '''
     dutf = {}
     for k, v in d.iteritems():
         if isinstance(v, unicode):
@@ -83,7 +86,7 @@ def index():
     callback = request.params.get('callback')
 
     if not url:
-        abort(400, 'No fitting argument ("url=...") given.')
+        abort(400, 'Missing argument ("url=...").')
 
     try:
         linker = dac.EntityLinker(model=model, debug=debug, features=features,
