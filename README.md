@@ -1,6 +1,6 @@
 # DAC Entity Linker
 
-Entity linker for the [Dutch historical newspaper collection](https://www.delpher.nl/nl/kranten) of the [Koninklijke Bibliotheek, National Library of the Netherlands](https://www.kb.nl). The linker links named entity mentions in the newspaper articles to relevant DBpedia descriptions using either a binary SVM classifier or a neural net. For some context and background, please refer to the [project description](https://www.kb.nl/en/organisation/research-expertise/enrichment-of-digital-content) on the Koninklijke Bibliotheek website.
+Entity linker for the [Dutch historical newspaper collection](https://www.delpher.nl/nl/kranten) of the [Koninklijke Bibliotheek](https://www.kb.nl), National Library of the Netherlands. The linker links named entity mentions in newspaper articles to relevant DBpedia descriptions using either a binary SVM classifier or a neural net. For background information, please see the [project description](https://www.kb.nl/en/organisation/research-expertise/enrichment-of-digital-content) on the Koninklijke Bibliotheek website.
 
 ## Usage
 
@@ -52,6 +52,7 @@ The DAC Entity Linker can be started as a web application by running:
 ```
 $ ./web.py
 ```
+
 This starts a Bottle web server listening on `http://localhost:5002`. The URL parameters are similar to the command line options:
 
 ```
@@ -100,14 +101,14 @@ optional arguments:
 
 ## Evaluation
 
-Once one or more models have been trained, the linker performance can be evaluated on a separate training set in the format created by the [DAC Web Interface](https://github.com/jlonij/dac-web). To test the performance of a first version of a neural net, run:
+Once one or more models have been trained, the linker performance can be evaluated on a separate training set in the format created by the [DAC Web Interface](https://github.com/jlonij/dac-web). To test the performance of, e.g., a first version of a neural net, run:
 
 ```
 $ cd training
 $ ./test.py -m nn -v 1
 ```
 
-A summary of the results will be printed out, e.g.:
+A summary of the results will be printed out:
 
 ```
 Number of instances: 500
@@ -131,7 +132,7 @@ Link precision: 0.969273743017
 
 The version number specified will be used to name a file containing the full results of the test run, e.g. `training/results-nn-1.csv`.
 
-Command line options for the test script:
+Further command line options for the test script:
 
 ```
 usage: test.py [-h] -m MODEL -v VERSION [-i INPUT]
