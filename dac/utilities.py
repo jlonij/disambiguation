@@ -20,7 +20,6 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import re
-
 from segtok.segmenter import split_multi
 from segtok.tokenizer import word_tokenizer
 from unidecode import unidecode
@@ -157,4 +156,3 @@ def tokenize(text, segment=True, norm=True, unique=False, min_len=2,
                   normalize(t).split()]
 
     return tokens
-

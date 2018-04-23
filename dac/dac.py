@@ -298,7 +298,8 @@ class Context(object):
 
         if type_element is None:
             raise ValueError('Unknown article type')
-        if type_element.text not in ['illustratie met onderschrift','artikel']:
+        if type_element.text not in ['illustratie met onderschrift',
+                                     'artikel']:
             raise ValueError('Invalid article type')
 
         date_element = xml.find('.//{http://purl.org/dc/elements/1.1/}date')
@@ -589,7 +590,7 @@ class Entity(object):
 
         if response.status_code != 200:
             raise IOError('Error retrieving Solr suggestions from: {}'.format(
-                SORL_URL))
+                SOLR_URL))
 
         data = response.json()
         sugg = data['suggest']['mySuggester'][self.stripped]['suggestions']
