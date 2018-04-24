@@ -60,31 +60,28 @@ mandatory arguments:
   - url          resolver link of the article to be processed
 
 optional arguments:
-  - ne           a specific named entity to be linked
-  - model        which model to use for predictions (svm, nn, bnn)
-  - debug        whether or not unlinked entities should be returned
-  - features     whether or not the features values of the predicited link should be returned
-  - candidates   whether or not the list of candidates should be returned
+  - ne           specific named entity to be linked
+  - model        model used for link prediction (svm, nn or bnn)
+  - debug        include unlinked entities in response
+  - features     include feature values for predicted links
+  - candidates   include the list of candidates for each entity
   - callback     name of a JavaScript callback function
 ```
 
 ## Training new models
 
-Given the availability of an annotated training set in the format created by the [DAC Web Interface](https://github.com/jlonij/dac-web), new models can be trained in two simple steps.
-
-First, the training set is expanded so that it contains all features values:
+Given the availability of training set in the format created by the [DAC Web Interface](https://github.com/jlonij/dac-web), new models can be trained in two simple steps. First, the web interface training set is extended with the features values for each training example:
 
 ```
 $ cd training
 $ ./generate.py
 ```
 
-The default input file used is `../../../dac-web/users/tve/art.json` and the output is written to a `training.csv` file. These locations can be adjusted, however, using the `--input` and `--output` options.
+The default input file used here is `../../../dac-web/users/tve/art.json` and the output is written to a `training.csv` file. These locations can be adjusted, however, using the `--input` and `--output` options of the `generate.py` script.
 
-The resulting file can now be used to train new models. Note that existing models in the `models` directory will be replaced, so these need to be backed up manually if they are to be preserved. To train, for example, a new Support Vector Machine, run:
+The resulting `training.csv` file can now be used to train new models. Note that existing models in the `models` directory will be replaced, so these need to be backed up manually if they are to be preserved. To train, for example, a new Support Vector Machine, run:
 
 ```
-$ cd ..
 $ ./models.py -t -m svm
 ```
 
