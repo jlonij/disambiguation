@@ -56,7 +56,7 @@ $ ./web.py
 This starts a Bottle web server listening on `http://localhost:5002`. The URL parameters are similar to the command line options:
 
 ```
-mandatory arguments:
+required arguments:
   - url          resolver link of the article to be processed
 
 optional arguments:
@@ -140,7 +140,7 @@ Further command line options for the test script:
 ```
 usage: test.py [-h] -m MODEL -v VERSION [-i INPUT]
 
-mandatory arguments:
+required arguments:
   -m MODEL, --model MODEL     model name (svm, nn or bnn)
   -v VERSION                  version number
   
