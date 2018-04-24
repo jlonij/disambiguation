@@ -72,19 +72,23 @@ optional arguments:
 
 Given the availability of an annotated training set in the format created by the [DAC Web Interface](https://github.com/jlonij/dac-web), new models can be trained in two simple steps.
 
-First, the training set is expanded in such a way that it contains all calculated features values:
+First, the training set is expanded so that it contains all features values:
 
 ```
 $ cd training
 $ ./generate.py
 ```
 
-This expanded set `training/training.csv` can now be used to train new models. Note that existing models in the `models` directory will be replaced, so these need to be backed up manually if they are to be preserved. To train, for example, a new Support Vector Machine, run:
+The default input file used is `../../../dac-web/users/tve/art.json` and the output is written to a `training.csv` file. These locations can be adjusted, however, using the `--input` and `--output` options.
+
+The resulting file can now be used to train new models. Note that existing models in the `models` directory will be replaced, so these need to be backed up manually if they are to be preserved. To train, for example, a new Support Vector Machine, run:
 
 ```
 $ cd ..
 $ ./models.py -t -m svm
 ```
+
+This will create a `models/svm.pkl` file that can now be applied to new named entity examples. 
 
 Full command line options for training and cross-validation:
 
@@ -107,6 +111,8 @@ Once one or more models have been trained, the linker performance can be evaluat
 $ cd training
 $ ./test.py -m nn -v 1
 ```
+
+This will evaluate the current neural network model on the `../../../dac-web/users/test-clean/art.json` file, but a different test set can be specified with the `--input` option.
 
 A summary of the results will be printed out:
 
