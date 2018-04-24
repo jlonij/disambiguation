@@ -77,7 +77,7 @@ $ cd training
 $ ./generate.py
 ```
 
-The default input file used here is `../../../dac-web/users/tve/art.json` and the output is written to a `training.csv` file. These locations can be adjusted, however, using the `--input` and `--output` options of the `generate.py` script.
+The default input file used here is `../../../dac-web/users/tve/art.json` and the output is written to a `training.csv` file. These locations can be adjusted, however, using the `--input` and `--output` options of the `generate.py` script. The features calculated are listed in `features/features.json`.
 
 The resulting `training.csv` file can now be used to train new models. Note that existing models in the `models` directory will be replaced, so these need to be backed up manually if they are to be preserved. To train, for example, a new Support Vector Machine, run:
 
@@ -85,7 +85,7 @@ The resulting `training.csv` file can now be used to train new models. Note that
 $ ./models.py -t -m svm
 ```
 
-This will create a `models/svm.pkl` file that can now be applied to new named entity examples. 
+This will create a `models/svm.pkl` file, using the feature set of `features/svm.json`, that can now be applied to new named entity examples. 
 
 Full command line options for training and cross-validation:
 
