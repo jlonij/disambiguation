@@ -58,6 +58,7 @@
     "match_txt_labels",
     "match_txt_spec",
     "match_txt_keyword",
+    "match_txt_title",
     "match_txt_role",
     "match_txt_type",
     "match_txt_topic",

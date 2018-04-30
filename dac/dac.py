@@ -1136,6 +1136,7 @@ class Description(object):
         self.set_txt_labels_match()
         self.set_spec_match()
         self.set_keyword_match()
+        self.set_title_match()
         self.set_role_match()
         self.set_type_match()
         self.set_topic_match()
@@ -1366,6 +1367,25 @@ class Description(object):
 
         key_match = len([w for w in bow for s in key_stems if w.startswith(s)])
         self.match_txt_keyword = math.tanh(key_match * 0.25)
+
+    def set_title_match(self):
+        '''
+        Match exact title and role form with DBpedia abstract.
+        '''
+        if 'match_txt_title' not in self.features:
+            return
+
+        abstract = self.document.get('abstract_norm')
+        if not abstract:
+            return
+
+        titles = [e.title_form for e in self.cluster.entities if e.title_form]
+        titles += [e.role_form for e in self.cluster.entities if e.role_form]
+        if titles:
+            if set(titles) & set(abstract.split()):
+                self.match_txt_title = 1
+            else:
+                self.match_txt_title = -1
 
     def set_role_match(self):
         '''
