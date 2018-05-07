@@ -57,6 +57,9 @@ def normalize(s):
     # Replace regular punctuation by spaces
     s = re.sub(norm_rx, u' ', s)
     s = u' '.join(s.split())
+    # Remove double consonants
+    if len(s) >= 2 and s[-1] == s[-2]:
+        s = s[:-1]
     return s
 
 
