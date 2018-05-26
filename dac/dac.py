@@ -133,7 +133,7 @@ class EntityLinker(object):
                                                  cluster.entities[0].norm) > 1]
 
             if sub_entities:
-                if not result.description:
+                if not result.link:
                     new_clusters = [Cluster([e for e in cluster.entities if e
                                              not in sub_entities])]
                     new_clusters.extend(self.get_clusters(sub_entities))
@@ -154,7 +154,7 @@ class EntityLinker(object):
         results = []
         to_return = [entity_to_link] if ne else self.context.entities
         for entity in to_return:
-            if entity.text not in [result['text'] for result in results]:
+            if entity.text not in [r['text'] for r in results]:
                 for cluster in clusters_linked:
                     if entity in cluster.entities:
                         result = cluster.result.get_dict(
@@ -170,15 +170,19 @@ class EntityLinker(object):
         Group related entities into clusters.
         '''
         clusters = []
+
         # Arrange the entities in reversed alphabetical order
         sorted_entities = sorted(entities, key=attrgetter('norm'),
                                  reverse=True)
+
         # Arrange the entities by word length, longest first
         sorted_entities = sorted(sorted_entities, key=lambda entity:
                                  len(entity.norm.split()), reverse=True)
+
         # Assign each entity to a cluster
         for entity in sorted_entities:
             clusters = self.cluster(entity, clusters)
+
         # Merge possessives
         clusters = self.merge_possessives(clusters)
 
