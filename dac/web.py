@@ -44,7 +44,6 @@ model_dict['svm'] = models.LinearSVM()
 model_dict['nn'] = models.NeuralNet()
 model_dict['bnn'] = models.BranchingNeuralNet()
 
-print type(model_dict['train'])
 
 def array_to_utf(a):
     '''
@@ -86,6 +85,7 @@ def index():
     Return the entity linker result.
     '''
     global model_dict
+
     url = request.params.get('url')
     ne = request.params.get('ne')
     model = request.params.get('model')
@@ -101,8 +101,8 @@ def index():
         model = 'nn'
 
     try:
-        linker = dac.EntityLinker(model_dict.get(model), debug=debug, features=features,
-                                  candidates=candidates)
+        linker = dac.EntityLinker(model_dict.get(model), debug=debug,
+                                  features=features, candidates=candidates)
         result = linker.link(url, ne)
     except Exception as e:
         result = {}
@@ -126,4 +126,3 @@ if __name__ == '__main__':
     run(host='localhost', port=5002)
 else:
     application = default_app()
-
