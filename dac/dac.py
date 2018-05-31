@@ -305,15 +305,14 @@ class Context(object):
 
         xml = etree.fromstring(response.content)
 
-        '''
         type_element = xml.find('.//{http://purl.org/dc/elements/1.1/}type')
 
         if type_element is None:
-            raise ValueError('Unknown article type')
-        if type_element.text not in ['illustratie met onderschrift',
-                                     'artikel']:
+            pass
+            # raise ValueError('Unknown article type')
+        elif type_element.text not in ['illustratie met onderschrift',
+                                     'artikel', 'advertentie']:
             raise ValueError('Invalid article type')
-        '''
 
         date_element = xml.find('.//{http://purl.org/dc/elements/1.1/}date')
         self.publ_year = (int(date_element.text[:4]) if date_element is not
