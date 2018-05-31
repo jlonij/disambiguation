@@ -65,16 +65,23 @@ class EntityLinker(object):
         '''
         Initialize the disambiguation model and Solr connection.
         '''
-        if model == 'train':
-            self.model = models.BaseModel()
-        elif model == 'svm':
-            self.model = models.LinearSVM()
-        elif model == 'nn':
+        if not model:
             self.model = models.NeuralNet()
-        elif model == 'bnn':
-            self.model = models.BranchingNeuralNet()
+
+        elif isinstance(model, basestring):
+            if model == 'train':
+                self.model = models.BaseModel()
+            elif model == 'svm':
+                self.model = models.LinearSVM()
+            elif model == 'nn':
+                self.model = models.NeuralNet()
+            elif model == 'bnn':
+                self.model = models.BranchingNeuralNet()
+            else:
+                self.model = models.NeuralNet()
+
         else:
-            self.model = models.NeuralNet()
+            self.model = model
 
         self.debug = debug
         self.features = features
