@@ -749,6 +749,11 @@ class CandidateList(object):
                                    self.cluster.entities[0].last_part)
         candidates = self.query_solr(queries, 0)
 
+        head_entities = [e for e in self.cluster.entities if
+                         Levenshtein.distance(e.norm,
+                                              self.cluster.entities[0].norm)
+                         < 2]
+
         # Search with (historical) spelling variants (iteration #1)
         if not candidates:
             norm, stripped, last_part = self.cluster.entities[0].substitute()
@@ -756,8 +761,8 @@ class CandidateList(object):
                 queries = self.get_queries(norm, stripped, last_part)
                 candidates = self.query_solr(queries, 1)
                 if candidates:
-                    self.cluster.entities[0].set_norm(norm, stripped,
-                                                      last_part)
+                    for e in head_entities:
+                        e.set_norm(norm, stripped, last_part)
 
         # Search with Solr suggestion (iteration #2)
         if not candidates:
@@ -766,8 +771,8 @@ class CandidateList(object):
                 queries = self.get_queries(norm, stripped, last_part)
                 candidates = self.query_solr(queries, 2)
                 if candidates:
-                    self.cluster.entities[0].set_norm(norm, stripped,
-                                                      last_part)
+                    for e in head_entities:
+                        e.set_norm(norm, stripped, last_part)
 
         # Search with OCR-error tolerance (iteration #3)
         if not candidates:
@@ -781,8 +786,8 @@ class CandidateList(object):
             candidates = self.query_solr(queries, 3)
 
             if candidates:
-                self.cluster.entities[0].set_norm(norm, stripped,
-                                                  last_part)
+                for e in head_entities:
+                    e.set_norm(norm, stripped, last_part)
 
         self.candidates = candidates
 
