@@ -138,7 +138,9 @@ class EntityLinker(object):
 
             # If a cluster consists of multiple, significantly differing
             # entities and could not be linked, split it up and return the
-            # new clustres to the queue.
+            # new clusters to the queue.
+            cluster.entities[0].reset_norm()
+
             sub_entities = [e for e in cluster.entities if
                             Levenshtein.distance(e.norm,
                                                  cluster.entities[0].norm) > 1]
@@ -620,9 +622,30 @@ class Entity(object):
         return None, None, None
 
     def set_norm(self, norm, stripped, last_part):
+        '''
+        (Temporarily) replace norm, stripped and last_part attributes.
+        '''
+        self.norm_orig = self.norm
+        self.stripped_orig = self.stripped
+        self.last_part_orig = self.last_part
+
         self.norm = norm
         self.stripped = stripped
         self.last_part = last_part
+
+    def reset_norm(self):
+        '''
+        Reset norm, stripped and last_part attributes to original values.
+        '''
+        if hasattr(self, 'norm_orig'):
+            self.norm = self.norm_orig
+            del self.norm_orig
+        if hasattr(self, 'stripped_orig'):
+            self.stripped = self.stripped_orig
+            del self.stripped_orig
+        if hasattr(self, 'last_part_orig'):
+            self.last_part = self.last_part_orig
+            del self.last_part_orig
 
 
 class Cluster(object):
@@ -749,11 +772,6 @@ class CandidateList(object):
                                    self.cluster.entities[0].last_part)
         candidates = self.query_solr(queries, 0)
 
-        head_entities = [e for e in self.cluster.entities if
-                         Levenshtein.distance(e.norm,
-                                              self.cluster.entities[0].norm)
-                         < 2]
-
         # Search with (historical) spelling variants (iteration #1)
         if not candidates:
             norm, stripped, last_part = self.cluster.entities[0].substitute()
@@ -761,8 +779,8 @@ class CandidateList(object):
                 queries = self.get_queries(norm, stripped, last_part)
                 candidates = self.query_solr(queries, 1)
                 if candidates:
-                    for e in head_entities:
-                        e.set_norm(norm, stripped, last_part)
+                    self.cluster.entities[0].set_norm(norm, stripped,
+                                                      last_part)
 
         # Search with Solr suggestion (iteration #2)
         if not candidates:
@@ -771,8 +789,8 @@ class CandidateList(object):
                 queries = self.get_queries(norm, stripped, last_part)
                 candidates = self.query_solr(queries, 2)
                 if candidates:
-                    for e in head_entities:
-                        e.set_norm(norm, stripped, last_part)
+                    self.cluster.entities[0].set_norm(norm, stripped,
+                                                      last_part)
 
         # Search with OCR-error tolerance (iteration #3)
         if not candidates:
@@ -786,8 +804,7 @@ class CandidateList(object):
             candidates = self.query_solr(queries, 3)
 
             if candidates:
-                for e in head_entities:
-                    e.set_norm(norm, stripped, last_part)
+                self.cluster.entities[0].set_norm(norm, stripped, last_part)
 
         self.candidates = candidates
 
