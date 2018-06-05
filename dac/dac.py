@@ -104,6 +104,10 @@ class EntityLinker(object):
             else:
                 raise
 
+        if self.context.article_type == 'familiebericht':
+            if not self.debug:
+                return {'status': 'ok', 'linkedNEs': []}
+
         # If a specific ne was requested, select it from the list of entities
         if ne:
             entity_to_link = None
@@ -290,8 +294,7 @@ class Context(object):
 
     def get_metadata(self):
         '''
-        Retrieve article metadata from SRU API. Only news articles and
-        illustrations with captions will be processed.
+        Retrieve article metadata from SRU API.
         '''
         payload = {}
         payload['operation'] = 'searchRetrieve'
@@ -305,15 +308,12 @@ class Context(object):
 
         xml = etree.fromstring(response.content)
 
+        # Article type
         type_element = xml.find('.//{http://purl.org/dc/elements/1.1/}type')
+        self.article_type = (type_element.text if type_element is not None
+                             else None)
 
-        if type_element is None:
-            pass
-            # raise ValueError('Unknown article type')
-        elif type_element.text not in ['illustratie met onderschrift',
-                                     'artikel', 'advertentie']:
-            raise ValueError('Invalid article type')
-
+        # Publication date
         date_element = xml.find('.//{http://purl.org/dc/elements/1.1/}date')
         self.publ_year = (int(date_element.text[:4]) if date_element is not
                           None else None)
