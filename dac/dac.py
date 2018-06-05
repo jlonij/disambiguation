@@ -1133,6 +1133,7 @@ class Description(object):
         # Mention representation
         self.set_entity_quotes()
         self.set_entity_confidence()
+        self.set_entity_article_type()
 
         # Description representation
         self.set_candidate_lang()
@@ -1184,6 +1185,16 @@ class Description(object):
                                                     self.cluster.entities)))
 
         self.entity_ner_confidence = self.cluster.mean_ner_confidence / 3
+
+    def set_entity_article_type(self):
+        '''
+        Set article type features.
+        '''
+        atf = [f for f in self.features if f.startswith('entity_article_type')]
+
+        if atf and self.cluster.context.article_type:
+            setattr(self, 'entity_article_type_' +
+                    self.cluster.context.article_type[:3], 1.0)
 
     def set_candidate_lang(self):
         '''
