@@ -362,7 +362,7 @@ class Context(object):
 
         # Regular entities first
         for e in [e for e in data['entities'] if e['type'] != 'manual' and
-                  len(e['ner_src']) >= 1 and e['ne'][0].isupper()]:
+                  len(e['ner_src']) >= 1]:
             if len(e['ne']) > 1:
                 if (e.get('alt_ne') and len(e.get('alt_ne')) < len(e['ne']) and
                         len(e.get('alt_ne')) > 1):
