@@ -364,10 +364,13 @@ class Context(object):
         for e in [e for e in data['entities'] if e['type'] != 'manual' and
                   len(e['ner_src']) >= 1]:
             if len(e['ne']) > 1:
-                if (e.get('alt_ne') and len(e.get('alt_ne')) < len(e['ne']) and
-                        len(e.get('alt_ne')) > 1):
-                    e['ne'] = e['alt_ne']
                 entity = Entity(e['ne'], e['count'], e['type'],
+                                e['type_certainty'], e['pos'], e['ne_context'],
+                                e['left_context'], e['right_context'], self)
+                entities.append(entity)
+	    # Add alternative entity string as well, if it exists
+	    if (e.has_key('alt_ne') and len(e['alt_ne']) > 1):
+                entity = Entity(e['alt_ne'], e['count'], e['type'],
                                 e['type_certainty'], e['pos'], e['ne_context'],
                                 e['left_context'], e['right_context'], self)
                 entities.append(entity)
